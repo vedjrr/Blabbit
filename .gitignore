@@ -1,0 +1,12 @@
+/target/
+/core/target/
+/build/
+/app/.build/
+/.build/
+*.xcuserstate
+.DS_Store
+/bench/results/*.tmp
+/models/
+/.claude/.loop-count
+/STOP
+*.dmg
