@@ -47,14 +47,13 @@ import Testing
         defer { pb.releaseGlobally() }
         pb.clearContents()
         pb.setString("SENTINEL", forType: .string)
-        let inserter = PasteInserter(pasteboard: pb, postKeystroke: false)
-        inserter.quietPeriod = .milliseconds(50)
-
-        // Simulate the target app handling ⌘V: it reads the promised string.
+        // The "target app" handles ⌘V by reading the promised string.
         var readByTarget: String?
-        Task { @MainActor in
+        let inserter = PasteInserter(pasteboard: pb, checkSecureInput: false) {
             readByTarget = pb.string(forType: .string)
+            return nil
         }
+        inserter.quietPeriod = .milliseconds(50)
         let outcome = await inserter.insert("Hello from Utter")
         #expect(readByTarget == "Hello from Utter")
         #expect(outcome == .pasted(receipt: true))
@@ -65,10 +64,12 @@ import Testing
         let pb = makePasteboard()
         defer { pb.releaseGlobally() }
         pb.clearContents()
-        let inserter = PasteInserter(pasteboard: pb, postKeystroke: false)
-        inserter.receiptTimeout = .milliseconds(100)
         var types: [NSPasteboard.PasteboardType] = []
-        Task { @MainActor in types = pb.types ?? [] }
+        let inserter = PasteInserter(pasteboard: pb, checkSecureInput: false) {
+            types = pb.types ?? []
+            return nil
+        }
+        inserter.receiptTimeout = .milliseconds(100)
         _ = await inserter.insert("secret-ish")
         for marker in PasteInserter.transientMarkers {
             #expect(types.contains(marker))
@@ -80,7 +81,7 @@ import Testing
         defer { pb.releaseGlobally() }
         pb.clearContents()
         pb.setString("SENTINEL", forType: .string)
-        let inserter = PasteInserter(pasteboard: pb, postKeystroke: false)
+        let inserter = PasteInserter(pasteboard: pb, checkSecureInput: false) { nil }
         inserter.receiptTimeout = .milliseconds(150)
         let outcome = await inserter.insert("nobody reads this")
         #expect(outcome == .pasted(receipt: false))
@@ -92,13 +93,46 @@ import Testing
         defer { pb.releaseGlobally() }
         pb.clearContents()
         pb.setString("SENTINEL", forType: .string)
-        let inserter = PasteInserter(pasteboard: pb, postKeystroke: false)
-        inserter.receiptTimeout = .milliseconds(200)
-        Task { @MainActor in
+        // The user copies something else right after the paste is triggered.
+        let inserter = PasteInserter(pasteboard: pb, checkSecureInput: false) {
             pb.clearContents()
             pb.setString("user copied this meanwhile", forType: .string)
+            return nil
         }
+        inserter.receiptTimeout = .milliseconds(200)
         _ = await inserter.insert("transcript")
         #expect(pb.string(forType: .string) == "user copied this meanwhile")
+    }
+
+    @Test func overlappingInsertsAreSerialisedAndRestoreTheOriginal() async {
+        let pb = makePasteboard()
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        pb.setString("SENTINEL", forType: .string)
+        var reads: [String?] = []
+        let inserter = PasteInserter(pasteboard: pb, checkSecureInput: false) {
+            reads.append(pb.string(forType: .string))
+            return nil
+        }
+        inserter.quietPeriod = .milliseconds(30)
+        async let first = inserter.insert("first")
+        async let second = inserter.insert("second")
+        let outcomes = await [first, second]
+        #expect(outcomes == [.pasted(receipt: true), .pasted(receipt: true)])
+        // Each paste delivered its own text, in order.
+        #expect(reads == ["first", "second"])
+        // Had they interleaved, the second snapshot would have captured "first"'s promise.
+        #expect(pb.string(forType: .string) == "SENTINEL")
+    }
+
+    @Test func failedKeystrokeRestoresAndReportsFailure() async {
+        let pb = makePasteboard()
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        pb.setString("SENTINEL", forType: .string)
+        let inserter = PasteInserter(pasteboard: pb, checkSecureInput: false) { "Could not create the paste keystroke." }
+        let outcome = await inserter.insert("transcript")
+        #expect(outcome == .failed("Could not create the paste keystroke."))
+        #expect(pb.string(forType: .string) == "SENTINEL")
     }
 }
