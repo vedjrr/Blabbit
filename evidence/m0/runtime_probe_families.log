@@ -1,0 +1,18 @@
+# 2026-09-24T19:16:41Z Apple M4 macOS 27.0
+$ cd core && cargo build --release --example runtime_probe
+$ ./target/release/examples/runtime_probe "$HOME/Library/Application Support/Utter/Models/SenseVoiceSmall/SenseVoiceSmall-Q8_0.gguf" ../fixtures/audio/tts_0*.wav
+model=/Users/ved/Library/Application Support/Utter/Models/SenseVoiceSmall/SenseVoiceSmall-Q8_0.gguf arch=sensevoice backend=MTL0 load_ms=123
+warmup_ms=280
+../fixtures/audio/tts_01.wav	audio_s=4.64	infer_ms=67	rtf=0.014	testing utter1 two three hold my code uses postger sql
+../fixtures/audio/tts_02.wav	audio_s=4.42	infer_ms=55	rtf=0.013	the quick brown fox jumps over the lazy dog while the band plays in the park
+../fixtures/audio/tts_03.wav	audio_s=4.27	infer_ms=54	rtf=0.013	please schedule a meeting with the design team for next tuesday afternoon at three
+../fixtures/audio/tts_04.wav	audio_s=4.82	infer_ms=56	rtf=0.012	i studied computer science at manooth before moving into product engineering
+../fixtures/audio/tts_05.wav	audio_s=5.05	infer_ms=57	rtf=0.011	we rew wrotete the settings screen and swift the eye and moved the back end that ive script
+$ ./target/release/examples/runtime_probe "$HOME/Library/Application Support/Utter/Models/moonshine-base/moonshine-base-Q8_0.gguf" ../fixtures/audio/tts_0*.wav
+model=/Users/ved/Library/Application Support/Utter/Models/moonshine-base/moonshine-base-Q8_0.gguf arch=moonshine backend=MTL0 load_ms=64
+warmup_ms=121
+../fixtures/audio/tts_01.wav	audio_s=4.64	infer_ms=194	rtf=0.042	Testing udder, 123, hold my code uses post-gurr SQL.
+../fixtures/audio/tts_02.wav	audio_s=4.42	infer_ms=123	rtf=0.028	The quick brown fox jumps over the lazy dog while the band plays in the park.
+../fixtures/audio/tts_03.wav	audio_s=4.27	infer_ms=116	rtf=0.027	Please schedule a meeting with the design team for next Tuesday afternoon at 3:00.
+../fixtures/audio/tts_04.wav	audio_s=4.82	infer_ms=88	rtf=0.018	I studied computer science at Manuth before moving into product engineering.
+../fixtures/audio/tts_05.wav	audio_s=5.05	infer_ms=121	rtf=0.024	We re-route the setting screen and swiftly lie and move the back end to type script.

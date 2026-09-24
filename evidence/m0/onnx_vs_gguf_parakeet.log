@@ -1,0 +1,23 @@
+# 2026-09-24T19:17:38Z Apple M4 macOS 27.0 — Parakeet TDT 0.6B V3: ONNX int8 (transcribe-rs 0.3.11 / ort, CPU) vs GGUF Q8_0 (transcribe-cpp 0.2.3, Metal)
+# ONNX files: huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx @ 8f23f0c (encoder/decoder int8)
+# bench source: scratch cargo project 'onnxbench' (transcribe-rs ParakeetModel::load(dir, Int8), best of 3 runs per clip)
+$ onnxbench $SCRATCH/onnx-parakeet-v3 fixtures/audio/tts_0*.wav
+engine=onnx(ort,cpu) load_ms=694
+warmup_ms=67
+fixtures/audio/tts_01.wav	audio_s=4.64	infer_ms_best_of_3=178	rtf=0.038	Testing Udder, 123, hold my code uses postGur SQL.
+fixtures/audio/tts_02.wav	audio_s=4.42	infer_ms_best_of_3=168	rtf=0.038	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio_s=4.27	infer_ms_best_of_3=169	rtf=0.040	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio_s=4.82	infer_ms_best_of_3=177	rtf=0.037	I studied computer science at Manuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio_s=5.05	infer_ms_best_of_3=194	rtf=0.038	We rewrote the settings screen and swiftly lie and move the backend to type script.
+
+$ core/target/release/examples/runtime_probe <parakeet-tdt-0.6b-v3-Q8_0.gguf> fixtures/audio/tts_0*.wav
+model=/Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load_ms=410
+warmup_ms=56
+fixtures/audio/tts_01.wav	audio_s=4.64	infer_ms=84	rtf=0.018	Testing udder, 123, hold my code uses post gur SQL.
+fixtures/audio/tts_02.wav	audio_s=4.42	infer_ms=79	rtf=0.018	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio_s=4.27	infer_ms=81	rtf=0.019	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio_s=4.82	infer_ms=80	rtf=0.017	I studied computer science at Minute before moving into product engineering.
+fixtures/audio/tts_05.wav	audio_s=5.05	infer_ms=85	rtf=0.017	We rewrote the settings screen and swiftly lie and move the backend the type script.
+
+$ du -sh ONNX runtime lib pulled in by ort:
+-rwxr-xr-x@ 1 ved  wheel  26078992 Sep 24 20:17 /private/tmp/claude-501/-Users-ved-Documents-2-utter-kit/2553b07c-a9ed-42b2-9a92-cfd56445c19a/scratchpad/onnxbench/target/release/onnxbench

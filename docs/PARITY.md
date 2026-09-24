@@ -5,6 +5,7 @@ Reference: Handy **v0.9.7** (latest release, 2026-09-18, https://github.com/cjpa
 
 Status: **Missing** (not built yet) · **Matched** (same behaviour, evidence linked) · **Better** (measured win, evidence linked) · **N/A** (reason given).
 Nothing may be Missing at DONE. New Handy features found later get new rows.
+Sources are file paths (with line where useful), a settings field `S.x`, or a Tauri command name (all defined under `H/src-tauri/src/commands/` unless another file is given). Rows marked "—" in the source column are Utter-only features Handy does not have.
 
 ## A. Dictation and shortcuts
 
@@ -30,6 +31,8 @@ Nothing may be Missing at DONE. New Handy features found later get new rows.
 | A18 | Live streaming transcription in overlay | `S.overlay_style = Live`, `StreamTextEvent` in `managers/transcription.rs` | transcribe-cpp streaming sessions | transcribe-cpp `Session::stream` for streaming-capable models | M4 | Missing | — |
 | A19 | Language selection + auto-detect | `S.selected_language` | per-model languages | Same | M5 | Missing | — |
 | A20 | Translate to English (Whisper) | `S.translate_to_english` | Whisper translate task | Same (`Task::Translate`) | M5 | Missing | — |
+| A22 | Play test sound (preview feedback sound on the chosen output device) | `play_test_sound` in `H/src-tauri/src/commands/audio.rs:295` | — | "Play" button next to sound picker | M4 | Missing | — |
+| A23 | Reset a shortcut to its default | `reset_binding` in `H/src-tauri/src/shortcut/mod.rs:226` | — | "Reset to ⌥Space" button | M4 | Missing | — |
 | A21 | Short / silent recordings ignored | `managers/audio.rs` VAD policy | — | < 0.3 s or silence → nothing | M4 | Missing | — |
 
 ## B. Text insertion
@@ -67,7 +70,7 @@ Nothing may be Missing at DONE. New Handy features found later get new rows.
 | C13 | Parakeet TDT 0.6B V2 | catalog | GGUF Q8_0 | Verify | M3 | Missing | — |
 | C14 | Whisper Small / Medium / Large-v3 / Large-v3-Turbo | catalog | GGUF | Verify each | M3 | Missing | — |
 | C15 | SenseVoice Small | catalog | GGUF Q8_0 | Verify | M3 | Missing | — |
-| C16 | Moonshine Base (+ tiny, streaming variants) | catalog | GGUF Q8_0 | Verify base; others listed with status | M3 | Missing | — |
+| C16 | Moonshine Base (+ tiny, streaming variants) | catalog | GGUF Q8_0 | Verify base; others listed with status. Non-English variants are under the Moonshine AI Community License upstream (Handy's catalog says MIT) → show licence before download | M3 | Missing | Correct licence display |
 | C17 | Other catalog families (Canary, Cohere, GigaAM, Granite, Qwen3-ASR, Voxtral, Fun-ASR, MedASR, MOSS, Nemotron) | catalog | GGUF | Same runtime; each verified or listed unsupported with reason | M3 | Missing | — |
 
 ## D. Post-processing
@@ -81,6 +84,7 @@ Nothing may be Missing at DONE. New Handy features found later get new rows.
 | D5 | Prompt library (multiple saved prompts, select one) | `S.post_process_prompts`, `S.post_process_selected_prompt_id` | — | Modes: Professional, Custom (user prompts) | M5 | Missing | — |
 | D6 | Modes Exact / Clean / Professional / Code / Custom | — (Handy: filler removal toggle + LLM prompts; **no Code mode, no named modes**) | — | Named modes; Exact/Clean/Code need no LLM | M5 | Missing | **Better**: Code mode + non-LLM modes |
 | D7 | Chinese script conversion (OpenCC) | `ferrous-opencc` in `H/src-tauri/Cargo.toml` | — | Same idea (simplified ↔ traditional) | M5 | Missing | — |
+| D9 | Per-provider LLM model selection (fetch model list from provider) | `S.post_process_models`, `fetch_post_process_models` in `H/src-tauri/src/shortcut/mod.rs:1194` | queries provider `/models` | Model picker per provider (Ollama `/api/tags`, Anthropic models list) | M5 | Missing | — |
 | D8 | Output language detection | `detect_output_language` in `audio_toolkit` | whatlang | Same | M5 | Missing | — |
 
 ## E. History
@@ -110,7 +114,7 @@ Nothing may be Missing at DONE. New Handy features found later get new rows.
 | F7 | Overlay style none / minimal / live | `S.overlay_style` | — | Same | M4 | Missing | — |
 | F8 | Level meter in overlay | `emit_levels` in `overlay.rs:730` | web canvas | Core Animation bars | M4 | Missing | — |
 | F9 | Theme light / dark / system | `S.theme` | CSS | Follows system (native); explicit override | M5 | Missing | — |
-| F10 | UI localisation (27 locales) | `H/src/i18n/locales/` | i18next | English at 1.0 using `String(localized:)` so locales can be added; other locales **N/A for 1.0** | M5 | Missing | — |
+| F10 | UI localisation (27 locales) and app-language picker | `H/src/i18n/locales/`, `S.app_language` | i18next | English at 1.0 using `String(localized:)` so locales can be added; other locales **N/A for 1.0** | M5 | Missing | — |
 | F11 | Onboarding (mic + accessibility permissions) | `H/src/components/onboarding/` | — | Native onboarding with deep links + live re-check | M4 | Missing | — |
 | F12 | Update checks + "What's new" | `S.update_checks_enabled`, `S.show_whats_new_on_update` | tauri-plugin-updater | Sparkle 2 (release notes shown by Sparkle) | M7 | Missing | — |
 | F13 | Debug mode (⌘⇧D), log level, keyboard diagnostic | `S.debug_mode`, `S.log_level`, `secure_input.rs` diagnostic | — | Debug pane: log level, open logs, latency breakdown of last dictation | M5 | Missing | Per-stage latency view |
@@ -118,6 +122,7 @@ Nothing may be Missing at DONE. New Handy features found later get new rows.
 | F15 | Single instance | tauri-plugin-single-instance | — | `NSRunningApplication` check | M5 | Missing | — |
 | F16 | Open app-data / log directory | `open_app_data_dir`, `open_log_dir` | — | Settings → Privacy / Debug buttons | M5 | Missing | — |
 | F17 | Clear local data | — | — | Settings → Privacy | M5 | Missing | — |
+| F23 | Update checks locked by admin/managed config | `is_update_checks_locked` in `H/src-tauri/src/commands/mod.rs:27` | managed setting disables the toggle | Honour a managed `UpdateChecksDisabled` default (`defaults write` / MDM profile) | M7 | Missing | — |
 | F18 | Homebrew cask | README | community cask | Cask draft in repo | M7 | Missing | — |
 | F19 | Portable mode | `H/src-tauri/src/portable.rs` | Windows only | — | — | N/A | Windows only |
 | F20 | Keyboard implementation choice (Tauri vs handy-keys) | `S.keyboard_implementation` | two backends | One native backend with Carbon fallback | — | N/A | Implementation detail, no user-facing need |

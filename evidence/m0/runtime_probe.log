@@ -1,5 +1,6 @@
 # 2026-09-24T18:28:00Z Apple M4 macOS 27.0
-$ runtime_probe <model> fixtures/audio/tts_0*.wav
+$ cd core && cargo build --release --example runtime_probe
+$ for m in parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf whisper-small/whisper-small-Q8_0.gguf; do ./target/release/examples/runtime_probe "$HOME/Library/Application Support/Utter/Models/$m" ../fixtures/audio/tts_0*.wav; done
 model=/Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load_ms=261
 warmup_ms=102
 ../fixtures/audio/tts_01.wav	audio_s=4.64	infer_ms=129	rtf=0.028	Testing udder, 123, hold my code uses post gur SQL.

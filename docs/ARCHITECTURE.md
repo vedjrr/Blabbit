@@ -29,22 +29,30 @@ Toolchain: Swift 6.4 (Command Line Tools, **no Xcode.app installed**), rustc 1.9
 ### ADR-001 — Build with SwiftPM + Makefile, not an .xcodeproj
 - **Context.** Xcode.app is not installed on the build machine (`xcodebuild` → "requires Xcode, but active developer directory … is a command line tools instance"). CLT ships Swift 6.4, SwiftPM, Swift Testing, `codesign`, `notarytool`, `stapler` (verified with `xcrun --find`). No `metal` shader compiler, no `xcodebuild -create-xcframework`.
 - **Decision.** The app is a SwiftPM package (`app/Package.swift`) with targets `UtterFFI` (C module over the UniFFI header), `UtterCore` (generated Swift bindings + Swift wrappers), `Utter` (executable), `UtterTests`. `make bundle` assembles `build/Utter.app` (Info.plist, entitlements, hardened-runtime codesign). `make test` = `cargo test` + `swift test` (Swift Testing).
-- **Consequences.** Builds identically with or without Xcode. No asset catalogs: the icon is an `.icns` built with `iconutil` (in CLT). No Xcode UI tests; UI behaviour is tested through AppKit-free logic and manual checklists. If Xcode is installed later nothing changes.
+- **Consequences.** Builds identically with or without Xcode. Every SwiftPM link prints `ld: warning: search path '/Library/Developer/CommandLineTools/Developer/...' not found`: SwiftPM adds the XCTest search paths that only exist inside Xcode.app. Harmless; it disappears if Xcode is installed. No asset catalogs: the icon is an `.icns` built with `iconutil` (in CLT). No Xcode UI tests; UI behaviour is tested through AppKit-free logic and manual checklists. If Xcode is installed later nothing changes.
 - **Sources.** SwiftPM docs https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/ ; measured: `make build` → `Built …/build/Utter.app`, `codesign -dv` → `flags=0x10002(adhoc,runtime)`.
 
 ### ADR-002 — Inference runtime: `transcribe-cpp` (ggml + Metal) for every model family
 - **Context.** Hypothesis from MILESTONES was whisper.cpp for Whisper + ONNX Runtime/transcribe-rs for Parakeet/SenseVoice/Moonshine. Handy itself has since moved all catalog models to GGUF via `transcribe-cpp`, keeping ONNX only for legacy bundles (Handy runs ONNX **CPU-only** on macOS, see comments in `H/src-tauri/Cargo.toml`).
-- **Test.** `core/utter-core/examples/runtime_probe.rs`, log `evidence/m0/runtime_probe.log`. On M4, Metal (`backend=MTL0`), 4.3–5.1 s TTS clips:
-  - Parakeet TDT 0.6B V3 Q8_0: load 261 ms (warm file cache; first-ever load 7.7 s, one-time Metal pipeline compile), warm-up 102 ms, **inference 93–129 ms, RTF 0.019–0.028**.
-  - Whisper Small Q8_0: load 143 ms, **inference 406–445 ms, RTF 0.084–0.099**.
+- **Test (all four GOAL families, same 5 TTS clips, M4, Metal `backend=MTL0`).** Build: `cd core && cargo build --release --example runtime_probe`. Logs: `evidence/m0/runtime_probe.log` (Parakeet, Whisper), `evidence/m0/runtime_probe_families.log` (SenseVoice, Moonshine), `evidence/m0/first_load.log`, `evidence/m0/onnx_vs_gguf_parakeet.log`.
+
+  | Family / model (GGUF Q8_0) | load (warm) | warm-up | inference per 4.3–5.1 s clip | RTF |
+  |---|---|---|---|---|
+  | parakeet — Parakeet TDT 0.6B V3 | 261 ms | 102 ms | 93–129 ms | 0.019–0.028 |
+  | whisper — Whisper Small | 143 ms | 357 ms | 406–445 ms | 0.084–0.099 |
+  | sensevoice — SenseVoice Small | 123 ms | 280 ms | 54–67 ms | 0.011–0.014 |
+  | moonshine — Moonshine Base | 64 ms | 121 ms | 88–194 ms | 0.018–0.042 |
+
+  First load of a new executable pays a one-time Metal pipeline compile: 7215 ms, then 210 ms and 224 ms on the next two runs of the same binary (`evidence/m0/first_load.log`). The app must therefore show "Preparing model…" on first launch after install/update.
+- **Alternative measured (MILESTONES hypothesis).** Parakeet V3 int8 ONNX via `transcribe-rs` 0.3.11 / `ort` (CPU, Handy's legacy path), same clips, best of 3: **168–194 ms, RTF 0.037–0.040**, load 694 ms; GGUF-Metal in the same session: 79–85 ms, RTF 0.017–0.019, load 410 ms (`evidence/m0/onnx_vs_gguf_parakeet.log`). GGUF-Metal is ≈ 2.1× faster at inference. The ONNX bench binary is 26 MB with `ort` statically linked.
 - **Decision.** One runtime, `transcribe-cpp` 0.2.3 (MIT, static link, `metal` feature), behind our own `SpeechModel` trait. Model files are the GGUF conversions at pinned revisions of `huggingface.co/handy-computer/*-gguf` (the weights keep their upstream licences, §3). Families available through it include parakeet (V2, V3, 110M, 1.1B), whisper (tiny → large-v3, turbo), moonshine, sensevoice, canary, gigaam, qwen3-asr, voxtral.
-- **Rejected.** `whisper-rs` (Whisper only, second ggml copy); `ort`/`transcribe-rs` (≈ 30 MB ONNX Runtime dylib, CPU on macOS in Handy's config, and slower than ggml-Metal for Parakeet); WhisperKit/FluidAudio Core ML (Swift-only, per-family, models need ANE compilation; kept as a possible "Better" experiment for M6).
+- **Rejected.** `ort`/`transcribe-rs`: measured 2.1× slower for Parakeet V3 on this Mac (above), and Handy itself runs it CPU-only on macOS (`H/src-tauri/Cargo.toml`, comment above the Windows `transcribe-cpp` target table). `whisper-rs`: Whisper only and would add a second ggml copy (not benchmarked; Whisper already runs through transcribe-cpp at RTF < 0.1). WhisperKit / FluidAudio Core ML: Swift-only, one family each (not benchmarked; possible "Better" experiment in M6).
 - **Consequence.** Static lib is ~141 MB unstripped (debug line tables); the release app binary gets stripped in M7. Deployment target pinned to 14.0 in `core/.cargo/config.toml` and the Makefile; `-C default-linker-libraries=yes` so Rust-linked test/CLI binaries get compiler-rt (`__isPlatformVersionAtLeast` from ggml's `@available`).
 - **Sources.** https://github.com/handy-computer/transcribe.cpp (MIT), https://crates.io/crates/transcribe-cpp, `H/src-tauri/src/managers/transcription.rs`.
 
 ### ADR-003 — Swift ↔ Rust boundary: UniFFI (proc-macro), static library, coarse calls
 - **Decision.** Crate `core/utter-ffi` (`staticlib`) exposes a small UniFFI surface; `core/uniffi-bindgen` generates `UtterCore.swift` + `UtterFFI.h` + modulemap in library mode (`make bindings`). Generated files are build products (git-ignored).
-- **Boundary rule.** Only coarse operations cross: `Engine.load(model)`, `Engine.transcribe(pcm: [Float]) -> Transcript`, model catalog/downloads, text-processing pipeline. Audio capture, hotkeys, insertion and UI stay in Swift. PCM crosses once per utterance (5 min × 16 kHz × 4 B = 19 MB copy, ~2 ms). Long-running Rust calls run off the main thread (`Task.detached` / UniFFI async); progress comes back through UniFFI callback interfaces.
+- **Boundary rule.** Only coarse operations cross: `Engine.load(model)`, `Engine.transcribe(pcm: [Float]) -> Transcript`, model catalog/downloads, text-processing pipeline. Audio capture, hotkeys, insertion and UI stay in Swift. PCM crosses once per utterance (5 min × 16 kHz × 4 B = 19 MB copy; cost estimated, to be measured in M1). Long-running Rust calls run off the main thread (`Task.detached` / UniFFI async); progress comes back through UniFFI callback interfaces.
 - **Rejected.** Hand-written C ABI (more unsafe glue, no generated error enums); XCFramework (needs `xcodebuild`, ADR-001).
 - **Sources.** https://mozilla.github.io/uniffi-rs/latest/ ; measured: `CoreBridgeTests.rustCoreIsLinkedAndReportsRuntime` passes under `swift test`.
 
@@ -70,6 +78,7 @@ Toolchain: Swift 6.4 (Command Line Tools, **no Xcode.app installed**), rustc 1.9
 - **Layout.** `~/Library/Application Support/Utter/Models/<model-id>/<file>.gguf`; in-flight `<file>.gguf.partial` + `<file>.gguf.partial.json` (URL, expected size, SHA-256, ETag) for HTTP range resume; verified file renamed atomically. History DB and settings live beside it in `~/Library/Application Support/Utter/`.
 - **Catalog.** Our own `models.json` bundled in the app (id, family, display name, languages, size, URL at pinned HF revision, SHA-256, licence, `verified` flag). A model only appears as "Supported" after it passes the fixture test in M3; otherwise it is listed "Unsupported: <reason>".
 - **Downloads.** Implemented in Rust (`ureq` + native TLS via Security.framework, streaming SHA-256) so it is testable under `cargo test` against a local HTTP server with Range support.
+- **Sources.** HTTP range requests RFC 9110 §14 https://www.rfc-editor.org/rfc/rfc9110#section-14 ; HF resolve URLs https://huggingface.co/docs/hub/en/api ; `ureq` https://crates.io/crates/ureq ; `H/src-tauri/src/catalog/mod.rs` (pinned `resolve/<sha>`).
 - **Verified in M0.** Parakeet V3 and Whisper Small downloaded from pinned URLs; `shasum -a 256` equals the catalog hashes (`5859f779…`, `9b9c8811…`).
 
 ### ADR-008 — Threading model
@@ -78,20 +87,25 @@ Toolchain: Swift 6.4 (Command Line Tools, **no Xcode.app installed**), rustc 1.9
 - Audio: AVAudioEngine render/tap thread → lock-protected append, no allocation after the first `reserveCapacity`.
 - `DictationCoordinator` (Swift actor): state machine idle → recording → transcribing → processing → inserting.
 - Rust engine: one `Engine` object owning the loaded model + session behind a `Mutex`; called from a detached task; model loads once at launch on a background task, warms up with 1 s of silence, stays resident until the user switches models (unload + RSS measurement in M3).
-- Insertion: main thread (AX, pasteboard and CGEvent posting are main-thread-safe and fast); paste-restore wait happens off-main.
+- Insertion: AX calls run on a dedicated serial `DispatchQueue` (never the main thread), because `AXUIElementCopyAttributeValue`/`SetAttributeValue` block until the target app answers (default messaging timeout ≈ 6 s against a hung app). Each AX element gets `AXUIElementSetMessagingTimeout(element, 0.25)`; a timeout means "fall through to paste". Pasteboard writes and the ⌘V `CGEvent` post happen on the main thread (both return immediately); the wait before restoring the clipboard happens off-main.
+- Sources: https://developer.apple.com/documentation/applicationservices/1459345-axuielementsetmessagingtimeout , https://developer.apple.com/documentation/swift/actor
 
 ### ADR-009 — Persistence
 - Settings: `UserDefaults` via a Codable `Settings` struct with explicit keys, one migration version field.
 - History: SQLite via GRDB.swift 7 (MIT) in `~/Library/Application Support/Utter/history.sqlite`; FTS5 for search; audio stored only if the user enables it.
 - Secrets (cloud LLM keys): Keychain (`kSecClassGenericPassword`).
+- Sources: https://github.com/groue/GRDB.swift , https://www.sqlite.org/fts5.html , https://developer.apple.com/documentation/security/keychain_services , https://developer.apple.com/documentation/foundation/userdefaults
 
 ### ADR-010 — Text pipeline split: pure Rust stages + optional Swift LLM providers
 - `RawTranscript → [Processor] → FinalText`. Deterministic stages in Rust (`utter-core::text`): whitespace/punctuation normalisation, filler removal, vocabulary fuzzy correction (n-gram, Jaro-Winkler + Double Metaphone with threshold), code mode rules. Each is a pure function with unit tests.
 - LLM stages (Professional, Custom) behind a Swift `TextProcessor` protocol: Ollama (local HTTP, `localhost:11434`) and Anthropic (cloud, off by default, key in Keychain). Network only when the user enables a provider — never in Exact/Clean/Code.
+- Sources: `H/src-tauri/src/audio_toolkit/text.rs:151` (Handy's custom-word matcher, n-gram ≤ 3), https://github.com/ollama/ollama/blob/main/docs/api.md , https://docs.anthropic.com/en/api/messages
 
 ### ADR-011 — Distribution
 - Hardened runtime; the only entitlement is `com.apple.security.device.audio-input` (needed for the mic under hardened runtime). Not sandboxed: CGEventTap posting and cross-app AX writes are not possible from the App Sandbox; we distribute outside the Mac App Store (same as Handy).
 - `make dmg`: `codesign` with Developer ID → `hdiutil` DMG → `notarytool submit --wait` → `stapler staple`. Updates via Sparkle 2 (2.10.0, SwiftPM binary target) with EdDSA-signed appcast.
+- Dev builds are signed with the local "Apple Development" identity when present (stable designated requirement, so Accessibility/Microphone grants survive rebuilds); otherwise ad-hoc.
+- Sources: https://developer.apple.com/documentation/security/hardened-runtime , https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.device.audio-input , https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution , https://sparkle-project.org/documentation/ , https://developer.apple.com/documentation/servicemanagement/smappservice
 
 ## 3. Licences
 
@@ -108,7 +122,8 @@ Toolchain: Swift 6.4 (Command Line Tools, **no Xcode.app installed**), rustc 1.9
 | Sparkle | MIT | Notice | https://github.com/sparkle-project/Sparkle |
 | Parakeet TDT 0.6B V2 / V3 weights | CC-BY-4.0 | Attribution to NVIDIA in model manager + credits | https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3 |
 | Whisper small/medium/large-v3 weights | Apache-2.0 (HF card) / MIT (openai/whisper repo) | Notice | https://huggingface.co/openai/whisper-small |
-| Whisper large-v3-turbo | MIT | Notice | https://huggingface.co/openai/whisper-large-v3-turbo |
+| Whisper large-v3-turbo | MIT on the upstream card; the `handy-computer/whisper-large-v3-turbo-gguf` catalog entry says apache-2.0 (sources disagree; both permissive) | Notice | https://huggingface.co/openai/whisper-large-v3-turbo |
 | SenseVoice Small | FunASR Model License (custom, permits commercial use with attribution) | Attribution; show licence link before download | https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE |
-| Moonshine base | MIT | Notice | https://huggingface.co/handy-computer/moonshine-base-gguf |
+| Moonshine tiny / base / streaming (English) | MIT (upstream card) | Notice | https://huggingface.co/moonshine-ai/moonshine-base |
+| Moonshine non-English variants (ar, ja, ko, uk, vi, zh) | **Moonshine AI Community License** (upstream `LICENSE.txt`; free incl. commercial use under US $1M annual revenue). Handy's catalog labels them MIT, which does not match upstream | Show licence and require acceptance before download | https://huggingface.co/moonshine-ai/moonshine-tiny-zh/blob/main/LICENSE.txt |
 | GGUF conversions (`handy-computer/*-gguf`) | inherit upstream licence (HF tags match the table above) | as upstream | https://huggingface.co/handy-computer |

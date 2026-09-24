@@ -3,8 +3,9 @@
 
 SHELL := /bin/bash
 export PATH := $(HOME)/.cargo/bin:$(PATH)
-# Must match LSMinimumSystemVersion and Package.swift platforms.
-export MACOSX_DEPLOYMENT_TARGET := 14.0
+# The macOS deployment target (14.0) is set for cargo in core/.cargo/config.toml
+# and for Swift in app/Package.swift. Do not export MACOSX_DEPLOYMENT_TARGET here:
+# with Command Line Tools it stops Swift Testing's macro plugin from loading.
 
 ROOT      := $(CURDIR)
 CORE      := $(ROOT)/core
@@ -16,7 +17,11 @@ APP_NAME  := Utter
 BUNDLE    := $(BUILD)/$(APP_NAME).app
 SWIFT_OUT = $(shell cd "$(APP)" && swift build -c release --arch arm64 --show-bin-path)
 
-.PHONY: build core bindings app bundle test test-rust test-swift clean
+# Dev signing: a local "Apple Development" identity keeps the designated
+# requirement stable so macOS privacy grants survive rebuilds; else ad-hoc.
+SIGN_ID ?= $(or $(UTTER_SIGN_IDENTITY),$(shell security find-identity -v -p codesigning 2>/dev/null | grep -m1 -o '"Apple Development[^"]*"' | tr -d '"'),-)
+
+.PHONY: build core bindings app bundle test test-rust test-swift bench dmg clean
 
 build: bundle
 
@@ -38,7 +43,7 @@ bundle: app
 	mkdir -p "$(BUNDLE)/Contents/MacOS" "$(BUNDLE)/Contents/Resources"
 	install -m 755 "$(SWIFT_OUT)/$(APP_NAME)" "$(BUNDLE)/Contents/MacOS/$(APP_NAME)"
 	install -m 644 "$(APP)/Resources/Info.plist" "$(BUNDLE)/Contents/Info.plist"
-	codesign --force --sign "$${UTTER_SIGN_IDENTITY:--}" --options runtime \
+	codesign --force --sign "$(SIGN_ID)" --options runtime \
 		--entitlements "$(APP)/Resources/Utter.entitlements" "$(BUNDLE)"
 	@echo "Built $(BUNDLE)"
 
@@ -49,6 +54,13 @@ test-rust:
 
 test-swift: bindings
 	cd "$(APP)" && swift test -c release --arch arm64
+
+bench: core
+	cd "$(CORE)" && cargo build --release -p utter-core --example runtime_probe
+	./scripts/bench.sh
+
+dmg: bundle
+	./scripts/make-dmg.sh
 
 clean:
 	cd "$(CORE)" && cargo clean

@@ -1,0 +1,11 @@
+# 2026-09-24T19:16:50Z Apple M4 macOS 27.0 — first vs repeat load of a binary with no Metal pipeline cache (fresh executable path)
+$ cp core/target/release/examples/runtime_probe $SCRATCH/probe_fresh_1790277410
+$ $SCRATCH/probe_fresh_1790277410 "$HOME/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf" ../fixtures/audio/tts_01.wav   # run 1
+model=/Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load_ms=7215
+warmup_ms=53
+$ $SCRATCH/probe_fresh_1790277410 "$HOME/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf" ../fixtures/audio/tts_01.wav   # run 2
+model=/Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load_ms=210
+warmup_ms=36
+$ $SCRATCH/probe_fresh_1790277410 "$HOME/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf" ../fixtures/audio/tts_01.wav   # run 3
+model=/Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load_ms=224
+warmup_ms=37
