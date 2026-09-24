@@ -1,0 +1,16 @@
+[package]
+name = "onnxbench"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# ONNX Runtime CoreML execution provider (Neural Engine / GPU / CPU chosen by CoreML).
+coreml = ["transcribe-rs/ort-coreml"]
+
+[dependencies]
+transcribe-rs = { version = "=0.3.11", features = ["onnx"] }
+hound = "3.5"
+
+[profile.release]
+debug = false
+[workspace]

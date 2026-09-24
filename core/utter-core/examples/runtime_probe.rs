@@ -29,7 +29,7 @@ fn main() {
     if json {
         println!(
             "{{\"event\":\"load\",\"model\":{:?},\"arch\":{:?},\"backend\":{:?},\"load_ms\":{load_ms:.1},\"warmup_ms\":{warmup_ms:.1}}}",
-            model_path,
+            std::path::Path::new(&model_path).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default(),
             model.arch(),
             model.backend()
         );

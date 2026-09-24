@@ -2,7 +2,7 @@
 # Release packaging: sign with Developer ID → DMG → notarise → staple.
 # Needs: UTTER_DEVELOPER_ID="Developer ID Application: Name (TEAMID)" and a
 # notarytool keychain profile (xcrun notarytool store-credentials <profile>)
-# named in UTTER_NOTARY_PROFILE. See docs/RELEASING.md.
+# named in UTTER_NOTARY_PROFILE. (Full release steps: docs/RELEASING.md, written in M7.)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 app=build/Utter.app

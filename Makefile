@@ -21,7 +21,7 @@ SWIFT_OUT = $(shell cd "$(APP)" && swift build -c release --arch arm64 --show-bi
 # requirement stable so macOS privacy grants survive rebuilds; else ad-hoc.
 SIGN_ID ?= $(or $(UTTER_SIGN_IDENTITY),$(shell security find-identity -v -p codesigning 2>/dev/null | grep -m1 -o '"Apple Development[^"]*"' | tr -d '"'),-)
 
-.PHONY: build core bindings app bundle test test-rust test-swift bench dmg clean
+.PHONY: build core bindings app bundle test test-rust test-swift bench models dmg dmg-preflight clean
 
 build: bundle
 
@@ -59,7 +59,15 @@ bench: core
 	cd "$(CORE)" && cargo build --release -p utter-core --example runtime_probe
 	./scripts/bench.sh
 
-dmg: bundle
+models:
+	./scripts/fetch-models.sh
+
+# Fail fast on missing release credentials before the rebuild.
+dmg-preflight:
+	@test -n "$$UTTER_DEVELOPER_ID" || { echo "Cannot make a release DMG: set UTTER_DEVELOPER_ID to your 'Developer ID Application: …' signing identity." >&2; exit 2; }
+	@test -n "$$UTTER_NOTARY_PROFILE" || { echo "Cannot notarise: set UTTER_NOTARY_PROFILE to a profile created with 'xcrun notarytool store-credentials'." >&2; exit 2; }
+
+dmg: dmg-preflight bundle
 	./scripts/make-dmg.sh
 
 clean:

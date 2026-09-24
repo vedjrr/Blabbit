@@ -1,4 +1,4 @@
-# 2026-09-24T19:16:50Z Apple M4 macOS 27.0 — first vs repeat load of a binary with no Metal pipeline cache (fresh executable path)
+# 2026-09-24T19:16:50Z Apple M4 macOS 27.0 — first vs repeat load of a freshly copied binary. Observed 7215 ms once; the critic could NOT reproduce it with the same recipe (fresh copy: 228/207 ms). Cause unconfirmed (see ARCHITECTURE ADR-002).
 $ cp core/target/release/examples/runtime_probe $SCRATCH/probe_fresh_1790277410
 $ $SCRATCH/probe_fresh_1790277410 "$HOME/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf" ../fixtures/audio/tts_01.wav   # run 1
 model=/Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load_ms=7215

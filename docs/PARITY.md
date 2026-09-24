@@ -31,9 +31,9 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | A18 | Live streaming transcription in overlay | `S.overlay_style = Live`, `StreamTextEvent` in `managers/transcription.rs` | transcribe-cpp streaming sessions | transcribe-cpp `Session::stream` for streaming-capable models | M4 | Missing | — |
 | A19 | Language selection + auto-detect | `S.selected_language` | per-model languages | Same | M5 | Missing | — |
 | A20 | Translate to English (Whisper) | `S.translate_to_english` | Whisper translate task | Same (`Task::Translate`) | M5 | Missing | — |
+| A21 | Short / silent recordings ignored | `managers/audio.rs` VAD policy | — | < 0.3 s or silence → nothing | M4 | Missing | — |
 | A22 | Play test sound (preview feedback sound on the chosen output device) | `play_test_sound` in `H/src-tauri/src/commands/audio.rs:295` | — | "Play" button next to sound picker | M4 | Missing | — |
 | A23 | Reset a shortcut to its default | `reset_binding` in `H/src-tauri/src/shortcut/mod.rs:226` | — | "Reset to ⌥Space" button | M4 | Missing | — |
-| A21 | Short / silent recordings ignored | `managers/audio.rs` VAD policy | — | < 0.3 s or silence → nothing | M4 | Missing | — |
 
 ## B. Text insertion
 
@@ -84,8 +84,8 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | D5 | Prompt library (multiple saved prompts, select one) | `S.post_process_prompts`, `S.post_process_selected_prompt_id` | — | Modes: Professional, Custom (user prompts) | M5 | Missing | — |
 | D6 | Modes Exact / Clean / Professional / Code / Custom | — (Handy: filler removal toggle + LLM prompts; **no Code mode, no named modes**) | — | Named modes; Exact/Clean/Code need no LLM | M5 | Missing | **Better**: Code mode + non-LLM modes |
 | D7 | Chinese script conversion (OpenCC) | `ferrous-opencc` in `H/src-tauri/Cargo.toml` | — | Same idea (simplified ↔ traditional) | M5 | Missing | — |
-| D9 | Per-provider LLM model selection (fetch model list from provider) | `S.post_process_models`, `fetch_post_process_models` in `H/src-tauri/src/shortcut/mod.rs:1194` | queries provider `/models` | Model picker per provider (Ollama `/api/tags`, Anthropic models list) | M5 | Missing | — |
 | D8 | Output language detection | `detect_output_language` in `audio_toolkit` | whatlang | Same | M5 | Missing | — |
+| D9 | Per-provider LLM model selection (fetch model list from provider) | `S.post_process_models`, `fetch_post_process_models` in `H/src-tauri/src/shortcut/mod.rs:1194` | queries provider `/models` | Model picker per provider (Ollama `/api/tags`, Anthropic models list) | M5 | Missing | — |
 
 ## E. History
 
@@ -122,12 +122,12 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | F15 | Single instance | tauri-plugin-single-instance | — | `NSRunningApplication` check | M5 | Missing | — |
 | F16 | Open app-data / log directory | `open_app_data_dir`, `open_log_dir` | — | Settings → Privacy / Debug buttons | M5 | Missing | — |
 | F17 | Clear local data | — | — | Settings → Privacy | M5 | Missing | — |
-| F23 | Update checks locked by admin/managed config | `is_update_checks_locked` in `H/src-tauri/src/commands/mod.rs:27` | managed setting disables the toggle | Honour a managed `UpdateChecksDisabled` default (`defaults write` / MDM profile) | M7 | Missing | — |
 | F18 | Homebrew cask | README | community cask | Cask draft in repo | M7 | Missing | — |
 | F19 | Portable mode | `H/src-tauri/src/portable.rs` | Windows only | — | — | N/A | Windows only |
 | F20 | Keyboard implementation choice (Tauri vs handy-keys) | `S.keyboard_implementation` | two backends | One native backend with Carbon fallback | — | N/A | Implementation detail, no user-facing need |
 | F21 | Experimental toggle / lazy stream close | `S.experimental_enabled`, `S.lazy_stream_close` | — | Covered by always-on mic (A11) | M4 | Missing | — |
 | F22 | Windows / Linux builds | — | Tauri | — | — | N/A | Utter is Mac-only by design |
+| F23 | Update checks locked by admin/managed config | `is_update_checks_locked` in `H/src-tauri/src/commands/mod.rs:27` | managed setting disables the toggle | Honour a managed `UpdateChecksDisabled` default (`defaults write` / MDM profile) | M7 | Missing | — |
 
 ## G. G8 check: what Handy already has (recorded in M0)
 
