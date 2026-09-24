@@ -29,8 +29,15 @@ public enum TypingInserter {
             let units = Array(String(character).utf16)
             if current.count + units.count > maxUnitsPerEvent { flush() }
             if units.count > maxUnitsPerEvent {
-                // A single giant grapheme (rare emoji sequences): send it alone.
-                result.append(.text(units))
+                // A grapheme longer than one event (long emoji ZWJ sequences): split
+                // it on Unicode-scalar boundaries so no surrogate pair is broken.
+                flush()
+                for scalar in String(character).unicodeScalars {
+                    let scalarUnits = Array(String(scalar).utf16)
+                    if current.count + scalarUnits.count > maxUnitsPerEvent { flush() }
+                    current.append(contentsOf: scalarUnits)
+                }
+                flush()
             } else {
                 current.append(contentsOf: units)
             }
@@ -43,6 +50,10 @@ public enum TypingInserter {
     @MainActor
     public static func type(_ text: String) async -> String? {
         guard let source = CGEventSource(stateID: .combinedSessionState) else { return "Could not create keyboard events." }
+        // Keys the user is still releasing must not merge with the typed text.
+        source.setLocalEventsFilterDuringSuppressionState([.permitLocalMouseEvents, .permitSystemDefinedEvents],
+                                                          state: .eventSuppressionStateSuppressionInterval)
+        source.localEventsSuppressionInterval = 0.05
         for piece in pieces(for: text) {
             switch piece {
             case .newline:

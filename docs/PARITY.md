@@ -18,7 +18,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | A5 | Default shortcut `⌥ Space` on macOS | `H/src-tauri/src/settings.rs:862` | — | Same default | M1 | Built (`Shortcut.optionSpace`) | — |
 | A6 | Cancel shortcut (Esc) while recording | `S.bindings["cancel"]` | registered only while recording | Same, swallowed only while recording | M4 | Missing | — |
 | A7 | Separate "transcribe with post-processing" shortcut | `S.bindings["transcribe_with_post_process"]` | second binding | Second binding that forces the selected LLM mode | M5 | Missing | — |
-| A8 | Secure-input shortcut fallback + tray warning | `H/src-tauri/src/secure_input.rs` | polls `IsSecureEventInputEnabled`, shadow-registers Carbon hotkeys | Same idea, own code (ADR-005) | M2 | Built (Carbon fallback while secure input is sustained; `SecureInputTests`) | Show culprit app name in overlay |
+| A8 | Secure-input shortcut fallback + tray warning | `H/src-tauri/src/secure_input.rs` | polls `IsSecureEventInputEnabled`, shadow-registers Carbon hotkeys | Same idea, own code (ADR-005) | M2 | Built (Carbon fallback while secure input is sustained; typing stays blocked, text goes to the clipboard with a notice; `WatchdogPolicy`/`SecureInputFallback`/`globalSecureInputBlocksEveryMethod` tests; live check pending) | Show culprit app name in overlay |
 | A9 | Audio feedback sounds (start/stop), themes, custom, volume | `S.audio_feedback`, `S.sound_theme`, `S.audio_feedback_volume`, `H/src-tauri/src/audio_feedback.rs` | bundled WAVs | Own sounds (original, generated), `NSSound`/AVAudioPlayer | M4 | Missing | — |
 | A10 | Mute system output while recording | `S.mute_while_recording` | — | Core Audio default-output mute + restore | M4 | Missing | — |
 | A11 | Always-on microphone | `S.always_on_microphone` | stream kept open | "Keep microphone warm" option (ADR-004) | M4 | Missing | Measure latency difference |
@@ -31,7 +31,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | A18 | Live streaming transcription in overlay | `S.overlay_style = Live`, `StreamTextEvent` in `managers/transcription.rs` | transcribe-cpp streaming sessions | transcribe-cpp `Session::stream` for streaming-capable models | M4 | Missing | — |
 | A19 | Language selection + auto-detect | `S.selected_language` | per-model languages | Same | M5 | Missing | — |
 | A20 | Translate to English (Whisper) | `S.translate_to_english` | Whisper translate task | Same (`Task::Translate`) | M5 | Missing | — |
-| A21 | Short / silent recordings ignored | `managers/audio.rs` VAD policy | — | < 0.3 s or silence → nothing | M4 | Built (Rust `skip_reason` + `tooShortAndSilentAreSkipped`) | — |
+| A21 | Short / silent recordings ignored | `managers/audio.rs` VAD policy | — | < 0.3 s or silence → nothing | M1 | Built (Rust `skip_reason` + `tooShortAndSilentAreSkipped`) | — |
 | A22 | Play test sound (preview feedback sound on the chosen output device) | `play_test_sound` in `H/src-tauri/src/commands/audio.rs:295` | — | "Play" button next to sound picker | M4 | Missing | — |
 | A23 | Reset a shortcut to its default | `reset_binding` in `H/src-tauri/src/shortcut/mod.rs:226` | — | "Reset to ⌥Space" button | M4 | Missing | — |
 
@@ -46,7 +46,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | B5 | Receipt-based "reliable paste" | `H/src-tauri/src/paste_tx/macos.rs` (debug-gated, `clipboard.rs:806`) | pasteboard promise read receipt | Promise receipt on by default | M2 | Built (promise receipt on by default; `pasteRestoresClipboardAfterTheTargetReadsIt`) | On by default |
 | B6 | Auto-submit after paste (Enter / Ctrl+Enter / ⌘Enter) | `S.auto_submit`, `S.auto_submit_key` | sends key | Same | M2 | Built (`autoSubmit`; `autoSubmitFiresOnceAfterInsertion`) | Per-app setting |
 | B7 | Append trailing space | `S.append_trailing_space` | — | Same | M2 | Built (`appendTrailingSpace`; `trailingSpaceOnlyWhenEnabledAndNeeded`) | — |
-| B8 | Paste delays before/after | `S.paste_delay_ms`, `S.paste_delay_after_ms` | — | Same, per-app override | M2 | Built (`pasteDelayMs`) | — |
+| B8 | Paste delays before/after | `S.paste_delay_ms`, `S.paste_delay_after_ms` | — | Same, per-app override | M2 | Built, partial (before/after delays with `pasteDelaysAreHonouredInOrder`; per-app delay override not yet) | — |
 | B9 | Secure field → no insertion | `H/src-tauri/src/secure_input.rs` | warns in tray | `IsSecureEventInputEnabled` + AX `AXSecureTextField` role check → skip, overlay notice | M2 | Built (global secure input + AX secure-field role; `passwordFieldBlocksEveryStrategy`) | AX role check catches secure fields even without global secure input |
 | B10 | Per-app insertion strategy table | — (Handy has one global method) | — | Bundle-ID table, user-overridable | M2 | Built (`AppInsertionTable` + overrides; `InsertionStrategyTableTests`) | **Better** (Handy has no per-app table) |
 | B11 | Linux typing tools (wtype, xdotool, …) | `S.typing_tool` | — | — | — | N/A | Linux only |

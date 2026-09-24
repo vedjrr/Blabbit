@@ -20,6 +20,8 @@ public final class DictationController {
     public var onStateChange: ((State) -> Void)?
     public private(set) var modelName = ModelLocation.defaultModelName
     public private(set) var lastMessage: String?
+    /// Shown while secure input is sustained (kept apart from `lastMessage`).
+    public private(set) var secureInputNotice: String?
     /// Set when the background load completes; never queried from Rust on main.
     public private(set) var modelLoaded = false
 
@@ -36,7 +38,7 @@ public final class DictationController {
     private var micProblem: String?
     /// Watches a hotkey-driven recording for a missed key-up (see `startWatchdog`).
     private var watchdog: Timer?
-    private var recordingFromHotkey = false
+    private var recordingSource: RecordingSource = .tap
     /// Hard cap so a lost key-up can never leave the microphone on indefinitely.
     public static let maxRecordingSeconds: TimeInterval = 10 * 60
 
@@ -63,8 +65,8 @@ public final class DictationController {
             Task { @MainActor in self?.released(timing) }
         }
         hotkey.onSecureInputChange = { [weak self] sustained in
-            self?.lastMessage = sustained
-                ? "Secure input is on (a password field, or Terminal's Secure Keyboard Entry), so Utter won't type until it's off."
+            self?.secureInputNotice = sustained
+                ? "Secure input is on (a password field, or Terminal's Secure Keyboard Entry), so Utter won't type until it's off. Dictation still works: text goes to the clipboard."
                 : nil
             self?.onStateChange?(self?.state ?? .ready)
         }
@@ -138,8 +140,7 @@ public final class DictationController {
         press = timing
         recordStartedNs = 0
         state = .recording
-        recordingFromHotkey = !startedFromMenu
-        startedFromMenu = false
+        recordingSource = timing.source
         startWatchdog()
         let recorder = self.recorder
         audioQueue.async {
@@ -160,8 +161,6 @@ public final class DictationController {
         }
     }
 
-    private var startedFromMenu = false
-
     private static let micDeniedMessage = "Utter needs microphone access. Allow it in System Settings → Privacy & Security → Microphone."
 
     /// A denied permission looks like "no input device" to AVAudioEngine; say which it is.
@@ -179,31 +178,26 @@ public final class DictationController {
         stopWatchdog()
         let started = Date()
         let keyCode = CGKeyCode(hotkey.shortcut.keyCode)
-        let fromHotkey = recordingFromHotkey
+        let source = recordingSource
         var keyUpChecks = 0
-        watchdog = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.state == .recording else { return }
-                var reason: String?
-                if Date().timeIntervalSince(started) >= Self.maxRecordingSeconds {
-                    reason = "max_length"
+                guard let reason = WatchdogPolicy.releaseReason(
+                    elapsed: Date().timeIntervalSince(started), maxSeconds: Self.maxRecordingSeconds, source: source,
+                    keyDown: CGEventSource.keyState(.combinedSessionState, key: keyCode),
+                    secureInput: PasteInserter.secureInputActive, keyUpChecks: &keyUpChecks)
+                else { return }
+                if reason == "max_length" {
                     self.lastMessage = "Recording stopped after \(Int(Self.maxRecordingSeconds / 60)) minutes."
-                } else if fromHotkey {
-                    if PasteInserter.secureInputActive {
-                        reason = "secure_input"
-                    } else if !CGEventSource.keyState(.combinedSessionState, key: keyCode) {
-                        keyUpChecks += 1
-                        if keyUpChecks >= 2 { reason = "key_not_down" }
-                    } else {
-                        keyUpChecks = 0
-                    }
                 }
-                guard let reason else { return }
-                Log.error("watchdog released recording reason=\(reason)")
+                Log.error("watchdog released recording reason=\(reason) source=\(source)")
                 self.hotkey.forceRelease()
-                self.released(KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0))
+                self.released(KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0, source: source))
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        watchdog = timer
     }
 
     private func stopWatchdog() {
@@ -224,13 +218,8 @@ public final class DictationController {
 
     /// Menu-driven start/stop (same path as the hotkey).
     public func toggleFromMenu() {
-        let now = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0)
-        if state == .recording {
-            released(now)
-        } else {
-            startedFromMenu = true
-            pressed(now)
-        }
+        let now = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0, source: .menu)
+        if state == .recording { released(now) } else { pressed(now) }
     }
 
     private func finish(_ recording: Recording, press: KeyTiming, release: KeyTiming) async {
@@ -276,10 +265,20 @@ public final class DictationController {
         case .copiedToClipboard, .handledByScript:
             state = .ready
         case .blockedBySecureInput:
-            lastMessage = "A password field is active, so Utter did not type anything."
+            let action = SecureInputFallback.action(secureFieldFocused: report.secureFieldFocused)
+            if action.copyToClipboard { Self.putOnClipboard(result.text) }
+            lastMessage = action.message
             state = .ready
-        case .failed(let message): fail(message)
+        case .failed(let message):
+            // Keep the words: leave them on the clipboard rather than lose them.
+            Self.putOnClipboard(result.text)
+            fail("\(SecureInputFallback.failedMessagePrefix) (\(message))")
         }
+    }
+
+    private static func putOnClipboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     /// One line per dictation with every stage, so latency can be read from the log.

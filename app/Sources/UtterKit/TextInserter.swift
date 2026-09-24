@@ -17,6 +17,9 @@ public struct InsertReport: Sendable {
 
     public var result: Result
     public var bundleID: String?
+    /// With `.blockedBySecureInput`: true if a password field was focused (text
+    /// must be dropped), false if only global secure input was on.
+    public var secureFieldFocused = false
     /// Each strategy tried, with the reason it was skipped or failed.
     public var attempts: [String] = []
     /// Timing of the paste attempt (if paste was used).
@@ -38,6 +41,7 @@ public final class TextInserter {
     private let focus: FocusProvider
     private let typer: Typer
     private let checkSecureInput: Bool
+    private let secureInputActive: @Sendable () -> Bool
     /// All Accessibility calls go here, never on the main thread (ADR-008).
     private let axQueue = DispatchQueue(label: "dev.utter.ax", qos: .userInitiated)
 
@@ -48,6 +52,7 @@ public final class TextInserter {
                 paste: PasteInserter = PasteInserter(),
                 keys: @escaping KeyPoster = TextInserter.postSubmitKey,
                 checkSecureInput: Bool = true,
+                secureInputActive: @escaping @Sendable () -> Bool = { PasteInserter.secureInputActive },
                 focus: @escaping FocusProvider = { AXFocusedElement.current() },
                 typer: @escaping Typer = { await TypingInserter.type($0) }) {
         self.table = table
@@ -55,6 +60,7 @@ public final class TextInserter {
         self.paste = paste
         self.keys = keys
         self.checkSecureInput = checkSecureInput
+        self.secureInputActive = secureInputActive
         self.focus = focus
         self.typer = typer
     }
@@ -71,7 +77,8 @@ public final class TextInserter {
         switch report.result {
         case .inserted, .unverified, .handledByScript:
             if settings.copyToClipboard { paste.board.clearContents(); paste.board.setString(rawText, forType: .string) }
-            if settings.autoSubmit != .off {
+            // Never submit something we couldn't verify, or text a script consumed.
+            if settings.autoSubmit != .off, case .inserted = report.result {
                 keys(settings.autoSubmit)
                 report.attempts.append("auto-submit: \(settings.autoSubmit.rawValue)")
             }
@@ -83,7 +90,17 @@ public final class TextInserter {
 
     private func insertWithoutExtras(_ text: String, bundleID: String?) async -> InsertReport {
         var report = InsertReport(result: .failed("No insertion method worked for this app."), bundleID: bundleID)
-        if checkSecureInput && PasteInserter.secureInputActive {
+        // Secure input blocks every method, including clipboard-only and scripts:
+        // Utter never outputs dictated text while a password may be being typed.
+        let focus = self.focus
+        let secureField = await onAXQueue { focus().map(AccessibilityInserter.isSecure) ?? false }
+        if secureField {
+            report.result = .blockedBySecureInput
+            report.secureFieldFocused = true
+            report.attempts.append("focused field is a password field")
+            return report
+        }
+        if checkSecureInput && secureInputActive() {
             report.result = .blockedBySecureInput
             report.attempts.append("secure event input is on")
             return report
@@ -99,13 +116,6 @@ public final class TextInserter {
             return report
         case .automatic:
             break
-        }
-        let focus = self.focus
-        let secureField = await onAXQueue { focus().map(AccessibilityInserter.isSecure) ?? false }
-        if secureField {
-            report.result = .blockedBySecureInput
-            report.attempts.append("focused field is a password field")
-            return report
         }
 
         for strategy in table.chain(for: bundleID) {
@@ -130,6 +140,7 @@ public final class TextInserter {
                 }
             case .paste:
                 paste.pasteDelay = .milliseconds(settings.pasteDelayMs)
+                paste.restoreDelay = .milliseconds(settings.pasteDelayAfterMs)
                 let outcome = await paste.insert(text)
                 report.paste = paste.lastTiming
                 switch outcome {
@@ -162,30 +173,47 @@ public final class TextInserter {
         let timeout = scriptTimeout
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                let exited = DispatchSemaphore(value: 0)
-                process.terminationHandler = { _ in exited.signal() }
-                process.executableURL = URL(fileURLWithPath: path)
-                let input = Pipe()
-                process.standardInput = input
-                process.standardOutput = FileHandle.nullDevice
-                process.standardError = FileHandle.nullDevice
-                do { try process.run() } catch {
-                    continuation.resume(returning: .failed("The insertion script could not be started."))
-                    return
-                }
-                input.fileHandleForWriting.write(Data(text.utf8))
-                try? input.fileHandleForWriting.close()
-                if exited.wait(timeout: .now() + timeout) == .timedOut {
-                    process.terminate()
-                    continuation.resume(returning: .failed("The insertion script took longer than \(Int(timeout.rounded(.up))) second\(Int(timeout.rounded(.up)) == 1 ? "" : "s") and was stopped."))
-                } else if process.terminationStatus != 0 {
-                    continuation.resume(returning: .failed("The insertion script failed (exit code \(process.terminationStatus))."))
-                } else {
-                    continuation.resume(returning: .handledByScript)
-                }
+                continuation.resume(returning: Self.runScriptBlocking(path: path, text: text, timeout: timeout))
             }
         }
+    }
+
+    /// Blocking worker for `runScript`. A script that exits without reading
+    /// stdin, never reads it, or ignores SIGTERM can neither crash nor hang Utter.
+    nonisolated static func runScriptBlocking(path: String, text: String, timeout: TimeInterval) -> InsertReport.Result {
+        let process = Process()
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+        process.executableURL = URL(fileURLWithPath: path)
+        let input = Pipe()
+        // Writing to a pipe whose reader has gone must be an error, not SIGPIPE.
+        _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+        process.standardInput = input
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch {
+            return .failed("The insertion script could not be started.")
+        }
+        // Drop our copy of the read end so the write fails (EPIPE) once the script exits.
+        try? input.fileHandleForReading.close()
+        let writer = input.fileHandleForWriting
+        DispatchQueue(label: "dev.utter.script-stdin").async {
+            try? writer.write(contentsOf: Data(text.utf8)) // EPIPE if the script didn't read: fine
+            try? writer.close()
+        }
+        if exited.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            if exited.wait(timeout: .now() + 1) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                _ = exited.wait(timeout: .now() + 1)
+            }
+            let seconds = Int(timeout.rounded(.up))
+            return .failed("The insertion script took longer than \(seconds) second\(seconds == 1 ? "" : "s") and was stopped.")
+        }
+        if process.terminationStatus != 0 {
+            return .failed("The insertion script failed (exit code \(process.terminationStatus)).")
+        }
+        return .handledByScript
     }
 
     /// Enter / ⌃Enter / ⌘Enter after insertion (chat apps, terminals).

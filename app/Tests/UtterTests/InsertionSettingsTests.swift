@@ -109,4 +109,30 @@ import Testing
         #expect(report.result == .failed("The insertion script took longer than 1 second and was stopped."))
         #expect(Date().timeIntervalSince(started) < 3)
     }
+
+    func script(_ body: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("utter-script-\(UUID().uuidString).sh")
+        try "#!/bin/sh\n\(body)\n".write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        return url
+    }
+
+    @Test func scriptThatIgnoresStdinCannotCrashOrHangUtter() throws {
+        let quits = try script("exit 0")
+        defer { try? FileManager.default.removeItem(at: quits) }
+        let big = String(repeating: "dictated text ", count: 20_000) // ~280 KB, far above the pipe buffer
+        #expect(TextInserter.runScriptBlocking(path: quits.path, text: big, timeout: 5) == .handledByScript)
+        let neverReads = try script("sleep 0.3; exit 0")
+        defer { try? FileManager.default.removeItem(at: neverReads) }
+        #expect(TextInserter.runScriptBlocking(path: neverReads.path, text: big, timeout: 5) == .handledByScript)
+    }
+
+    @Test func scriptIgnoringSigtermIsKilled() throws {
+        let stubborn = try script("trap '' TERM\nwhile true; do sleep 0.05; done")
+        defer { try? FileManager.default.removeItem(at: stubborn) }
+        let started = Date()
+        let result = TextInserter.runScriptBlocking(path: stubborn.path, text: "x", timeout: 0.3)
+        #expect(result == .failed("The insertion script took longer than 1 second and was stopped."))
+        #expect(Date().timeIntervalSince(started) < 3)
+    }
 }

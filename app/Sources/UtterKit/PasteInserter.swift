@@ -63,6 +63,9 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     public var board: NSPasteboard { pasteboard }
     /// Wait after publishing the text and before sending ⌘V (setting "paste delay").
     public var pasteDelay: Duration = .zero
+    /// Minimum wait after ⌘V before the clipboard may be restored (setting
+    /// "delay after paste", for apps that read the clipboard late).
+    public var restoreDelay: Duration = .zero
 
     public init(pasteboard: NSPasteboard = .general, reader: PasteboardReading? = nil, checkSecureInput: Bool = true,
                 sendPaste: @escaping SendPaste = PasteInserter.postCommandV) {
@@ -72,7 +75,8 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
         self.sendPaste = sendPaste
     }
 
-    public static var secureInputActive: Bool { IsSecureEventInputEnabled() }
+    /// Thread-safe Carbon query; callable from any thread.
+    public nonisolated static var secureInputActive: Bool { IsSecureEventInputEnabled() }
 
     /// The insertion in flight; new insertions wait for it so two dictations
     /// never share the pasteboard promise or restore each other's snapshot.
@@ -133,6 +137,10 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
         lastTiming.pasteSentNs = MonoClock.nowNs()
 
         await waitForReadOrTimeout()
+        if restoreDelay > .zero, let sent = lastTiming.pasteSentNs {
+            let elapsed = Duration.nanoseconds(Int64(MonoClock.nowNs() - sent))
+            if elapsed < restoreDelay { try? await Task.sleep(for: restoreDelay - elapsed) }
+        }
         let receipt = receiptCount > 0
         restoreIfUnchanged(snapshot, ourChangeCount)
         return .pasted(receipt: receipt)

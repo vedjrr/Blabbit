@@ -28,7 +28,18 @@ struct AXIntegrationTests {
         let out = Pipe()
         process.standardOutput = out
         try process.run()
-        let line = String(decoding: out.fileHandleForReading.availableData, as: UTF8.self)
+        // Bounded wait for "READY": a hung host must not hang the test run.
+        nonisolated(unsafe) var line = ""
+        let ready = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            line = String(decoding: out.fileHandleForReading.availableData, as: UTF8.self)
+            ready.signal()
+        }
+        if ready.wait(timeout: .now() + 10) == .timedOut {
+            process.terminate()
+            Issue.record("host did not report READY within 10 s")
+            throw CancellationError()
+        }
         try #require(line.hasPrefix("READY"), "host did not start: \(line)")
         return process
     }
@@ -76,5 +87,21 @@ struct AXIntegrationTests {
         let element = try await focused(in: host)
         #expect(AccessibilityInserter.isSecure(element), "role=\(element.role ?? "nil") subrole=\(element.subrole ?? "nil")")
         #expect(AccessibilityInserter.insert("hunter2", into: element) == .secureField)
+    }
+
+    /// Production path: the system-wide focused element (`AXFocusedElement.current()`).
+    /// Writes only after confirming focus belongs to the host, never to a real app.
+    @Test func insertsThroughSystemWideFocus() async throws {
+        let host = try launchHost(["--frontmost"])
+        defer { host.terminate() }
+        var element: AXFocusedElement?
+        for _ in 0..<60 {
+            if let e = AXFocusedElement.current(), e.pid == host.processIdentifier { element = e; break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let focused = try #require(element, "the host never became the focused app; nothing was written")
+        #expect(focused.role == "AXTextArea")
+        #expect(AccessibilityInserter.insert(", dictated", into: focused) == .inserted)
+        #expect(focused.value == "Hello, dictated world")
     }
 }

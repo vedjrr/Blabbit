@@ -4,7 +4,8 @@
 import AppKit
 
 let app = NSApplication.shared
-app.setActivationPolicy(.accessory)
+// Regular policy so the host can become frontmost for system-wide focus tests.
+app.setActivationPolicy(CommandLine.arguments.contains("--frontmost") ? .regular : .accessory)
 let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
 let secure = CommandLine.arguments.contains("--secure")
 if secure {

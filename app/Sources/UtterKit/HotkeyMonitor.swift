@@ -16,6 +16,7 @@ public enum HotkeyError: Error, Equatable {
 public struct KeyTiming: Sendable {
     public var callbackNs: UInt64
     public var eventTimestamp: UInt64
+    public var source: RecordingSource = .tap
 }
 
 public final class HotkeyMonitor: @unchecked Sendable {
@@ -42,7 +43,11 @@ public final class HotkeyMonitor: @unchecked Sendable {
 
     public var shortcut: Shortcut {
         get { matcher.withLock { $0.shortcut } }
-        set { matcher.withLock { $0.shortcut = newValue } }
+        set {
+            matcher.withLock { $0.shortcut = newValue }
+            // A registered Carbon fallback must follow the new shortcut.
+            DispatchQueue.main.async { if self.carbon != nil { self.registerCarbon() } }
+        }
     }
 
     public var isRunning: Bool { tap != nil }
@@ -99,19 +104,18 @@ public final class HotkeyMonitor: @unchecked Sendable {
     @MainActor
     private func startSecureInputWatch() {
         secureTimer?.invalidate()
-        secureTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkSecureInput() }
         }
+        RunLoop.main.add(timer, forMode: .common) // keep polling while a menu is open
+        secureTimer = timer
     }
 
     @MainActor
     private func checkSecureInput() {
         guard secureState.observe(enabled: PasteInserter.secureInputActive, at: Date()) else { return }
         if secureState.sustained {
-            let shortcut = self.shortcut
-            carbon = CarbonHotkey(shortcut: shortcut, onPress: { [weak self] in self?.carbonEvent(down: true) },
-                                  onRelease: { [weak self] in self?.carbonEvent(down: false) })
-            Log.info("secure input sustained; carbon fallback \(carbon == nil ? "FAILED to register" : "registered") for \(shortcut.displayString)")
+            registerCarbon()
         } else {
             carbon = nil
             Log.info("secure input off; carbon fallback removed")
@@ -119,10 +123,18 @@ public final class HotkeyMonitor: @unchecked Sendable {
         onSecureInputChange?(secureState.sustained)
     }
 
+    private func registerCarbon() {
+        let shortcut = self.shortcut
+        carbon = nil
+        carbon = CarbonHotkey(shortcut: shortcut, onPress: { [weak self] in self?.carbonEvent(down: true) },
+                              onRelease: { [weak self] in self?.carbonEvent(down: false) })
+        Log.info("secure input sustained; carbon fallback \(carbon == nil ? "could not be registered (modifier-only shortcuts can't use it)" : "registered") for \(shortcut.displayString)")
+    }
+
     /// Carbon events go through the same matcher so tap + Carbon can't double-fire.
     private func carbonEvent(down: Bool) {
         let shortcut = self.shortcut
-        let timing = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0)
+        let timing = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0, source: .carbon)
         let action = matcher.withLock {
             $0.handle(kind: down ? .keyDown : .keyUp, keyCode: shortcut.keyCode,
                       flags: CGEventFlags(rawValue: shortcut.modifiers), isRepeat: false)

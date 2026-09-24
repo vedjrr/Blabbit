@@ -12,7 +12,7 @@ Iteration: 3
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M2 gate: critic review. Then M3 (model manager: registry, resumable downloader with SHA-256, switching with unload + RSS, adapters/verification for every G3 model).
+- M2 gate: critic re-review after fixing review #1 (4 BLOCKERs). Then merge branch `m3` (downloader + catalog + all 8 G3 models verified, already built in isolation) and continue M3 (FFI + Model Manager window).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -71,11 +71,18 @@ Iteration: 3
   - Unicode typing fallback: ≤ 20 UTF-16 units per event on grapheme boundaries, newlines as Return.
   - Secure input: global check + AX `AXSecureTextField` check block every strategy. Sustained secure input → Carbon hotkey fallback (PARITY A8) and a menu notice.
   - Insertion settings (PARITY B2/B3/B6/B7/B8): clipboard-only, external script (stdin, time limit), copy-to-clipboard, auto-submit Enter/⌃Enter/⌘Enter, trailing space, paste delay. Decoding tolerates missing keys.
-- [M2] Tests: Swift 66 in 14 suites; Rust 14 + 3. The real-AppKit AX integration tests (`AXIntegrationTests`, helper `UtterAXHost` with a real NSTextView/NSSecureTextField) are **skipped while the screen is locked** (`CGSSessionScreenIsLocked=1`; the window server then exposes no window contents to AX). Three attempts confirmed this, then I changed approach to an explicit skip. They run automatically in an unlocked session.
+- [M2] Critic review #1 → FAIL (4 BLOCKERs), all fixed:
+  (1) An AX write that errors or applies late can't double-insert: re-read, 150 ms settle, re-read, fall through only if readable and unchanged; fakes `failButApply`/`applyOnSecondRead`.
+  (2) The external script can't crash or hang Utter: `F_SETNOSIGPIPE`, our read end closed, `write(contentsOf:)` on its own queue, SIGTERM → SIGKILL; tests with a ~280 KB write to a script that exits immediately and a TERM-ignoring script.
+  (3) The Carbon fallback is coherent: the watchdog only cuts *tap* recordings for secure input; under secure input the text goes to the clipboard with a notice (dropped if a password field is focused).
+  (4) Secure input has automated evidence: an injected probe, and every method is blocked with the clipboard untouched (parameterised test).
+  MAJORs/minors fixed: unknown-app AX also settles; Carbon double-free on failed init; hotkey ID check; re-register on shortcut change; timers in common modes; auto-submit skipped for unverified/script; B8 after-delay + ordering test; oversize graphemes split on scalar boundaries; local-key suppression while typing; the secure notice no longer clobbers other messages; failed insertion leaves the text on the clipboard; AX host startup timeout; production `current()` path test with a pid safety check. Deferred: the G2 "overlay notice" is menu text until the overlay exists (M4).
+- [M2] Tests: Swift 79 in 15 suites (3 AX integration tests skipped: screen locked); Rust 14 + 3. The real-AppKit AX integration tests (`AXIntegrationTests`, helper `UtterAXHost` with a real NSTextView/NSSecureTextField) are **skipped while the screen is locked** (`CGSSessionScreenIsLocked=1`; the window server then exposes no window contents to AX). Three attempts confirmed this, then I changed approach to an explicit skip. They run automatically in an unlocked session.
 - [M2] `docs/TEST_CHECKLIST.md`: an expected strategy per app, how to read the `dictation` log line, a secure-keyboard-entry check, and a verified `defaults write` override recipe. PARITY: 15 rows now **Built**.
 
 ## Blocked on human
-- **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps; with the screen unlocked, `make test` also runs the real-AppKit AX tests.
+- **Required once (takes 2 minutes, no voice needed):** with the Mac unlocked, run `cd "/Users/ved/Documents 2/utter-kit" && make test`. Three real-Accessibility tests (`AXIntegrationTests`) only run on an unlocked screen, and they are the only proof the AX layer works against real AppKit controls. A test window will flash briefly.
+- **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.
 - **Deferred to the end (by your choice): live dictation into TextEdit** (needs your voice). Utter (build 01a38e5) is **already running**: its log shows the shortcut active (Accessibility is granted) and the microphone graph ready. If it isn't running: `cd "/Users/ved/Documents 2/utter-kit" && make build && open build/Utter.app`. A waveform icon appears in the menu bar.
   2. Grant **Accessibility**: System Settings → Privacy & Security → Accessibility → enable **Utter** (use the + button and pick `build/Utter.app` if it is not listed). Grant **Microphone** when prompted (or System Settings → Privacy & Security → Microphone → Utter).
   3. Click the Utter menu bar icon → **Retry Shortcut** (or quit and reopen Utter). The menu should say "Ready", with no "Allow Accessibility Access…" item.

@@ -36,6 +36,11 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         let status = NSMenuItem(title: statusLine, action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)
+        if let notice = controller.secureInputNotice {
+            let item = NSMenuItem(title: notice, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
         if let message = controller.lastMessage, controller.state != .failed(message) {
             let note = NSMenuItem(title: message, action: nil, keyEquivalent: "")
             note.isEnabled = false

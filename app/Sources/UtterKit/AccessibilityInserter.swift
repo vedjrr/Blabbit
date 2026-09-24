@@ -36,8 +36,15 @@ public enum AccessibilityInserter {
         element.subrole == "AXSecureTextField" || element.role == "AXSecureTextField"
     }
 
-    /// Pure decision + verification logic.
-    public static func insert(_ text: String, into element: FocusedTextElement?) -> AXInsertResult {
+    /// Some AX servers (busy native apps, Java/Qt/Electron) apply a write after
+    /// the call returns, or after reporting a timeout. Wait this long before
+    /// concluding a write had no effect.
+    public static let settleDelay: TimeInterval = 0.15
+
+    /// Pure decision + verification logic. `settle` runs between the two
+    /// read-backs (a real sleep on the AX queue in production; never main).
+    public static func insert(_ text: String, into element: FocusedTextElement?,
+                              settle: () -> Void = { Thread.sleep(forTimeInterval: settleDelay) }) -> AXInsertResult {
         guard let element else { return .notApplicable("no focused element") }
         if isSecure(element) { return .secureField }
         guard let role = element.role, textRoles.contains(role) else {
@@ -48,12 +55,24 @@ public enum AccessibilityInserter {
         // no-op from success, so don't use AX at all.
         guard let before = element.value else { return .notApplicable("field value is not readable") }
         let selection = element.selectedRange
-        guard element.setSelectedText(text) else { return .notApplicable("AX write failed") }
-        guard let after = element.value else { return .unverified }
-        if after == before { return .noEffect }
         let expectedLength = (before as NSString).length - (selection?.length ?? 0) + (text as NSString).length
-        if (after as NSString).length == expectedLength, after.contains(text) { return .inserted }
-        return .unverified
+        // Even an AX error (e.g. a messaging timeout) may still be applied later,
+        // so every path reads back before deciding whether paste may run.
+        let writeSucceeded = element.setSelectedText(text)
+
+        /// nil = unchanged so far.
+        func judge(_ after: String?) -> AXInsertResult? {
+            guard let after else { return .unverified } // can't see the field any more: never retry
+            if after == before { return nil }
+            if (after as NSString).length == expectedLength, after.contains(text) { return .inserted }
+            return .unverified
+        }
+        if let result = judge(element.value) { return result }
+        settle()
+        if let result = judge(element.value) { return result }
+        // Readable and still unchanged after settling: nothing was applied, so the
+        // next strategy may run.
+        return writeSucceeded ? .noEffect : .notApplicable("AX write failed and the field did not change")
     }
 }
 
@@ -62,19 +81,6 @@ public struct AXFocusedElement: FocusedTextElement {
     let element: AXUIElement
     /// Short timeout so a hung app can't stall insertion (default is ~6 s).
     public static let messagingTimeout: Float = 0.25
-
-    /// The focused element of one app (works even when that app is not frontmost).
-    public static func focused(inApp pid: pid_t) -> AXFocusedElement? {
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, messagingTimeout)
-        var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID()
-        else { return nil }
-        let element = focused as! AXUIElement
-        AXUIElementSetMessagingTimeout(element, messagingTimeout)
-        return AXFocusedElement(element: element)
-    }
 
     /// The system-wide focused UI element, or nil.
     public static func current() -> AXFocusedElement? {

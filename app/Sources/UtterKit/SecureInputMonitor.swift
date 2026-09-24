@@ -30,6 +30,7 @@ public struct SecureInputState: Sendable, Equatable {
 /// Carbon global hotkey. Not affected by secure input, but can't express
 /// modifier-only shortcuts, so it is only a fallback.
 final class CarbonHotkey {
+    static let signature = OSType(0x5554_5452) // 'UTTR'
     private var ref: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private let onPress: () -> Void
@@ -46,15 +47,22 @@ final class CarbonHotkey {
         let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
             guard let event, let context else { return OSStatus(eventNotHandledErr) }
             let hotkey = Unmanaged<CarbonHotkey>.fromOpaque(context).takeUnretainedValue()
+            var id = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &id)
+            guard id.signature == CarbonHotkey.signature else { return OSStatus(eventNotHandledErr) }
             if GetEventKind(event) == UInt32(kEventHotKeyPressed) { hotkey.onPress() } else { hotkey.onRelease() }
             return noErr
         }, types.count, &types, context, &handler)
         guard status == noErr else { return nil }
-        let id = EventHotKeyID(signature: OSType(0x5554_5452), id: 1) // 'UTTR'
+        let id = EventHotKeyID(signature: Self.signature, id: 1)
         let registered = RegisterEventHotKey(UInt32(shortcut.keyCode), Self.carbonModifiers(shortcut.modifiers), id,
                                              GetApplicationEventTarget(), 0, &ref)
         guard registered == noErr else {
+            // deinit still runs for a failed init: clear refs so nothing is freed twice.
             if let handler { RemoveEventHandler(handler) }
+            handler = nil
+            ref = nil
             return nil
         }
     }

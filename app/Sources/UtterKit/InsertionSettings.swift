@@ -22,6 +22,8 @@ public struct InsertionSettings: Codable, Equatable, Sendable {
     public var appendTrailingSpace = false
     /// Wait before sending ⌘V (some apps need focus to settle).
     public var pasteDelayMs = 0
+    /// Minimum wait after pasting before the clipboard is restored.
+    public var pasteDelayAfterMs = 0
     public var externalScriptPath: String?
 
     public init() {}
@@ -35,6 +37,7 @@ public struct InsertionSettings: Codable, Equatable, Sendable {
         autoSubmit = try c.decodeIfPresent(AutoSubmit.self, forKey: .autoSubmit) ?? d.autoSubmit
         appendTrailingSpace = try c.decodeIfPresent(Bool.self, forKey: .appendTrailingSpace) ?? d.appendTrailingSpace
         pasteDelayMs = try c.decodeIfPresent(Int.self, forKey: .pasteDelayMs) ?? d.pasteDelayMs
+        pasteDelayAfterMs = try c.decodeIfPresent(Int.self, forKey: .pasteDelayAfterMs) ?? d.pasteDelayAfterMs
         externalScriptPath = try c.decodeIfPresent(String.self, forKey: .externalScriptPath)
     }
 

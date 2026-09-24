@@ -34,7 +34,7 @@ The expected strategy comes from the default per-app table (`app/Sources/UtterKi
 | Password field (any) | secure field | **must NOT insert** (`blockedBySecureInput`) | | | | |
 
 **Extra checks**
-- Terminal → Terminal menu → **Secure Keyboard Entry** on: ⌥Space should still start recording (Carbon fallback; the log shows `carbon fallback registered`), and nothing is typed while it's on.
+- Terminal → Terminal menu → **Secure Keyboard Entry** on, then switch to TextEdit: ⌥Space should still start recording (Carbon fallback; the log shows `carbon fallback registered`). Nothing is typed; the text lands on the clipboard and the menu says so (`result=blockedBySecureInput`). In a password field the text must be dropped, not copied.
 - Unplug or switch a Bluetooth mic mid-recording. There should be no crash, the log shows `device_changed=true`, and the part before the switch is transcribed.
 - A 5-minute recording.
 - A 0.2 s tap should do nothing (the log shows `skipped_TooShort`).

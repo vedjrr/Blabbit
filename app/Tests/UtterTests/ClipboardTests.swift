@@ -207,4 +207,26 @@ struct FakeReader: PasteboardReading {
         _ = await inserter.insert("next dictation")
         #expect(pb.string(forType: .string) == "next dictation")
     }
+
+    @Test func pasteDelaysAreHonouredInOrder() async {
+        let pb = makePasteboard()
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        pb.setString("SENTINEL", forType: .string)
+        var sentAt: UInt64 = 0
+        let inserter = PasteInserter(pasteboard: pb, checkSecureInput: false) {
+            sentAt = MonoClock.nowNs()
+            _ = pb.string(forType: .string)
+            return nil
+        }
+        inserter.quietPeriod = .milliseconds(10)
+        inserter.pasteDelay = .milliseconds(120)
+        inserter.restoreDelay = .milliseconds(250)
+        let started = MonoClock.nowNs()
+        _ = await inserter.insert("delayed")
+        let t = inserter.lastTiming
+        #expect(MonoClock.ms(from: started, to: sentAt) >= 120, "⌘V waited for the paste delay")
+        #expect(MonoClock.ms(from: t.pasteSentNs!, to: t.restoredNs!) >= 250, "restore waited for the after-delay")
+        #expect(pb.string(forType: .string) == "SENTINEL")
+    }
 }
