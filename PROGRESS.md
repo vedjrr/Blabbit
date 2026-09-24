@@ -1,4 +1,4 @@
-STATUS: IN_PROGRESS
+STATUS: WAITING_ON_HUMAN
 
 # Progress (loop state — Claude owns this file)
 
@@ -12,11 +12,11 @@ Iteration: 2
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M1: re-run critic on the fixes for its first M1 review (1 BLOCKER, 6 MAJOR). Then the human gate (see Blocked on human).
+- M1 human gate (see Blocked on human). When done, read the `dictation …` lines in `~/Library/Logs/Utter/utter.log` (check `dropped_frames=0`, `release_to_last_sample_end_ms`, `keydown_to_first_sample_ms`, `release_to_target_read_ms`), record them in `evidence/m1/`, mark M1 done, start M2.
 
 ## Milestones
 - [x] **M0 — Research & decisions.** Critic re-review: `VERDICT: PASS`, zero BLOCKERs (2026-09-24). Its 3 MAJOR and all minor findings fixed in 08f14b8 (bench fails loudly, `make models`, `make dmg` preflight, ONNX bench committed at `evidence/m0/onnxbench/`, CoreML EP measured, first-load cause marked unconfirmed).
-- [ ] M1 — Vertical slice
+- [ ] M1 — Vertical slice. Automated part done; critic re-review `VERDICT: PASS` (zero BLOCKERs). Its 4 MAJORs fixed in 01a38e5. **Waiting on the human TextEdit test.**
 
 ## Done (with evidence)
 - [M0] Handy cloned read-only to `/tmp/handy-ref` (v0.9.7-6-g8f9cf53). Component map → `docs/ARCHITECTURE.md` §1.
@@ -51,13 +51,18 @@ Iteration: 2
   (MAJOR) latency fields are split: keydown→record started / first sample / first callback, release→last sample, transcribed, paste sent, target read, restored.
   (MAJOR) early-reader receipt: quiet period raised to 400 ms (restore timing does not delay the text), front app and read count logged.
   (MINOR) ⌘V posted with local keyboard suppression; tap invalidated on stop; prepare runs on the audio queue; transcribe.cpp stderr noise routed to `log`; evidence files added.
-- [M1] Tests after fixes: Rust 14 unit + 3 real-model; Swift 29 in 5 suites (3/3 green runs).
+- [M1] Critic M1 review #2 → PASS. MAJORs fixed anyway (01a38e5):
+  - The ring drain copies outside the lock, so nothing allocates while the RT thread might wait.
+  - Clipboard is read only when macOS reports "always allow" (else it is left with the transcript as plain text; no per-dictation alerts). A partial/declined/oversize read is unreadable and never restored. The snapshot is read off the main thread.
+  - Recording watchdog: key not physically down ×2, or secure input → release; 10-min hard cap; the matcher is reset so Space is never left swallowed.
+  - Minors: mic-denied state persists, a failed start + release keeps the failure, device change mid-recording is reported, oversize IO buffers and resampler errors are counted/logged, ADR-008 rewritten.
+- [M1] Tests at 01a38e5: Rust 14 unit + 3 real-model; Swift 34 tests in 6 suites.
+- [M1] Evidence re-recorded at 01a38e5: `evidence/m1/real_model_tests.log` (5-min: 300000 ms audio, 14.8 s, 695/658 words, WER 0.299; status polls 2.7 M, worst 241 µs), `evidence/m1/whisper_prompt.log` (WER 0.032), `evidence/m1/app_launch_idle.log` (tap started, audio graph 48 kHz, `model_load load_ms=218 warmup_ms=44 load_count=1`, RSS 917 MB, CPU 0.1 %).
 - [M1] App launch after fixes (`evidence/m1/app_launch_idle.log`): tap started, `audio graph ready input_rate=48000 channels=1`, `pasteboard access_behavior=2`, `model_load … load_count=1`; idle RSS 835 MB, CPU 0.1 %.
 - [M1] App launch, first build (`evidence/m1/app_launch.log`): model loads in the background at launch, `load_count=1`; first launch of a new build `load_ms=7303` (the ~7 s outlier again: seen on every fresh build of the app or CLI), relaunch of the same build `load_ms=192 warmup_ms=57 total_ms=250`. Idle: RSS 922 MB, CPU 0.1 %.
 
 ## Blocked on human
-- **M1 gate: live dictation into TextEdit** (needs your permissions and your voice):
-  1. `cd "/Users/ved/Documents 2/utter-kit" && make build && open build/Utter.app`. A waveform icon appears in the menu bar.
+- **M1 gate: live dictation into TextEdit** (needs your permissions and your voice). Utter (build 01a38e5) is **already running**: its log shows the shortcut active (Accessibility is granted) and the microphone graph ready. If it isn't running: `cd "/Users/ved/Documents 2/utter-kit" && make build && open build/Utter.app`. A waveform icon appears in the menu bar.
   2. Grant **Accessibility**: System Settings → Privacy & Security → Accessibility → enable **Utter** (use the + button and pick `build/Utter.app` if it is not listed). Grant **Microphone** when prompted (or System Settings → Privacy & Security → Microphone → Utter).
   3. Click the Utter menu bar icon → **Retry Shortcut** (or quit and reopen Utter). The menu should say "Ready", with no "Allow Accessibility Access…" item.
   4. Open TextEdit, new document. Copy the word `SENTINEL` to the clipboard.
