@@ -33,14 +33,24 @@ let package = Package(
             path: "Sources/UtterCore",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .target(
+            name: "UtterKit",
+            dependencies: ["UtterCore"],
+            path: "Sources/UtterKit",
+            linkerSettings: [
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("ApplicationServices"),
+                .linkedFramework("Carbon"),
+            ]
+        ),
         .executableTarget(
             name: "Utter",
-            dependencies: ["UtterCore"],
+            dependencies: ["UtterKit"],
             path: "Sources/Utter"
         ),
         .testTarget(
             name: "UtterTests",
-            dependencies: ["UtterCore"],
+            dependencies: ["UtterCore", "UtterKit"],
             path: "Tests/UtterTests"
         ),
     ]
