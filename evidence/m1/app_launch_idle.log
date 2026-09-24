@@ -1,0 +1,9 @@
+# 2026-09-24T20:07:23Z Apple M4 macOS 27.0 — git 1152891 (+ uncommitted M1 critic fixes)
+$ open build/Utter.app; sleep 12; cat ~/Library/Logs/Utter/utter.log; ps -o pid,rss,%cpu -p <pid>
+2026-09-24T20:05:17.532Z INFO launch pid=39479 core=transcribe-cpp 0.2.3 (unknown) macos=Version 27.0 (Build 26A428)
+2026-09-24T20:05:17.533Z INFO pasteboard access_behavior=2 (0 default, 1 ask, 2 allow, 3 deny)
+2026-09-24T20:05:17.539Z INFO hotkey tap started shortcut=⌥Space
+2026-09-24T20:05:17.719Z INFO audio graph ready input_rate=48000 channels=1
+2026-09-24T20:05:25.203Z INFO model_load model=parakeet-tdt-0.6b-v3-Q8_0.gguf load_ms=7273 warmup_ms=391 footprint_mb=911 total_ms=7664 load_count=1
+  PID    RSS  %CPU
+39479 835216   0.1

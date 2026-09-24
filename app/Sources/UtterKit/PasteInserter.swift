@@ -1,6 +1,18 @@
 import AppKit
 import Carbon.HIToolbox
 
+/// Timing of one insertion, for latency logs (ns, `MonoClock`).
+public struct InsertTiming: Sendable {
+    public var startedNs: UInt64 = 0
+    public var snapshotMs: Double = 0
+    public var pasteSentNs: UInt64?
+    public var firstReadNs: UInt64?
+    public var reads = 0
+    public var restoredNs: UInt64?
+    public var clipboardReadable = true
+    public var frontmostBundleID: String?
+}
+
 public enum InsertOutcome: Equatable, Sendable {
     /// Text was pasted; `receipt` is true if the target app actually read it.
     case pasted(receipt: Bool)
@@ -35,10 +47,13 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     private var quietTimer: Task<Void, Never>?
     private var timeoutTimer: Task<Void, Never>?
 
-    /// Quiet period after the last read before restoring.
-    public var quietPeriod: Duration = .milliseconds(120)
+    /// Quiet period after the last read before restoring. Restoring does not
+    /// delay the text appearing, so this errs long: a busy target may read the
+    /// promise more than once, or read late.
+    public var quietPeriod: Duration = .milliseconds(400)
     /// Give up waiting for a read after this long and restore anyway.
-    public var receiptTimeout: Duration = .milliseconds(1500)
+    public var receiptTimeout: Duration = .milliseconds(2000)
+    public private(set) var lastTiming = InsertTiming()
 
     public init(pasteboard: NSPasteboard = .general, checkSecureInput: Bool = true, sendPaste: @escaping SendPaste = PasteInserter.postCommandV) {
         self.pasteboard = pasteboard
@@ -64,8 +79,12 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     }
 
     private func performInsert(_ text: String) async -> InsertOutcome {
+        lastTiming = InsertTiming(startedNs: MonoClock.nowNs())
+        lastTiming.frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         if checkSecureInput && Self.secureInputActive { return .blockedBySecureInput }
         let snapshot = PasteboardSnapshot.capture(pasteboard)
+        lastTiming.snapshotMs = MonoClock.ms(from: lastTiming.startedNs, to: MonoClock.nowNs())
+        lastTiming.clipboardReadable = snapshot.readable
         pendingText = text
         receiptCount = 0
 
@@ -83,6 +102,7 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
             restoreIfUnchanged(snapshot, ourChangeCount)
             return .failed(error)
         }
+        lastTiming.pasteSentNs = MonoClock.nowNs()
 
         await waitForReadOrTimeout()
         let receipt = receiptCount > 0
@@ -113,6 +133,8 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
 
     private func noteReceipt() {
         receiptCount += 1
+        lastTiming.reads = receiptCount
+        if lastTiming.firstReadNs == nil { lastTiming.firstReadNs = MonoClock.nowNs() }
         quietTimer?.cancel()
         let quiet = quietPeriod
         quietTimer = Task { @MainActor [weak self] in
@@ -127,6 +149,7 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
             return
         }
         snapshot.restore(to: pasteboard)
+        lastTiming.restoredNs = MonoClock.nowNs()
     }
 
     /// Posts ⌘V. Uses the key code that types "v" in the current layout.
@@ -136,7 +159,12 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
               let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
         else { return "Could not create the paste keystroke." }
-        // Explicit flags so a still-held ⌥ from the shortcut does not turn this into ⌥⌘V.
+        // Explicit flags so a still-held ⌥ from the shortcut does not turn this into ⌥⌘V,
+        // and briefly ignore the physical keyboard so a key the user is still
+        // releasing cannot merge with the synthetic chord.
+        source.setLocalEventsFilterDuringSuppressionState([.permitLocalMouseEvents, .permitSystemDefinedEvents],
+                                                          state: .eventSuppressionStateSuppressionInterval)
+        source.localEventsSuppressionInterval = 0.05
         down.flags = .maskCommand
         up.flags = .maskCommand
         down.post(tap: .cghidEventTap)

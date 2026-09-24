@@ -12,7 +12,7 @@ Iteration: 2
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M1: critic review of the non-human M1 items, fix BLOCKERs. Then the human gate (see Blocked on human): grant permissions, speak into TextEdit, confirm; I verify the latency lines in the log.
+- M1: re-run critic on the fixes for its first M1 review (1 BLOCKER, 6 MAJOR). Then the human gate (see Blocked on human).
 
 ## Milestones
 - [x] **M0 — Research & decisions.** Critic re-review: `VERDICT: PASS`, zero BLOCKERs (2026-09-24). Its 3 MAJOR and all minor findings fixed in 08f14b8 (bench fails loudly, `make models`, `make dmg` preflight, ONNX bench committed at `evidence/m0/onnxbench/`, CoreML EP measured, first-load cause marked unconfirmed).
@@ -43,7 +43,17 @@ Iteration: 2
 - [M1] 5-minute recording: `cargo test -p utter-core --test fixtures five_minute` → audio_ms=300000, inference 15.1 s, 695/658 words, WER 0.299, tail present (no truncation).
 - [M1] `make test`: Rust 14 unit + 2 real-model tests; Swift 20 tests in 4 suites (shortcut matcher, clipboard snapshot + receipt-based restore + "don't clobber newer copy", resampler 48/44.1/24/16 kHz → 16 kHz mono with frequency and level checks, Swift→Rust bridge transcription with `loadCount()==1`, plain-English errors).
 - [M1] FFI cost: 5 min PCM round trip 27.5 ms (≈ 0.5 ms per 5 s utterance).
-- [M1] App launch (`evidence/m1/app_launch.log`): model loads in the background at launch, `load_count=1`; first launch of a new build `load_ms=7303` (the ~7 s outlier again: seen on every fresh build of the app or CLI), relaunch of the same build `load_ms=192 warmup_ms=57 total_ms=250`. Idle: RSS 922 MB, CPU 0.1 %.
+- [M1] Critic M1 review #1 → FAIL. Fixed:
+  (BLOCKER) status queries no longer take the model lock (`AtomicBool` + separate `RwLock` info): 2.7 M polls during a live inference, worst 106 µs → `evidence/m1/real_model_tests.log`; Swift tracks `modelLoaded` itself.
+  (MAJOR) dictations can't overlap (presses accepted only when idle; inserts serialised, test added).
+  (MAJOR) capture rewritten on `AVAudioSinkNode`: IO-sized callbacks, RT thread only downmixes into a preallocated ring, all conversion on one serial queue, and stop waits (≤150 ms) for audio up to the release instant, so the tail is kept. Rebuilds on `AVAudioEngineConfigurationChange` or start failure. Ring tests: wrap, overflow count, tail signal, 201,600-sample concurrent producer/consumer with nothing lost.
+  (MAJOR) pasteboard privacy (macOS 15.4+ `accessBehavior` logged at launch): an unreadable clipboard is never "restored"/wiped; the user is told.
+  (MAJOR) latency fields are split: keydown→record started / first sample / first callback, release→last sample, transcribed, paste sent, target read, restored.
+  (MAJOR) early-reader receipt: quiet period raised to 400 ms (restore timing does not delay the text), front app and read count logged.
+  (MINOR) ⌘V posted with local keyboard suppression; tap invalidated on stop; prepare runs on the audio queue; transcribe.cpp stderr noise routed to `log`; evidence files added.
+- [M1] Tests after fixes: Rust 14 unit + 3 real-model; Swift 29 in 5 suites (3/3 green runs).
+- [M1] App launch after fixes (`evidence/m1/app_launch_idle.log`): tap started, `audio graph ready input_rate=48000 channels=1`, `pasteboard access_behavior=2`, `model_load … load_count=1`; idle RSS 835 MB, CPU 0.1 %.
+- [M1] App launch, first build (`evidence/m1/app_launch.log`): model loads in the background at launch, `load_count=1`; first launch of a new build `load_ms=7303` (the ~7 s outlier again: seen on every fresh build of the app or CLI), relaunch of the same build `load_ms=192 warmup_ms=57 total_ms=250`. Idle: RSS 922 MB, CPU 0.1 %.
 
 ## Blocked on human
 - **M1 gate: live dictation into TextEdit** (needs your permissions and your voice):
@@ -52,7 +62,9 @@ Iteration: 2
   3. Click the Utter menu bar icon → **Retry Shortcut** (or quit and reopen Utter). The menu should say "Ready", with no "Allow Accessibility Access…" item.
   4. Open TextEdit, new document. Copy the word `SENTINEL` to the clipboard.
   5. Hold **⌥ Space**, say "Testing Utter, one two three. HoldMyCode uses PostgreSQL.", release.
-  6. Check that the text appears in TextEdit and no space character or "…" was typed by the shortcut. Then press ⌘V somewhere: it should paste `SENTINEL`.
+  6. Check that the text appears in TextEdit and no space character or "…" was typed by the shortcut. Then press ⌘V somewhere: it should paste `SENTINEL`. If macOS shows an **"Allow Paste"** alert for Utter, choose **Allow** (or set Utter to "Allow" under System Settings → Privacy & Security → Paste from Other Apps); Utter needs it to put your clipboard back.
+  Use the built-in microphone for this first test.
+  Optional: `swift scripts/e2e-textedit.swift /tmp/utter-e2e.txt fixtures/audio/tts_01.wav` runs the same path automatically (synthetic ⌥Space plus the clip played through the speakers). I could not run it: the screen was locked (frontmost app `loginwindow`).
   7. Repeat 3–5 times with ~5 s sentences, then run `/loop did the M1 TextEdit test: <what you saw>`. I'll read the `dictation … keydown_to_first_sample_ms … release_to_insert_done_ms` lines in `~/Library/Logs/Utter/utter.log`.
   (Signing uses your local "Apple Development" identity, so these grants survive rebuilds.)
 - (non-blocking, wanted before M1 gate) **Record your own voice fixtures.** The TTS clips are synthetic. Please record 3–5 clips (~5 s each), save as `fixtures/audio/human_NN.wav` with the exact words in `human_NN.txt`. Quick way: QuickTime → New Audio Recording, export, then `afconvert -f WAVE -d LEI16@16000 -c 1 in.m4a fixtures/audio/human_01.wav`. Include: "Testing Utter, one two three. HoldMyCode uses PostgreSQL." and a sentence with Decivra, Maynooth, TypeScript, SwiftUI, WhisperKit.

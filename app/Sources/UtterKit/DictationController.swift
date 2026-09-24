@@ -2,6 +2,7 @@ import AppKit
 import UtterCore
 
 /// Coordinates hotkey → microphone → local model → text insertion (ADR-008).
+/// Nothing here calls into Rust on the main actor except lock-free status reads.
 @MainActor
 public final class DictationController {
     public enum State: Equatable {
@@ -19,27 +20,50 @@ public final class DictationController {
     public var onStateChange: ((State) -> Void)?
     public private(set) var modelName = ModelLocation.defaultModelName
     public private(set) var lastMessage: String?
+    /// Set when the background load completes; never queried from Rust on main.
+    public private(set) var modelLoaded = false
 
     public let hotkey = HotkeyMonitor()
-    private let recorder = AudioRecorder()
+    /// Mic start/stop and resampling run here so neither the event-tap thread
+    /// nor the main thread blocks on audio.
+    private let audioQueue = DispatchQueue(label: "dev.utter.audio", qos: .userInteractive)
+    private lazy var recorder = AudioRecorder(queue: audioQueue)
     private let engine = UtterEngine()
     private let inserter = PasteInserter()
-    /// Mic start/stop happen here so the event-tap thread never blocks.
-    private let audioQueue = DispatchQueue(label: "dev.utter.audio", qos: .userInteractive)
-    private var pressNs: UInt64 = 0
+    private var press: KeyTiming?
+    private var recordStartedNs: UInt64 = 0
 
     public init() {}
 
-    public var modelLoaded: Bool { engine.isLoaded() }
+    /// Only an idle controller accepts a new dictation; presses during
+    /// transcription or insertion are ignored so dictations never overlap.
+    private var acceptsPress: Bool {
+        switch state {
+        case .ready, .failed: return modelLoaded
+        default: return false
+        }
+    }
 
     public func launch() {
-        Log.info("launch pid=\(ProcessInfo.processInfo.processIdentifier) core=\(coreVersion())")
-        hotkey.onPress = { [weak self] ns in self?.pressed(at: ns) }
-        hotkey.onRelease = { [weak self] ns in self?.released(at: ns) }
+        Log.info("launch pid=\(ProcessInfo.processInfo.processIdentifier) core=\(coreVersion()) macos=\(ProcessInfo.processInfo.operatingSystemVersionString)")
+        if #available(macOS 15.4, *) {
+            Log.info("pasteboard access_behavior=\(NSPasteboard.general.accessBehavior.rawValue) (0 default, 1 ask, 2 allow, 3 deny)")
+        }
+        hotkey.onPress = { [weak self] timing in
+            Task { @MainActor in self?.pressed(timing) }
+        }
+        hotkey.onRelease = { [weak self] timing in
+            Task { @MainActor in self?.released(timing) }
+        }
         startHotkey()
         Task {
             if await Permissions.requestMicrophone() {
-                do { try recorder.prepare() } catch let error as AudioRecorderError { fail(error.userMessage) } catch {}
+                let recorder = self.recorder
+                audioQueue.async {
+                    do { try recorder.prepare() } catch let error as AudioRecorderError {
+                        Task { @MainActor in self.fail(error.userMessage) }
+                    } catch {}
+                }
             } else {
                 fail("Utter needs microphone access. Allow it in System Settings → Privacy & Security → Microphone.")
             }
@@ -52,6 +76,7 @@ public final class DictationController {
         if !Permissions.accessibilityGranted { Permissions.requestAccessibility() }
         do {
             try hotkey.start()
+            if lastMessage == HotkeyError.tapCreationFailed.userMessage { lastMessage = nil }
         } catch let error as HotkeyError {
             Log.error("hotkey start failed: \(error)")
             lastMessage = error.userMessage
@@ -71,7 +96,10 @@ public final class DictationController {
                                 url.lastPathComponent, info.loadMs, info.warmupMs,
                                 Double(info.footprintAfterBytes) / 1_048_576,
                                 MonoClock.ms(from: started, to: MonoClock.nowNs()), engine.loadCount()))
-                await MainActor.run { self.state = .ready }
+                await MainActor.run {
+                    self.modelLoaded = true
+                    self.state = .ready
+                }
             } catch let error as CoreError {
                 Log.error("model load failed: \(error.logDetail)")
                 let message = error.userMessage + (FileManager.default.fileExists(atPath: url.path) ? "" : " (expected at \(url.path))")
@@ -82,45 +110,45 @@ public final class DictationController {
         }
     }
 
-    // MARK: Recording lifecycle (tap thread → audio queue → main actor)
+    // MARK: Recording lifecycle
 
-    private nonisolated func pressed(at ns: UInt64) {
-        audioQueue.async { [weak self] in
-            guard let self else { return }
+    private func pressed(_ timing: KeyTiming) {
+        guard acceptsPress else {
+            if state == .loadingModel { lastMessage = "\(modelName) is still loading. Try again in a moment." }
+            Log.info("press ignored state=\(state)")
+            return
+        }
+        press = timing
+        state = .recording
+        let recorder = self.recorder
+        audioQueue.async {
             do {
-                try self.recorder.start()
+                try recorder.start()
                 let started = MonoClock.nowNs()
-                Task { @MainActor in
-                    self.pressNs = ns
-                    self.state = .recording
-                    Log.info(String(format: "record_start keydown_to_engine_started_ms=%.1f", MonoClock.ms(from: ns, to: started)))
-                }
+                Task { @MainActor in self.recordStartedNs = started }
             } catch let error as AudioRecorderError {
                 Task { @MainActor in self.fail(error.userMessage) }
             } catch {}
         }
     }
 
-    private nonisolated func released(at ns: UInt64) {
-        audioQueue.async { [weak self] in
-            guard let self, self.recorder.isRecording else { return }
-            let recording = self.recorder.stop()
-            Task { @MainActor in await self.finish(recording, releaseNs: ns) }
+    private func released(_ timing: KeyTiming) {
+        guard state == .recording, let press else { return }
+        state = .transcribing
+        let recorder = self.recorder
+        audioQueue.async {
+            let recording = recorder.stop(releaseNs: timing.callbackNs)
+            Task { @MainActor in await self.finish(recording, press: press, release: timing) }
         }
     }
 
     /// Menu-driven start/stop (same path as the hotkey).
     public func toggleFromMenu() {
-        if state == .recording { released(at: MonoClock.nowNs()) } else { pressed(at: MonoClock.nowNs()) }
+        let now = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0)
+        if state == .recording { released(now) } else { pressed(now) }
     }
 
-    private func finish(_ recording: Recording, releaseNs: UInt64) async {
-        let captureMs = recording.firstSampleNs.map { MonoClock.ms(from: pressNs, to: $0) }
-        guard engine.isLoaded() else {
-            state = .failed("The speech model is still loading. Try again in a moment.")
-            return
-        }
-        state = .transcribing
+    private func finish(_ recording: Recording, press: KeyTiming, release: KeyTiming) async {
         let engine = self.engine
         let samples = recording.samples
         let result: TranscriptionResult
@@ -138,23 +166,55 @@ public final class DictationController {
         }
         let transcribedNs = MonoClock.nowNs()
         if let skipped = result.skipped {
-            Log.info(String(format: "dictation skipped=%@ audio_ms=%llu", "\(skipped)", result.audioMs))
+            logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, outcome: "skipped_\(skipped)")
             state = .ready
             return
         }
         let outcome = await inserter.insert(result.text)
-        let doneNs = MonoClock.nowNs()
-        Log.info(String(format: "dictation audio_ms=%llu keydown_to_first_sample_ms=%@ release_to_transcribed_ms=%.0f inference_ms=%.0f release_to_insert_done_ms=%.0f chars=%d outcome=%@ load_count=%llu",
-                        result.audioMs, captureMs.map { String(format: "%.1f", $0) } ?? "n/a",
-                        MonoClock.ms(from: releaseNs, to: transcribedNs), result.inferenceMs,
-                        MonoClock.ms(from: releaseNs, to: doneNs), result.text.count, "\(outcome)", engine.loadCount()))
+        logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, outcome: "\(outcome)")
         switch outcome {
-        case .pasted: state = .ready
+        case .pasted:
+            if !inserter.lastTiming.clipboardReadable {
+                lastMessage = "macOS did not let Utter read the clipboard, so the transcript was left on it. Allow Utter under System Settings → Privacy & Security → Paste from Other Apps."
+            }
+            state = .ready
         case .blockedBySecureInput:
             lastMessage = "A password field is active, so Utter did not type anything."
             state = .ready
         case .failed(let message): fail(message)
         }
+    }
+
+    /// One line per dictation with every stage, so latency can be read from the log.
+    private func logDictation(_ rec: Recording, _ result: TranscriptionResult, press: KeyTiming, release: KeyTiming, transcribedNs: UInt64, outcome: String) {
+        func ms(_ from: UInt64, _ to: UInt64?) -> String {
+            guard let to else { return "n/a" }
+            return String(format: "%.1f", MonoClock.ms(from: from, to: to))
+        }
+        let t = inserter.lastTiming
+        let fields: [(String, String)] = [
+            ("audio_ms", "\(result.audioMs)"),
+            ("keydown_to_record_started_ms", ms(press.callbackNs, recordStartedNs)),
+            ("keydown_to_first_sample_ms", ms(press.callbackNs, rec.firstSampleNs)),
+            ("keydown_to_first_callback_ms", ms(press.callbackNs, rec.firstCallbackNs)),
+            ("release_to_last_sample_end_ms", ms(release.callbackNs, rec.lastSampleEndNs)),
+            ("release_to_transcribed_ms", ms(release.callbackNs, transcribedNs)),
+            ("inference_ms", String(format: "%.1f", result.inferenceMs)),
+            ("release_to_paste_sent_ms", ms(release.callbackNs, t.pasteSentNs)),
+            ("release_to_target_read_ms", ms(release.callbackNs, t.firstReadNs)),
+            ("release_to_restored_ms", ms(release.callbackNs, t.restoredNs)),
+            ("snapshot_ms", String(format: "%.1f", t.snapshotMs)),
+            ("reads", "\(t.reads)"),
+            ("clipboard_readable", "\(t.clipboardReadable)"),
+            ("dropped_frames", "\(rec.droppedFrames)"),
+            ("key_event_ts", "\(press.eventTimestamp)"),
+            ("key_callback_ns", "\(press.callbackNs)"),
+            ("front_app", t.frontmostBundleID ?? "n/a"),
+            ("chars", "\(result.text.count)"),
+            ("outcome", outcome),
+            ("load_count", "\(engine.loadCount())"),
+        ]
+        Log.info("dictation " + fields.map { "\($0.0)=\($0.1)" }.joined(separator: " "))
     }
 
     private func fail(_ message: String) {

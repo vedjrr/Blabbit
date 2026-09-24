@@ -4,11 +4,16 @@ use crate::audio::skip_reason;
 use crate::error::{Result, UtterError};
 use crate::model::{GgufModel, LoadStats, MemoryRequirements, ModelMetadata, SpeechModel, TranscribeOptions, Transcription};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Mutex, RwLock};
 
+/// `model` is locked for the whole of a load or an inference (seconds). Status
+/// queries (`is_loaded`, `metadata`, `memory_requirements`, `load_count`) never
+/// touch that lock, so UI threads can call them at any time without blocking.
 pub struct Engine {
     model: Mutex<Option<Box<dyn SpeechModel>>>,
+    loaded: AtomicBool,
+    info: RwLock<Option<(ModelMetadata, MemoryRequirements)>>,
     loads: AtomicU64,
 }
 
@@ -20,7 +25,15 @@ impl Default for Engine {
 
 impl Engine {
     pub fn new() -> Self {
-        Engine { model: Mutex::new(None), loads: AtomicU64::new(0) }
+        // Route transcribe.cpp's per-run diagnostics through the `log` facade
+        // instead of stderr; they are debug-level noise for users.
+        static LOGGING: std::sync::Once = std::sync::Once::new();
+        LOGGING.call_once(transcribe_cpp::init_logging);
+        Engine { model: Mutex::new(None), loaded: AtomicBool::new(false), info: RwLock::new(None), loads: AtomicU64::new(0) }
+    }
+
+    fn set_info(&self, info: Option<(ModelMetadata, MemoryRequirements)>) {
+        *self.info.write().unwrap_or_else(|p| p.into_inner()) = info;
     }
 
     fn guard(&self) -> std::sync::MutexGuard<'_, Option<Box<dyn SpeechModel>>> {
@@ -32,6 +45,8 @@ impl Engine {
     /// Loads (and warms) a GGUF model, unloading any previous one first so two
     /// models are never resident at once.
     pub fn load_gguf(&self, path: &Path) -> Result<LoadStats> {
+        self.loaded.store(false, Ordering::Release);
+        self.set_info(None);
         let mut slot = self.guard();
         if let Some(old) = slot.as_mut() {
             old.unload();
@@ -39,12 +54,18 @@ impl Engine {
         *slot = None;
         let mut model: Box<dyn SpeechModel> = Box::new(GgufModel::new(path));
         let stats = model.load()?;
+        if let Some(meta) = model.metadata() {
+            self.set_info(Some((meta, model.memory_requirements())));
+        }
         *slot = Some(model);
         self.loads.fetch_add(1, Ordering::Relaxed);
+        self.loaded.store(true, Ordering::Release);
         Ok(stats)
     }
 
     pub fn unload(&self) {
+        self.loaded.store(false, Ordering::Release);
+        self.set_info(None);
         let mut slot = self.guard();
         if let Some(model) = slot.as_mut() {
             model.unload();
@@ -52,8 +73,9 @@ impl Engine {
         *slot = None;
     }
 
+    /// Lock-free; safe to call from a UI thread while a load/inference runs.
     pub fn is_loaded(&self) -> bool {
-        self.guard().as_ref().is_some_and(|m| m.is_loaded())
+        self.loaded.load(Ordering::Acquire)
     }
 
     /// Number of successful model loads in this process (evidence for "loads once").
@@ -62,11 +84,11 @@ impl Engine {
     }
 
     pub fn metadata(&self) -> Option<ModelMetadata> {
-        self.guard().as_ref().and_then(|m| m.metadata())
+        self.info.read().unwrap_or_else(|p| p.into_inner()).as_ref().map(|(m, _)| m.clone())
     }
 
     pub fn memory_requirements(&self) -> Option<MemoryRequirements> {
-        self.guard().as_ref().map(|m| m.memory_requirements())
+        self.info.read().unwrap_or_else(|p| p.into_inner()).as_ref().map(|(_, r)| *r)
     }
 
     pub fn transcribe(&self, pcm_16k_mono: &[f32], options: &TranscribeOptions) -> Result<Transcription> {

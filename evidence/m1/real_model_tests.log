@@ -1,0 +1,7 @@
+# 2026-09-24T20:07:23Z Apple M4 macOS 27.0 — git 1152891 (+ uncommitted M1 critic fixes)
+$ cd core && cargo test --release -p utter-core --test fixtures -- --nocapture --test-threads=1
+test five_minute_recording_is_not_truncated ... 5-min: audio_ms=300000 infer_ms=14817 ref_words=658 hyp_words=695 wer=0.299
+test parakeet_v3_transcribes_fixtures_with_one_load ... /Users/ved/Documents 2/utter-kit/core/utter-core/../../fixtures/audio/tts_01.wav wer=1.000 "Testing udder, 123, hold my code uses post gur SQL."
+aggregate wer=0.258
+test status_queries_do_not_block_during_load_or_inference ... status polls during inference=2746653 worst_query=106.208µs
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.62s

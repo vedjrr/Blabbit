@@ -1,0 +1,9 @@
+# 2026-09-24T20:07:23Z Apple M4 macOS 27.0 — git 1152891 (+ uncommitted M1 critic fixes)
+$ core/target/release/utter-cli --model "$HOME/Library/Application Support/Utter/Models/whisper-small/whisper-small-Q8_0.gguf" --prompt "Utter, HoldMyCode, PostgreSQL, Maynooth, SwiftUI, TypeScript, Decivra, WhisperKit" fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-small/whisper-small-Q8_0.gguf arch=whisper backend=MTL0 load=234ms warmup=326ms footprint+456MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=369ms rtf=0.080 wer=0.250	TestingUter, 1, 2, 3, HoldMyCode uses PostgreSQL
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=363ms rtf=0.082 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=355ms rtf=0.083 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=361ms rtf=0.075 wer=0.000	I studied computer science at Maynooth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=377ms rtf=0.075 wer=0.000	We rewrote the settings screen in SwiftUI and moved the backend to TypeScript
+aggregate wer=0.032 (2/62 words) model_loads=1

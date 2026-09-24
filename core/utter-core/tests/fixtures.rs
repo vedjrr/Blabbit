@@ -89,3 +89,45 @@ fn five_minute_recording_is_not_truncated() {
     let tail: Vec<String> = wer::normalize(&t.text).into_iter().rev().take(12).collect();
     assert!(last_ref.iter().filter(|w| tail.contains(w)).count() >= 2, "tail missing: {tail:?} vs {last_ref:?}");
 }
+
+/// Status queries must not wait on the model lock (critic BLOCKER, M1): the UI
+/// calls them on the main thread while a long load or inference is running.
+#[test]
+fn status_queries_do_not_block_during_load_or_inference() {
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+    let engine = Arc::new(Engine::new());
+    let model = require_model(PARAKEET_V3);
+
+    let e = engine.clone();
+    let loader = std::thread::spawn(move || e.load_gguf(&model).map(|_| ()));
+    let mut worst = Duration::ZERO;
+    while !loader.is_finished() {
+        let t = Instant::now();
+        let _ = engine.is_loaded();
+        let _ = engine.metadata();
+        let _ = engine.load_count();
+        worst = worst.max(t.elapsed());
+    }
+    loader.join().unwrap().expect("load");
+    assert!(engine.is_loaded());
+
+    // 60 s of speech keeps the model lock busy for a while.
+    let (clip, _) = &fixtures()[1];
+    let one = audio::load_wav_16k_mono(clip).unwrap();
+    let pcm: Vec<f32> = one.iter().cycle().take(60 * audio::SAMPLE_RATE as usize).copied().collect();
+    let e = engine.clone();
+    let worker = std::thread::spawn(move || e.transcribe(&pcm, &TranscribeOptions::default()).map(|_| ()));
+    let mut polls = 0;
+    while !worker.is_finished() {
+        let t = Instant::now();
+        assert!(engine.is_loaded());
+        assert!(engine.metadata().is_some());
+        worst = worst.max(t.elapsed());
+        polls += 1;
+    }
+    worker.join().unwrap().expect("transcribe");
+    eprintln!("status polls during inference={polls} worst_query={worst:?}");
+    assert!(polls > 10, "inference finished too fast to exercise contention");
+    assert!(worst < Duration::from_millis(5), "a status query blocked for {worst:?}");
+}

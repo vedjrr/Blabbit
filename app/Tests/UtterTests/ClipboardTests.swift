@@ -136,4 +136,31 @@ import Testing
         #expect(outcome == .failed("Could not create the paste keystroke."))
         #expect(pb.string(forType: .string) == "SENTINEL")
     }
+
+    @Test func unreadableSnapshotIsNeverRestored() {
+        let pb = makePasteboard()
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        pb.setString("user data we could not read", forType: .string)
+        let unreadable = PasteboardSnapshot(items: [], readable: false)
+        unreadable.restore(to: pb)
+        #expect(pb.string(forType: .string) == "user data we could not read")
+    }
+
+    @Test func insertRecordsTimings() async {
+        let pb = makePasteboard()
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        let inserter = PasteInserter(pasteboard: pb, checkSecureInput: false) {
+            _ = pb.string(forType: .string)
+            return nil
+        }
+        inserter.quietPeriod = .milliseconds(20)
+        _ = await inserter.insert("timed")
+        let t = inserter.lastTiming
+        #expect(t.pasteSentNs != nil && t.firstReadNs != nil && t.restoredNs != nil)
+        #expect(t.reads == 1)
+        #expect(t.firstReadNs! >= t.pasteSentNs! || t.firstReadNs! >= t.startedNs)
+        #expect(t.restoredNs! > t.firstReadNs!)
+    }
 }

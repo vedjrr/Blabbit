@@ -13,13 +13,20 @@ public enum HotkeyError: Error, Equatable {
 
 /// Global push-to-talk shortcut via an active CGEventTap on a dedicated thread
 /// (ADR-005). Matching key events are swallowed so they never reach the focused app.
+public struct KeyTiming: Sendable {
+    public var callbackNs: UInt64
+    public var eventTimestamp: UInt64
+}
+
 public final class HotkeyMonitor: @unchecked Sendable {
-    /// Called on the tap thread with the monotonic time of the key event.
-    public var onPress: (@Sendable (UInt64) -> Void)?
-    public var onRelease: (@Sendable (UInt64) -> Void)?
+    /// Called on the tap thread. `KeyTiming.callbackNs` is `MonoClock` time when
+    /// the tap saw the event; `eventTimestamp` is the raw `CGEvent.timestamp`.
+    public var onPress: (@Sendable (KeyTiming) -> Void)?
+    public var onRelease: (@Sendable (KeyTiming) -> Void)?
 
     private let matcher: OSAllocatedUnfairLock<ShortcutMatcher>
     private var tap: CFMachPort?
+    private var source: CFRunLoopSource?
     private var runLoop: CFRunLoop?
     private var thread: Thread?
 
@@ -58,6 +65,7 @@ public final class HotkeyMonitor: @unchecked Sendable {
         let ready = DispatchSemaphore(value: 0)
         let thread = Thread { [weak self] in
             guard let self, let source = CFMachPortCreateRunLoopSource(nil, machPort, 0) else { ready.signal(); return }
+            self.source = source
             self.runLoop = CFRunLoopGetCurrent()
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
             CGEvent.tapEnable(tap: machPort, enable: true)
@@ -73,15 +81,22 @@ public final class HotkeyMonitor: @unchecked Sendable {
     }
 
     public func stop() {
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
-        if let runLoop { CFRunLoopStop(runLoop) }
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        if let runLoop {
+            if let source { CFRunLoopRemoveSource(runLoop, source, .commonModes) }
+            CFRunLoopStop(runLoop)
+        }
         tap = nil
+        source = nil
         runLoop = nil
         thread = nil
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        let now = MonoClock.nowNs()
+        let now = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: event.timestamp)
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // macOS disables slow taps; turn it back on and never leave a key "held".
