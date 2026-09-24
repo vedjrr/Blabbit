@@ -119,8 +119,9 @@ import Testing
         async let second = inserter.insert("second")
         let outcomes = await [first, second]
         #expect(outcomes == [.pasted(receipt: true), .pasted(receipt: true)])
-        // Each paste delivered its own text, in order.
-        #expect(reads == ["first", "second"])
+        // Each paste delivered its own text (start order of `async let` is not
+        // guaranteed; interleaving would show up as ["second", "second"]).
+        #expect(reads.compactMap { $0 }.sorted() == ["first", "second"])
         // Had they interleaved, the second snapshot would have captured "first"'s promise.
         #expect(pb.string(forType: .string) == "SENTINEL")
     }

@@ -15,7 +15,14 @@ RUST_OUT  := $(CORE)/target/release
 BINDINGS  := $(BUILD)/bindings
 APP_NAME  := Utter
 BUNDLE    := $(BUILD)/$(APP_NAME).app
-SWIFT_OUT = $(shell cd "$(APP)" && swift build -c release --arch arm64 --show-bin-path)
+# SwiftPM's default "swiftbuild" backend intermittently fails under the CLT
+# ("plugin for module 'TestingMacros' not found", "unable to resolve Swift module
+# dependency"); the native backend is reliable here (ADR-001).
+SWIFT_FLAGS := -c release --arch arm64 --build-system native
+CLT_TESTING := /Library/Developer/CommandLineTools/Library/Developer
+SWIFT_TEST_FLAGS := -Xswiftc -F -Xswiftc $(CLT_TESTING)/Frameworks -Xlinker -F -Xlinker $(CLT_TESTING)/Frameworks \
+	-Xlinker -rpath -Xlinker $(CLT_TESTING)/Frameworks -Xlinker -rpath -Xlinker $(CLT_TESTING)/usr/lib
+SWIFT_OUT = $(shell cd "$(APP)" && swift build $(SWIFT_FLAGS) --show-bin-path)
 
 # Dev signing: a local "Apple Development" identity keeps the designated
 # requirement stable so macOS privacy grants survive rebuilds; else ad-hoc.
@@ -37,7 +44,7 @@ bindings: core
 	install -m 644 "$(BINDINGS)/UtterCore.swift" "$(APP)/Sources/UtterCore/UtterCore.swift"
 
 app: bindings
-	cd "$(APP)" && swift build -c release --arch arm64
+	cd "$(APP)" && swift build $(SWIFT_FLAGS)
 
 bundle: app
 	rm -rf "$(BUNDLE)"
@@ -54,7 +61,7 @@ test-rust: models
 	cd "$(CORE)" && cargo test --release --workspace
 
 test-swift: bindings
-	cd "$(APP)" && swift test -c release --arch arm64
+	cd "$(APP)" && swift test $(SWIFT_FLAGS) $(SWIFT_TEST_FLAGS)
 
 bench: core
 	cd "$(CORE)" && cargo build --release -p utter-core --example runtime_probe
