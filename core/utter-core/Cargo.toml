@@ -1,0 +1,13 @@
+[package]
+name = "utter-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+hound.workspace = true
+transcribe-cpp = { version = "0.2.3", default-features = false, features = ["metal"] }

@@ -1,0 +1,1 @@
+We rewrote the settings screen in SwiftUI and moved the backend to TypeScript.

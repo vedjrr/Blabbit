@@ -1,0 +1,16 @@
+# 2026-09-24T18:28:00Z Apple M4 macOS 27.0
+$ runtime_probe <model> fixtures/audio/tts_0*.wav
+model=/Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load_ms=261
+warmup_ms=102
+../fixtures/audio/tts_01.wav	audio_s=4.64	infer_ms=129	rtf=0.028	Testing udder, 123, hold my code uses post gur SQL.
+../fixtures/audio/tts_02.wav	audio_s=4.42	infer_ms=93	rtf=0.021	The quick brown fox jumps over the lazy dog while the band plays in the park.
+../fixtures/audio/tts_03.wav	audio_s=4.27	infer_ms=100	rtf=0.024	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+../fixtures/audio/tts_04.wav	audio_s=4.82	infer_ms=94	rtf=0.019	I studied computer science at Minute before moving into product engineering.
+../fixtures/audio/tts_05.wav	audio_s=5.05	infer_ms=102	rtf=0.020	We rewrote the settings screen and swiftly lie and move the backend the type script.
+model=/Users/ved/Library/Application Support/Utter/Models/whisper-small/whisper-small-Q8_0.gguf arch=whisper backend=MTL0 load_ms=143
+warmup_ms=357
+../fixtures/audio/tts_01.wav	audio_s=4.64	infer_ms=445	rtf=0.096	TestingUtter, 1, 2, 3, hold my code uses post-gur SQL.
+../fixtures/audio/tts_02.wav	audio_s=4.42	infer_ms=426	rtf=0.096	The quick brown fox jumps over the lazy dog while the band plays in the park.
+../fixtures/audio/tts_03.wav	audio_s=4.27	infer_ms=421	rtf=0.099	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+../fixtures/audio/tts_04.wav	audio_s=4.82	infer_ms=406	rtf=0.084	I studied computer science at Mnuth before moving into product engineering.
+../fixtures/audio/tts_05.wav	audio_s=5.05	infer_ms=431	rtf=0.085	We rewrote the settings screen and SwiftUI and moved the backend to TypeScript.

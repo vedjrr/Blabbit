@@ -1,0 +1,9 @@
+[env]
+# Keep in sync with LSMinimumSystemVersion (app/Resources/Info.plist).
+MACOSX_DEPLOYMENT_TARGET = "14.0"
+
+[target.aarch64-apple-darwin]
+# ggml's Metal backend uses `@available`, which needs compiler-rt's
+# `__isPlatformVersionAtLeast`. rustc links with -nodefaultlibs by default;
+# this lets clang add its runtime for Rust-linked binaries (tests, CLI, bench).
+rustflags = ["-C", "default-linker-libraries=yes"]
