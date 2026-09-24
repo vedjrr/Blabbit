@@ -2,8 +2,8 @@ STATUS: IN_PROGRESS
 
 # Progress (loop state — Claude owns this file)
 
-Current milestone: M0 (gate review)
-Iteration: 1
+Current milestone: M1 — vertical slice
+Iteration: 2
 
 ## Environment (verified 2026-09-24)
 - Apple M4, 16 GB, macOS 27.0 (26A428), arm64.
@@ -12,7 +12,11 @@ Iteration: 1
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M0 gate: re-run critic after fixing the first review's findings (1 BLOCKER, 4 MAJOR). Then merge branch `m1-draft` (Rust engine, utter-cli, FFI already drafted in isolation) and continue M1.
+- M1: merge `m1-draft` (Rust engine + utter-cli + FFI + Swift hotkey/audio/paste/menu), `make test` green, then live-verify the app (launch log, model loaded once) and hand the spoken-sentence TextEdit check to the human.
+
+## Milestones
+- [x] **M0 — Research & decisions.** Critic re-review: `VERDICT: PASS`, zero BLOCKERs (2026-09-24). Its 3 MAJOR and all minor findings fixed in 08f14b8 (bench fails loudly, `make models`, `make dmg` preflight, ONNX bench committed at `evidence/m0/onnxbench/`, CoreML EP measured, first-load cause marked unconfirmed).
+- [ ] M1 — Vertical slice
 
 ## Done (with evidence)
 - [M0] Handy cloned read-only to `/tmp/handy-ref` (v0.9.7-6-g8f9cf53). Component map → `docs/ARCHITECTURE.md` §1.
@@ -26,7 +30,8 @@ Iteration: 1
 - [M0] Runtime tested for **all four GOAL families** on Metal, same 5 clips (critic BLOCKER fix): SenseVoice Small 54–67 ms (RTF ≤ 0.014), Moonshine Base 88–194 ms (RTF ≤ 0.042) → `evidence/m0/runtime_probe_families.log`. SHA-256 of both downloads equals the pinned hashes (`6c759ee4…`, `7f0027df…`).
 - [M0] ONNX alternative measured, not assumed: Parakeet V3 int8 via transcribe-rs/ort (CPU) 168–194 ms vs GGUF-Metal 79–85 ms on the same clips (≈1.8–2.1×) → `evidence/m0/onnx_vs_gguf_parakeet.log`, source in `evidence/m0/onnxbench/`.
 - [M0] First-load outlier logged: 7215 ms once, then 210/224 ms → `evidence/m0/first_load.log` (cause unconfirmed; not reproducible by the critic).
-- [M0] `make bench` → `Wrote bench/results/2026-09-24.json` (4 models × load/warm-up + 5 clips each, machine spec). `make dmg` exists; without credentials it exits 2 with "Cannot make a release DMG: set UTTER_DEVELOPER_ID…" (real sign → hdiutil → notarytool → stapler chain in `scripts/make-dmg.sh`).
+- [M0] `make bench` → `Wrote bench/results/2026-09-24.json (24 rows)` (4 models × load/warm-up + 5 clips each, machine spec, git rev); fails with exit 1 and writes nothing if any model fails (checked with a random-bytes .gguf).
+- [M0] ONNX Runtime CoreML EP measured too: 227–260 ms per clip, slower than the CPU EP → `evidence/m0/onnx_vs_gguf_parakeet.log`. `make dmg` exists; without credentials it exits 2 with "Cannot make a release DMG: set UTTER_DEVELOPER_ID…" (real sign → hdiutil → notarytool → stapler chain in `scripts/make-dmg.sh`).
 - [M0] Dev builds are signed with the local "Apple Development" identity (`codesign -dv` → `flags=0x10000(runtime)`), so TCC grants survive rebuilds.
 - [M0] Scaffold: `core/` Cargo workspace (utter-core, utter-cli, utter-ffi, uniffi-bindgen), `app/` SwiftPM (UtterFFI, UtterCore, Utter, UtterTests), `Makefile`, `.gitignore`, fixtures.
 - [M0] `make build` → `Built …/build/Utter.app`; `build/Utter.app/Contents/MacOS/Utter --version` → `Utter transcribe-cpp 0.2.3 (unknown)`; `codesign -dv` → `flags=0x10000(runtime)` (signed Apple Development; ad-hoc `0x10002` when no identity), entitlement `com.apple.security.device.audio-input`.
