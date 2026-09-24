@@ -25,6 +25,12 @@ public final class HotkeyMonitor: @unchecked Sendable {
     public var onRelease: (@Sendable (KeyTiming) -> Void)?
 
     private let matcher: OSAllocatedUnfairLock<ShortcutMatcher>
+    /// Carbon fallback registered while secure input is sustained (main thread only).
+    private var carbon: CarbonHotkey?
+    private var secureState = SecureInputState()
+    private var secureTimer: Timer?
+    /// Called on main when sustained secure input starts/stops (for UI notices).
+    public var onSecureInputChange: (@MainActor (Bool) -> Void)?
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var runLoop: CFRunLoop?
@@ -85,9 +91,50 @@ public final class HotkeyMonitor: @unchecked Sendable {
         thread.start()
         ready.wait()
         Log.info("hotkey tap started shortcut=\(shortcut.displayString)")
+        DispatchQueue.main.async { self.startSecureInputWatch() }
+    }
+
+    /// Polls secure input once a second; while it is sustained, a Carbon hotkey
+    /// stands in for the tap (which no longer sees key-downs).
+    @MainActor
+    private func startSecureInputWatch() {
+        secureTimer?.invalidate()
+        secureTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkSecureInput() }
+        }
+    }
+
+    @MainActor
+    private func checkSecureInput() {
+        guard secureState.observe(enabled: PasteInserter.secureInputActive, at: Date()) else { return }
+        if secureState.sustained {
+            let shortcut = self.shortcut
+            carbon = CarbonHotkey(shortcut: shortcut, onPress: { [weak self] in self?.carbonEvent(down: true) },
+                                  onRelease: { [weak self] in self?.carbonEvent(down: false) })
+            Log.info("secure input sustained; carbon fallback \(carbon == nil ? "FAILED to register" : "registered") for \(shortcut.displayString)")
+        } else {
+            carbon = nil
+            Log.info("secure input off; carbon fallback removed")
+        }
+        onSecureInputChange?(secureState.sustained)
+    }
+
+    /// Carbon events go through the same matcher so tap + Carbon can't double-fire.
+    private func carbonEvent(down: Bool) {
+        let shortcut = self.shortcut
+        let timing = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0)
+        let action = matcher.withLock {
+            $0.handle(kind: down ? .keyDown : .keyUp, keyCode: shortcut.keyCode,
+                      flags: CGEventFlags(rawValue: shortcut.modifiers), isRepeat: false)
+        }
+        if action == .press { onPress?(timing) }
+        if action == .release { onRelease?(timing) }
     }
 
     public func stop() {
+        secureTimer?.invalidate()
+        secureTimer = nil
+        carbon = nil
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
             CFMachPortInvalidate(tap)

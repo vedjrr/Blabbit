@@ -8,6 +8,10 @@ public struct InsertReport: Sendable {
         case unverified(InsertionStrategy)
         /// Secure input or a password field: nothing was inserted.
         case blockedBySecureInput
+        /// Method "clipboard only": text placed on the clipboard, not typed.
+        case copiedToClipboard
+        /// Method "external script": the user's script received the text.
+        case handledByScript
         case failed(String)
     }
 
@@ -26,20 +30,30 @@ public final class TextInserter {
     public typealias Typer = @MainActor (String) async -> String?
 
     public var table: AppInsertionTable
+    public var settings: InsertionSettings
+    /// Longest an external insertion script may run.
+    public var scriptTimeout: TimeInterval = 5
     public let paste: PasteInserter
+    private let keys: KeyPoster
     private let focus: FocusProvider
     private let typer: Typer
     private let checkSecureInput: Bool
     /// All Accessibility calls go here, never on the main thread (ADR-008).
     private let axQueue = DispatchQueue(label: "dev.utter.ax", qos: .userInitiated)
 
+    public typealias KeyPoster = @MainActor (InsertionSettings.AutoSubmit) -> Void
+
     public init(table: AppInsertionTable = .load(),
+                settings: InsertionSettings = .load(),
                 paste: PasteInserter = PasteInserter(),
+                keys: @escaping KeyPoster = TextInserter.postSubmitKey,
                 checkSecureInput: Bool = true,
                 focus: @escaping FocusProvider = { AXFocusedElement.current() },
                 typer: @escaping Typer = { await TypingInserter.type($0) }) {
         self.table = table
+        self.settings = settings
         self.paste = paste
+        self.keys = keys
         self.checkSecureInput = checkSecureInput
         self.focus = focus
         self.typer = typer
@@ -51,12 +65,40 @@ public final class TextInserter {
         }
     }
 
-    public func insert(_ text: String, bundleID: String?) async -> InsertReport {
+    public func insert(_ rawText: String, bundleID: String?) async -> InsertReport {
+        let text = settings.finalText(rawText)
+        var report = await insertWithoutExtras(text, bundleID: bundleID)
+        switch report.result {
+        case .inserted, .unverified, .handledByScript:
+            if settings.copyToClipboard { paste.board.clearContents(); paste.board.setString(rawText, forType: .string) }
+            if settings.autoSubmit != .off {
+                keys(settings.autoSubmit)
+                report.attempts.append("auto-submit: \(settings.autoSubmit.rawValue)")
+            }
+        case .copiedToClipboard, .blockedBySecureInput, .failed:
+            break
+        }
+        return report
+    }
+
+    private func insertWithoutExtras(_ text: String, bundleID: String?) async -> InsertReport {
         var report = InsertReport(result: .failed("No insertion method worked for this app."), bundleID: bundleID)
         if checkSecureInput && PasteInserter.secureInputActive {
             report.result = .blockedBySecureInput
             report.attempts.append("secure event input is on")
             return report
+        }
+        switch settings.method {
+        case .clipboardOnly:
+            paste.board.clearContents()
+            paste.board.setString(text, forType: .string)
+            report.result = .copiedToClipboard
+            return report
+        case .externalScript:
+            report.result = await runScript(text)
+            return report
+        case .automatic:
+            break
         }
         let focus = self.focus
         let secureField = await onAXQueue { focus().map(AccessibilityInserter.isSecure) ?? false }
@@ -87,6 +129,7 @@ public final class TextInserter {
                     report.attempts.append("accessibility: \(why)")
                 }
             case .paste:
+                paste.pasteDelay = .milliseconds(settings.pasteDelayMs)
                 let outcome = await paste.insert(text)
                 report.paste = paste.lastTiming
                 switch outcome {
@@ -109,5 +152,57 @@ public final class TextInserter {
             }
         }
         return report
+    }
+
+    /// Runs the user's script with the text on stdin (`scriptTimeout` limit, off the main thread).
+    private func runScript(_ text: String) async -> InsertReport.Result {
+        guard let path = settings.externalScriptPath, FileManager.default.isExecutableFile(atPath: path) else {
+            return .failed("The insertion script is missing or not executable. Check Settings → Text Insertion.")
+        }
+        let timeout = scriptTimeout
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                let exited = DispatchSemaphore(value: 0)
+                process.terminationHandler = { _ in exited.signal() }
+                process.executableURL = URL(fileURLWithPath: path)
+                let input = Pipe()
+                process.standardInput = input
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                do { try process.run() } catch {
+                    continuation.resume(returning: .failed("The insertion script could not be started."))
+                    return
+                }
+                input.fileHandleForWriting.write(Data(text.utf8))
+                try? input.fileHandleForWriting.close()
+                if exited.wait(timeout: .now() + timeout) == .timedOut {
+                    process.terminate()
+                    continuation.resume(returning: .failed("The insertion script took longer than \(Int(timeout.rounded(.up))) second\(Int(timeout.rounded(.up)) == 1 ? "" : "s") and was stopped."))
+                } else if process.terminationStatus != 0 {
+                    continuation.resume(returning: .failed("The insertion script failed (exit code \(process.terminationStatus))."))
+                } else {
+                    continuation.resume(returning: .handledByScript)
+                }
+            }
+        }
+    }
+
+    /// Enter / ⌃Enter / ⌘Enter after insertion (chat apps, terminals).
+    public static func postSubmitKey(_ key: InsertionSettings.AutoSubmit) {
+        let flags: CGEventFlags
+        switch key {
+        case .off: return
+        case .enter: flags = []
+        case .controlEnter: flags = .maskControl
+        case .commandEnter: flags = .maskCommand
+        }
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false) else { return }
+        down.flags = flags
+        up.flags = flags
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
     }
 }

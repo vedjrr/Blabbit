@@ -59,6 +59,10 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     /// Give up waiting for a read after this long and restore anyway.
     public var receiptTimeout: Duration = .milliseconds(2000)
     public private(set) var lastTiming = InsertTiming()
+    /// The pasteboard this inserter writes to (general in the app, private in tests).
+    public var board: NSPasteboard { pasteboard }
+    /// Wait after publishing the text and before sending ⌘V (setting "paste delay").
+    public var pasteDelay: Duration = .zero
 
     public init(pasteboard: NSPasteboard = .general, reader: PasteboardReading? = nil, checkSecureInput: Bool = true,
                 sendPaste: @escaping SendPaste = PasteInserter.postCommandV) {
@@ -120,6 +124,7 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
             return .failed("Could not write to the clipboard.")
         }
         let ourChangeCount = pasteboard.changeCount
+        if pasteDelay > .zero { try? await Task.sleep(for: pasteDelay) }
 
         if let error = sendPaste() {
             restoreIfUnchanged(snapshot, ourChangeCount)

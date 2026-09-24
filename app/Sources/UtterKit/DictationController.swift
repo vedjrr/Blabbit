@@ -62,6 +62,12 @@ public final class DictationController {
         hotkey.onRelease = { [weak self] timing in
             Task { @MainActor in self?.released(timing) }
         }
+        hotkey.onSecureInputChange = { [weak self] sustained in
+            self?.lastMessage = sustained
+                ? "Secure input is on (a password field, or Terminal's Secure Keyboard Entry), so Utter won't type until it's off."
+                : nil
+            self?.onStateChange?(self?.state ?? .ready)
+        }
         startHotkey()
         Task {
             if await Permissions.requestMicrophone() {
@@ -266,6 +272,8 @@ public final class DictationController {
             if let paste = report.paste, !paste.clipboardReadable {
                 lastMessage = "Utter could not save your clipboard first, so the transcript was left on it. To keep your clipboard, allow Utter under System Settings → Privacy & Security → Paste from Other Apps."
             }
+            state = .ready
+        case .copiedToClipboard, .handledByScript:
             state = .ready
         case .blockedBySecureInput:
             lastMessage = "A password field is active, so Utter did not type anything."

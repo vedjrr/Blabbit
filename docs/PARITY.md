@@ -3,7 +3,7 @@
 Reference: Handy **v0.9.7** (latest release, 2026-09-18, https://github.com/cjpais/Handy/releases/tag/v0.9.7), source at `8f9cf53` (main, 2026-09-19).
 `H/` = `https://github.com/cjpais/Handy/blob/8f9cf53cd1410cda26beea39ff802ac306e39585/`. `S.x` = field `x` of `AppSettings` in `H/src-tauri/src/settings.rs`.
 
-Status: **Missing** (not built yet) · **Matched** (same behaviour, evidence linked) · **Better** (measured win, evidence linked) · **N/A** (reason given).
+Status: **Missing** (not built yet) · **Built** (implemented and covered by automated tests; live check with a human still pending, see TEST_CHECKLIST) · **Matched** (same behaviour, evidence linked) · **Better** (measured win, evidence linked) · **N/A** (reason given).
 Nothing may be Missing at DONE. New Handy features found later get new rows.
 Sources are file paths (with line where useful), a settings field `S.x`, or a Tauri command name (all defined under `H/src-tauri/src/commands/` unless another file is given). Rows marked "—" in the source column are Utter-only features Handy does not have.
 
@@ -11,14 +11,14 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 | # | Feature | Handy source | How Handy does it | Utter plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
-| A1 | Push-to-talk (hold to record, release to transcribe) | `H/src-tauri/src/shortcut/mod.rs`, `S.shortcut_activation` | handy-keys CGEventTap or Tauri global-shortcut | Active CGEventTap, swallow matching events (ADR-005) | M1 | Missing | Measure key-down → first buffer (< 50 ms target) |
+| A1 | Push-to-talk (hold to record, release to transcribe) | `H/src-tauri/src/shortcut/mod.rs`, `S.shortcut_activation` | handy-keys CGEventTap or Tauri global-shortcut | Active CGEventTap, swallow matching events (ADR-005) | M1 | Built (M1: CGEventTap PTT + watchdog; `ShortcutMatcherTests`) | Measure key-down → first buffer (< 50 ms target) |
 | A2 | Toggle mode | `S.shortcut_activation = Toggle` | tap to start, tap to stop | Same | M4 | Missing | — |
 | A3 | Hold-or-toggle hybrid with `hold_threshold_ms` | `S.hold_threshold_ms`, `HoldOrToggle` | short tap toggles, long hold is PTT | Same | M4 | Missing | — |
 | A4 | Configurable shortcut incl. modifier-only and fn/Globe | `H/src-tauri/src/shortcut/handy_keys.rs:412` | handy-keys validation | Native shortcut recorder, modifier-only + fn, conflict detection with system shortcuts | M4 | Missing | Native recorder + conflict warning |
-| A5 | Default shortcut `⌥ Space` on macOS | `H/src-tauri/src/settings.rs:862` | — | Same default | M1 | Missing | — |
+| A5 | Default shortcut `⌥ Space` on macOS | `H/src-tauri/src/settings.rs:862` | — | Same default | M1 | Built (`Shortcut.optionSpace`) | — |
 | A6 | Cancel shortcut (Esc) while recording | `S.bindings["cancel"]` | registered only while recording | Same, swallowed only while recording | M4 | Missing | — |
 | A7 | Separate "transcribe with post-processing" shortcut | `S.bindings["transcribe_with_post_process"]` | second binding | Second binding that forces the selected LLM mode | M5 | Missing | — |
-| A8 | Secure-input shortcut fallback + tray warning | `H/src-tauri/src/secure_input.rs` | polls `IsSecureEventInputEnabled`, shadow-registers Carbon hotkeys | Same idea, own code (ADR-005) | M2 | Missing | Show culprit app name in overlay |
+| A8 | Secure-input shortcut fallback + tray warning | `H/src-tauri/src/secure_input.rs` | polls `IsSecureEventInputEnabled`, shadow-registers Carbon hotkeys | Same idea, own code (ADR-005) | M2 | Built (Carbon fallback while secure input is sustained; `SecureInputTests`) | Show culprit app name in overlay |
 | A9 | Audio feedback sounds (start/stop), themes, custom, volume | `S.audio_feedback`, `S.sound_theme`, `S.audio_feedback_volume`, `H/src-tauri/src/audio_feedback.rs` | bundled WAVs | Own sounds (original, generated), `NSSound`/AVAudioPlayer | M4 | Missing | — |
 | A10 | Mute system output while recording | `S.mute_while_recording` | — | Core Audio default-output mute + restore | M4 | Missing | — |
 | A11 | Always-on microphone | `S.always_on_microphone` | stream kept open | "Keep microphone warm" option (ADR-004) | M4 | Missing | Measure latency difference |
@@ -31,7 +31,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | A18 | Live streaming transcription in overlay | `S.overlay_style = Live`, `StreamTextEvent` in `managers/transcription.rs` | transcribe-cpp streaming sessions | transcribe-cpp `Session::stream` for streaming-capable models | M4 | Missing | — |
 | A19 | Language selection + auto-detect | `S.selected_language` | per-model languages | Same | M5 | Missing | — |
 | A20 | Translate to English (Whisper) | `S.translate_to_english` | Whisper translate task | Same (`Task::Translate`) | M5 | Missing | — |
-| A21 | Short / silent recordings ignored | `managers/audio.rs` VAD policy | — | < 0.3 s or silence → nothing | M4 | Missing | — |
+| A21 | Short / silent recordings ignored | `managers/audio.rs` VAD policy | — | < 0.3 s or silence → nothing | M4 | Built (Rust `skip_reason` + `tooShortAndSilentAreSkipped`) | — |
 | A22 | Play test sound (preview feedback sound on the chosen output device) | `play_test_sound` in `H/src-tauri/src/commands/audio.rs:295` | — | "Play" button next to sound picker | M4 | Missing | — |
 | A23 | Reset a shortcut to its default | `reset_binding` in `H/src-tauri/src/shortcut/mod.rs:226` | — | "Reset to ⌥Space" button | M4 | Missing | — |
 
@@ -39,16 +39,16 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 | # | Feature | Handy source | How Handy does it | Utter plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
-| B1 | Paste via clipboard + ⌘V | `H/src-tauri/src/clipboard.rs:55` | enigo key chord | CGEvent ⌘V (ADR-006) | M1 | Missing | — |
-| B2 | Paste method options: ⌘V, direct typing, none, Shift+Insert, Ctrl+Shift+V, external script | `S.paste_method` | enum | ⌘V, type, AX, none, external script; Shift+Insert/Ctrl+Shift+V are Windows/Linux chords | M2 | Missing | AX insertion (Handy has none) |
-| B3 | Clipboard handling: don't modify / also copy to clipboard | `S.clipboard_handling` | — | Same | M2 | Missing | — |
-| B4 | Clipboard restore after paste | `H/src-tauri/src/clipboard.rs:63-106` | restores text, or image only when no text | Restore every item × every type, `changeCount`-guarded | M2 | Missing | **Better**: full restore (to demonstrate) |
-| B5 | Receipt-based "reliable paste" | `H/src-tauri/src/paste_tx/macos.rs` (debug-gated, `clipboard.rs:806`) | pasteboard promise read receipt | Promise receipt on by default | M2 | Missing | On by default |
-| B6 | Auto-submit after paste (Enter / Ctrl+Enter / ⌘Enter) | `S.auto_submit`, `S.auto_submit_key` | sends key | Same | M2 | Missing | Per-app setting |
-| B7 | Append trailing space | `S.append_trailing_space` | — | Same | M2 | Missing | — |
-| B8 | Paste delays before/after | `S.paste_delay_ms`, `S.paste_delay_after_ms` | — | Same, per-app override | M2 | Missing | — |
-| B9 | Secure field → no insertion | `H/src-tauri/src/secure_input.rs` | warns in tray | `IsSecureEventInputEnabled` + AX `AXSecureTextField` role check → skip, overlay notice | M2 | Missing | AX role check catches secure fields even without global secure input |
-| B10 | Per-app insertion strategy table | — (Handy has one global method) | — | Bundle-ID table, user-overridable | M2 | Missing | **Better** (Handy has no per-app table) |
+| B1 | Paste via clipboard + ⌘V | `H/src-tauri/src/clipboard.rs:55` | enigo key chord | CGEvent ⌘V (ADR-006) | M1 | Built (`PasteInserter`; `ClipboardTests`) | — |
+| B2 | Paste method options: ⌘V, direct typing, none, Shift+Insert, Ctrl+Shift+V, external script | `S.paste_method` | enum | ⌘V, type, AX, none, external script; Shift+Insert/Ctrl+Shift+V are Windows/Linux chords | M2 | Built (automatic chain / clipboard-only / external script (`InsertionSettings.Method`); Shift+Insert, Ctrl+Shift+V are Windows/Linux chords → N/A on Mac; `InsertionSettingsBehaviourTests`) | AX insertion (Handy has none) |
+| B3 | Clipboard handling: don't modify / also copy to clipboard | `S.clipboard_handling` | — | Same | M2 | Built (`copyToClipboard`; `copyToClipboardLeavesTranscriptAfterPaste`) | — |
+| B4 | Clipboard restore after paste | `H/src-tauri/src/clipboard.rs:63-106` | restores text, or image only when no text | Restore every item × every type, `changeCount`-guarded | M2 | Built (all items × all types restored, changeCount-guarded, never wiped on failed read; `ClipboardTests` (Better claim awaits the live Handy comparison)) | **Better**: full restore (to demonstrate) |
+| B5 | Receipt-based "reliable paste" | `H/src-tauri/src/paste_tx/macos.rs` (debug-gated, `clipboard.rs:806`) | pasteboard promise read receipt | Promise receipt on by default | M2 | Built (promise receipt on by default; `pasteRestoresClipboardAfterTheTargetReadsIt`) | On by default |
+| B6 | Auto-submit after paste (Enter / Ctrl+Enter / ⌘Enter) | `S.auto_submit`, `S.auto_submit_key` | sends key | Same | M2 | Built (`autoSubmit`; `autoSubmitFiresOnceAfterInsertion`) | Per-app setting |
+| B7 | Append trailing space | `S.append_trailing_space` | — | Same | M2 | Built (`appendTrailingSpace`; `trailingSpaceOnlyWhenEnabledAndNeeded`) | — |
+| B8 | Paste delays before/after | `S.paste_delay_ms`, `S.paste_delay_after_ms` | — | Same, per-app override | M2 | Built (`pasteDelayMs`) | — |
+| B9 | Secure field → no insertion | `H/src-tauri/src/secure_input.rs` | warns in tray | `IsSecureEventInputEnabled` + AX `AXSecureTextField` role check → skip, overlay notice | M2 | Built (global secure input + AX secure-field role; `passwordFieldBlocksEveryStrategy`) | AX role check catches secure fields even without global secure input |
+| B10 | Per-app insertion strategy table | — (Handy has one global method) | — | Bundle-ID table, user-overridable | M2 | Built (`AppInsertionTable` + overrides; `InsertionStrategyTableTests`) | **Better** (Handy has no per-app table) |
 | B11 | Linux typing tools (wtype, xdotool, …) | `S.typing_tool` | — | — | — | N/A | Linux only |
 
 ## C. Models
@@ -105,7 +105,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 | # | Feature | Handy source | How Handy does it | Utter plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
-| F1 | Tray icon with idle / recording / transcribing states | `H/src-tauri/src/tray.rs`, `resources/*.png` | PNG icons | Own SF Symbol-style template icons | M1 | Missing | — |
+| F1 | Tray icon with idle / recording / transcribing states | `H/src-tauri/src/tray.rs`, `resources/*.png` | PNG icons | Own SF Symbol-style template icons | M1 | Built (status item with idle/recording/transcribing/error icons (M1)) | — |
 | F2 | Tray menu: model switcher, unload, cancel, settings, check updates, copy last, quit | `H/src-tauri/src/tray.rs:471-552` | — | Menu per GOAL G5 (+ mode, microphone, history, shortcut) | M1/M5 | Missing | — |
 | F3 | Show / hide tray icon | `S.show_tray_icon` | — | Same (app reachable by relaunch) | M5 | Missing | — |
 | F4 | Start hidden | `S.start_hidden` | — | Menu-bar app never opens a window on launch unless onboarding | M5 | Missing | — |

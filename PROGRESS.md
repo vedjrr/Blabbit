@@ -12,7 +12,7 @@ Iteration: 3
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M2: AX insertion strategy (serial AX queue, 0.25 s messaging timeout, read-back verification), CGEvent unicode typing fallback, per-app strategy table, secure-field detection (global secure input + AXSecureTextField role), strategy-selection tests, docs/TEST_CHECKLIST.md update.
+- M2 gate: critic review. Then M3 (model manager: registry, resumable downloader with SHA-256, switching with unload + RSS, adapters/verification for every G3 model).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -20,7 +20,7 @@ Iteration: 3
 ## Milestones
 - [x] **M0 — Research & decisions.** Critic re-review: `VERDICT: PASS`, zero BLOCKERs (2026-09-24). Its 3 MAJOR and all minor findings fixed in 08f14b8 (bench fails loudly, `make models`, `make dmg` preflight, ONNX bench committed at `evidence/m0/onnxbench/`, CoreML EP measured, first-load cause marked unconfirmed).
 - [x] M1 — Vertical slice (automated). Critic re-review `VERDICT: PASS`; its 4 MAJORs fixed in 01a38e5. (H) TextEdit test deferred by the human to the end (see Decisions).
-- [ ] M2 — Insertion reliability
+- [ ] M2 — Insertion reliability. Built (see Done); critic review pending. Live per-app checklist (H) deferred with the other human checks.
 
 ## Done (with evidence)
 - [M0] Handy cloned read-only to `/tmp/handy-ref` (v0.9.7-6-g8f9cf53). Component map → `docs/ARCHITECTURE.md` §1.
@@ -65,7 +65,17 @@ Iteration: 3
 - [M1] App launch after fixes (`evidence/m1/app_launch_idle.log`): tap started, `audio graph ready input_rate=48000 channels=1`, `pasteboard access_behavior=2`, `model_load … load_count=1`; idle RSS 835 MB, CPU 0.1 %.
 - [M1] App launch, first build (`evidence/m1/app_launch.log`): model loads in the background at launch, `load_count=1`; first launch of a new build `load_ms=7303` (the ~7 s outlier again: seen on every fresh build of the app or CLI), relaunch of the same build `load_ms=192 warmup_ms=57 total_ms=250`. Idle: RSS 922 MB, CPU 0.1 %.
 
+- [M2] Insertion strategy chain (ADR-006), `app/Sources/UtterKit/{InsertionStrategy,AccessibilityInserter,TypingInserter,TextInserter,InsertionSettings,SecureInputMonitor}.swift`:
+  - Per-app table (native → AX, paste, type; terminals/browsers/Electron → paste, type; unknown → AX, paste, type). User overrides are persisted (`insertion.overrides`). Bundle IDs checked against the apps installed here (ChatGPT here is `com.openai.codex`).
+  - AX insertion only where the value is readable, with read-back verification: `inserted` / `noEffect` (falls through) / `unverified` (never retried, so no duplicate text). Runs on its own AX queue with a 0.25 s messaging timeout.
+  - Unicode typing fallback: ≤ 20 UTF-16 units per event on grapheme boundaries, newlines as Return.
+  - Secure input: global check + AX `AXSecureTextField` check block every strategy. Sustained secure input → Carbon hotkey fallback (PARITY A8) and a menu notice.
+  - Insertion settings (PARITY B2/B3/B6/B7/B8): clipboard-only, external script (stdin, time limit), copy-to-clipboard, auto-submit Enter/⌃Enter/⌘Enter, trailing space, paste delay. Decoding tolerates missing keys.
+- [M2] Tests: Swift 66 in 14 suites; Rust 14 + 3. The real-AppKit AX integration tests (`AXIntegrationTests`, helper `UtterAXHost` with a real NSTextView/NSSecureTextField) are **skipped while the screen is locked** (`CGSSessionScreenIsLocked=1`; the window server then exposes no window contents to AX). Three attempts confirmed this, then I changed approach to an explicit skip. They run automatically in an unlocked session.
+- [M2] `docs/TEST_CHECKLIST.md`: an expected strategy per app, how to read the `dictation` log line, a secure-keyboard-entry check, and a verified `defaults write` override recipe. PARITY: 15 rows now **Built**.
+
 ## Blocked on human
+- **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps; with the screen unlocked, `make test` also runs the real-AppKit AX tests.
 - **Deferred to the end (by your choice): live dictation into TextEdit** (needs your voice). Utter (build 01a38e5) is **already running**: its log shows the shortcut active (Accessibility is granted) and the microphone graph ready. If it isn't running: `cd "/Users/ved/Documents 2/utter-kit" && make build && open build/Utter.app`. A waveform icon appears in the menu bar.
   2. Grant **Accessibility**: System Settings → Privacy & Security → Accessibility → enable **Utter** (use the + button and pick `build/Utter.app` if it is not listed). Grant **Microphone** when prompted (or System Settings → Privacy & Security → Microphone → Utter).
   3. Click the Utter menu bar icon → **Retry Shortcut** (or quit and reopen Utter). The menu should say "Ready", with no "Allow Accessibility Access…" item.

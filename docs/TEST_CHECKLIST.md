@@ -1,28 +1,41 @@
 # Manual insertion checklist (human-run, every release)
 
-For each app: focus a text field, hold hotkey, say **"Testing Utter, one two three. HoldMyCode uses PostgreSQL."**, release.
+For each app: focus a text field, hold **⌥ Space**, say **"Testing Utter, one two three. HoldMyCode uses PostgreSQL."**, release.
 
-Pass = exact text appears at cursor, clipboard unchanged afterwards (copy "SENTINEL" beforehand, paste after), no focus change, no stray keystroke.
+**Pass** means: the exact text appears at the cursor; the clipboard is unchanged afterwards (copy `SENTINEL` beforehand, paste after); focus doesn't change; no stray keystroke (no space or `…` typed by the shortcut).
 
-| App | Field tested | Strategy used | Latency (ms) | Clipboard kept | Pass |
-|---|---|---|---|---|---|
-| TextEdit | document | | | | |
-| Notes | note body | | | | |
-| Safari | textarea on any form | | | | |
-| Chrome | Google search box | | | | |
-| Arc | address bar + textarea | | | | |
-| VS Code | editor + terminal | | | | |
-| Cursor | editor + chat | | | | |
-| Xcode | source editor | | | | |
-| Terminal | zsh prompt | | | | |
-| iTerm2 | zsh prompt | | | | |
-| Slack | message box | | | | |
-| Discord | message box | | | | |
-| WhatsApp | message box | | | | |
-| Messages | message box | | | | |
-| Mail | compose body | | | | |
-| Notion | page block | | | | |
-| ChatGPT (web) | prompt box | | | | |
-| Password field (any) | secure field | should NOT insert | | | |
+**How to read the result:** every dictation writes one `dictation …` line to `~/Library/Logs/Utter/utter.log` (menu → Open Log). Copy these fields into the table:
+- `result`: e.g. `inserted(accessibility)`, `inserted(paste)`, `inserted(typing)`, `blockedBySecureInput`
+- `release_to_insert_done_ms`
+- `clipboard_readable`
+- `attempts`: why earlier strategies were skipped
 
-Extra: unplug/switch Bluetooth mic mid-recording; 5-min recording; 0.2 s tap (should do nothing).
+The expected strategy comes from the default per-app table (`app/Sources/UtterKit/InsertionStrategy.swift`). "AX" means Accessibility: the text is set directly in the field, and the clipboard is never touched.
+
+| App | Field tested | Expected strategy | Strategy used | Latency (ms) | Clipboard kept | Pass |
+|---|---|---|---|---|---|---|
+| TextEdit | document | AX | | | | |
+| Notes | note body | AX | | | | |
+| Mail | compose body | AX | | | | |
+| Messages | message box | AX | | | | |
+| Xcode | source editor | AX | | | | |
+| Safari | textarea on any form | paste | | | | |
+| Chrome | Google search box | paste | | | | |
+| Arc | address bar + textarea | paste | | | | |
+| VS Code | editor + terminal | paste | | | | |
+| Cursor | editor + chat | paste | | | | |
+| Terminal | zsh prompt | paste | | | | |
+| iTerm2 | zsh prompt | paste | | | | |
+| Slack | message box | paste | | | | |
+| Discord | message box | paste | | | | |
+| WhatsApp | message box | paste | | | | |
+| Notion | page block | paste | | | | |
+| ChatGPT (web + app) | prompt box | paste | | | | |
+| Password field (any) | secure field | **must NOT insert** (`blockedBySecureInput`) | | | | |
+
+**Extra checks**
+- Terminal → Terminal menu → **Secure Keyboard Entry** on: ⌥Space should still start recording (Carbon fallback; the log shows `carbon fallback registered`), and nothing is typed while it's on.
+- Unplug or switch a Bluetooth mic mid-recording. There should be no crash, the log shows `device_changed=true`, and the part before the switch is transcribed.
+- A 5-minute recording.
+- A 0.2 s tap should do nothing (the log shows `skipped_TooShort`).
+- Per-app override: set Terminal to "Type" (Settings → Text Insertion; until Settings exists in M5: `defaults write dev.utter.mac insertion.overrides -data "$(printf '{"com.apple.Terminal":["typing"]}' | xxd -p | tr -d '\n')"`), then dictate. The log should show `inserted(typing)`.
