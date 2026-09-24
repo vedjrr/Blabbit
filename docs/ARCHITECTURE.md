@@ -52,7 +52,7 @@ Toolchain: Swift 6.4 (Command Line Tools, **no Xcode.app installed**), rustc 1.9
 
 ### ADR-003 — Swift ↔ Rust boundary: UniFFI (proc-macro), static library, coarse calls
 - **Decision.** Crate `core/utter-ffi` (`staticlib`) exposes a small UniFFI surface; `core/uniffi-bindgen` generates `UtterCore.swift` + `UtterFFI.h` + modulemap in library mode (`make bindings`). Generated files are build products (git-ignored).
-- **Boundary rule.** Only coarse operations cross: `Engine.load(model)`, `Engine.transcribe(pcm: [Float]) -> Transcript`, model catalog/downloads, text-processing pipeline. Audio capture, hotkeys, insertion and UI stay in Swift. PCM crosses once per utterance (5 min × 16 kHz × 4 B = 19 MB copy; cost estimated, to be measured in M1). Long-running Rust calls run off the main thread (`Task.detached` / UniFFI async); progress comes back through UniFFI callback interfaces.
+- **Boundary rule.** Only coarse operations cross: `Engine.load(model)`, `Engine.transcribe(pcm: [Float]) -> Transcript`, model catalog/downloads, text-processing pipeline. Audio capture, hotkeys, insertion and UI stay in Swift. PCM crosses once per utterance (5 min × 16 kHz × 4 B = 19 MB; measured round trip incl. the Rust silence scan: 27.5 ms best of 5 for 5 min, i.e. ≈ 0.5 ms for a 5 s utterance — `EngineBridgeTests.fiveMinuteBufferCrossesTheBridgeQuickly`). Long-running Rust calls run off the main thread (`Task.detached` / UniFFI async); progress comes back through UniFFI callback interfaces.
 - **Rejected.** Hand-written C ABI (more unsafe glue, no generated error enums); XCFramework (needs `xcodebuild`, ADR-001).
 - **Sources.** https://mozilla.github.io/uniffi-rs/latest/ ; measured: `CoreBridgeTests.rustCoreIsLinkedAndReportsRuntime` passes under `swift test`.
 

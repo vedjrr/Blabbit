@@ -44,6 +44,22 @@ import UtterCore
         #expect(silent.text.isEmpty)
     }
 
+    /// ADR-003 budget: handing 5 min of PCM to Rust must be cheap. Silent audio is
+    /// rejected by the Rust skip check, so this times the FFI copy + one scan.
+    @Test func fiveMinuteBufferCrossesTheBridgeQuickly() throws {
+        let engine = UtterEngine()
+        let fiveMinutes = [Float](repeating: 0, count: 16_000 * 300)
+        var best = Double.infinity
+        for _ in 0..<5 {
+            let t0 = MonoClock.nowNs()
+            let r = try engine.transcribe(pcm: fiveMinutes, options: DictationOptions(language: nil, translate: false, initialPrompt: nil))
+            best = min(best, MonoClock.ms(from: t0, to: MonoClock.nowNs()))
+            #expect(r.skipped == .silent)
+        }
+        print("ffi_5min_roundtrip_best_ms=\(String(format: "%.2f", best))")
+        #expect(best < 50)
+    }
+
     @Test func errorsArePlainEnglishNotDebugDumps() {
         let engine = UtterEngine()
         do {

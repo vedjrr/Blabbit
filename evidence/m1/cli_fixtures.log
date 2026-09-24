@@ -1,0 +1,18 @@
+# 2026-09-24T19:41:19Z Apple M4 macOS 27.0 — git dfe4271
+$ core/target/release/utter-cli --model "$HOME/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf" --repeat 5 fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load=7123ms warmup=50ms footprint+897MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=85ms rtf=0.018 wer=1.000	Testing udder, 123, hold my code uses post gur SQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=79ms rtf=0.018 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=82ms rtf=0.019 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=80ms rtf=0.017 wer=0.091	I studied computer science at Minute before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=86ms rtf=0.017 wer=0.538	We rewrote the settings screen and swiftly lie and move the backend the type script.
+aggregate wer=0.258 (16/62 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$HOME/Library/Application Support/Utter/Models/whisper-small/whisper-small-Q8_0.gguf" --repeat 5 fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-small/whisper-small-Q8_0.gguf arch=whisper backend=MTL0 load=195ms warmup=315ms footprint+453MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=417ms rtf=0.090 wer=1.000	TestingUtter, 1, 2, 3, hold my code uses post-gur SQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=400ms rtf=0.090 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=391ms rtf=0.092 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=385ms rtf=0.080 wer=0.091	I studied computer science at Mnuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=383ms rtf=0.076 wer=0.077	We rewrote the settings screen and SwiftUI and moved the backend to TypeScript.
+aggregate wer=0.161 (10/62 words) model_loads=1

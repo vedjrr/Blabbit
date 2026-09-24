@@ -12,7 +12,7 @@ Iteration: 2
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M1: merge `m1-draft` (Rust engine + utter-cli + FFI + Swift hotkey/audio/paste/menu), `make test` green, then live-verify the app (launch log, model loaded once) and hand the spoken-sentence TextEdit check to the human.
+- M1: critic review of the non-human M1 items, fix BLOCKERs. Then the human gate (see Blocked on human): grant permissions, speak into TextEdit, confirm; I verify the latency lines in the log.
 
 ## Milestones
 - [x] **M0 — Research & decisions.** Critic re-review: `VERDICT: PASS`, zero BLOCKERs (2026-09-24). Its 3 MAJOR and all minor findings fixed in 08f14b8 (bench fails loudly, `make models`, `make dmg` preflight, ONNX bench committed at `evidence/m0/onnxbench/`, CoreML EP measured, first-load cause marked unconfirmed).
@@ -38,7 +38,23 @@ Iteration: 2
 - [M0] `make test` → Rust `test result: ok. 2 passed` (runtime version, Metal backend compiled in); Swift `Test run with 1 test … passed` (Rust core linked into Swift).
 - [M0] Fixtures: `scripts/make-tts-fixtures.sh` generates 5 clips (4.3–5.1 s, 16 kHz mono) with macOS `say` + reference `.txt`; includes vocab words HoldMyCode, PostgreSQL, Maynooth, SwiftUI, TypeScript.
 
+- [M1] Rust core: `SpeechModel` trait (load/unload/transcribe/metadata/supported_languages/memory_requirements), `GgufModel`, resident `Engine` (unloads old model before loading new), short/silent skip, plain-English `UtterError`, WER. `utter-cli` transcribes WAVs → `evidence/m1/cli_fixtures.log`: Parakeet V3 p50 79–86 ms per ~4.6 s clip (RTF 0.017–0.019), **aggregate WER 0.258** (16/62, misses are custom vocab words: HoldMyCode, PostgreSQL, SwiftUI, Maynooth); Whisper Small p50 383–417 ms, WER 0.161; `model_loads=1` for both.
+- [M1] Whisper initial prompt with the vocabulary list: Whisper Small WER 0.161 → **0.032** (`utter-cli --prompt "Utter, HoldMyCode, PostgreSQL, Maynooth, SwiftUI, TypeScript, Decivra, WhisperKit"`).
+- [M1] 5-minute recording: `cargo test -p utter-core --test fixtures five_minute` → audio_ms=300000, inference 15.1 s, 695/658 words, WER 0.299, tail present (no truncation).
+- [M1] `make test`: Rust 14 unit + 2 real-model tests; Swift 20 tests in 4 suites (shortcut matcher, clipboard snapshot + receipt-based restore + "don't clobber newer copy", resampler 48/44.1/24/16 kHz → 16 kHz mono with frequency and level checks, Swift→Rust bridge transcription with `loadCount()==1`, plain-English errors).
+- [M1] FFI cost: 5 min PCM round trip 27.5 ms (≈ 0.5 ms per 5 s utterance).
+- [M1] App launch (`evidence/m1/app_launch.log`): model loads in the background at launch, `load_count=1`; first launch of a new build `load_ms=7303` (the ~7 s outlier again: seen on every fresh build of the app or CLI), relaunch of the same build `load_ms=192 warmup_ms=57 total_ms=250`. Idle: RSS 922 MB, CPU 0.1 %.
+
 ## Blocked on human
+- **M1 gate: live dictation into TextEdit** (needs your permissions and your voice):
+  1. `cd "/Users/ved/Documents 2/utter-kit" && make build && open build/Utter.app`. A waveform icon appears in the menu bar.
+  2. Grant **Accessibility**: System Settings → Privacy & Security → Accessibility → enable **Utter** (use the + button and pick `build/Utter.app` if it is not listed). Grant **Microphone** when prompted (or System Settings → Privacy & Security → Microphone → Utter).
+  3. Click the Utter menu bar icon → **Retry Shortcut** (or quit and reopen Utter). The menu should say "Ready", with no "Allow Accessibility Access…" item.
+  4. Open TextEdit, new document. Copy the word `SENTINEL` to the clipboard.
+  5. Hold **⌥ Space**, say "Testing Utter, one two three. HoldMyCode uses PostgreSQL.", release.
+  6. Check that the text appears in TextEdit and no space character or "…" was typed by the shortcut. Then press ⌘V somewhere: it should paste `SENTINEL`.
+  7. Repeat 3–5 times with ~5 s sentences, then run `/loop did the M1 TextEdit test: <what you saw>`. I'll read the `dictation … keydown_to_first_sample_ms … release_to_insert_done_ms` lines in `~/Library/Logs/Utter/utter.log`.
+  (Signing uses your local "Apple Development" identity, so these grants survive rebuilds.)
 - (non-blocking, wanted before M1 gate) **Record your own voice fixtures.** The TTS clips are synthetic. Please record 3–5 clips (~5 s each), save as `fixtures/audio/human_NN.wav` with the exact words in `human_NN.txt`. Quick way: QuickTime → New Audio Recording, export, then `afconvert -f WAVE -d LEI16@16000 -c 1 in.m4a fixtures/audio/human_01.wav`. Include: "Testing Utter, one two three. HoldMyCode uses PostgreSQL." and a sentence with Decivra, Maynooth, TypeScript, SwiftUI, WhisperKit.
 - (optional) Install Xcode.app if you want Instruments profiling in M6; the build does not need it.
 

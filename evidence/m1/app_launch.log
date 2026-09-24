@@ -1,0 +1,6 @@
+2026-09-24T19:40:30.518Z INFO launch pid=26591 core=transcribe-cpp 0.2.3 (unknown)
+2026-09-24T19:40:30.526Z ERROR hotkey start failed: tapCreationFailed
+2026-09-24T19:40:38.170Z INFO model_load model=parakeet-tdt-0.6b-v3-Q8_0.gguf load_ms=7303 warmup_ms=340 footprint_mb=910 total_ms=7643 load_count=1
+2026-09-24T19:40:57.056Z INFO launch pid=26724 core=transcribe-cpp 0.2.3 (unknown)
+2026-09-24T19:40:57.066Z ERROR hotkey start failed: tapCreationFailed
+2026-09-24T19:40:57.316Z INFO model_load model=parakeet-tdt-0.6b-v3-Q8_0.gguf load_ms=192 warmup_ms=57 footprint_mb=896 total_ms=250 load_count=1
