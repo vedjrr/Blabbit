@@ -24,6 +24,8 @@ pub enum CoreError {
     InputTooLong { user_message: String, detail: String },
     #[error("{user_message}")]
     AudioRead { user_message: String, detail: String },
+    #[error("{user_message}")]
+    DownloadFailed { user_message: String, detail: String },
 }
 
 impl From<UtterError> for CoreError {
@@ -38,6 +40,7 @@ impl From<UtterError> for CoreError {
             UtterError::InferenceFailed { .. } => CoreError::InferenceFailed { user_message, detail },
             UtterError::InputTooLong { .. } => CoreError::InputTooLong { user_message, detail },
             UtterError::AudioRead { .. } => CoreError::AudioRead { user_message, detail },
+            UtterError::DownloadFailed { .. } => CoreError::DownloadFailed { user_message, detail },
         }
     }
 }

@@ -25,6 +25,10 @@ struct Args {
     /// Transcribe each file this many times (latency percentiles).
     #[arg(long, default_value_t = 1)]
     repeat: usize,
+    /// After transcribing, switch to this model and report memory before/after
+    /// the old model is unloaded (G3: switching frees memory).
+    #[arg(long)]
+    switch_to: Option<PathBuf>,
     /// WAV files (16 kHz). A sibling .txt is used as the WER reference.
     #[arg(required = true)]
     files: Vec<PathBuf>,
@@ -124,6 +128,31 @@ fn main() -> ExitCode {
             println!("{}", serde_json::json!({"event": "summary", "wer": agg, "errors": total_errors, "reference_words": total_ref_words, "model_loads": engine.load_count()}));
         } else {
             println!("aggregate wer={agg:.3} ({total_errors}/{total_ref_words} words) model_loads={}", engine.load_count());
+        }
+    }
+    if let Some(next) = &args.switch_to {
+        use utter_core::memory::process_memory;
+        let mb = |b: u64| b as f64 / 1_048_576.0;
+        let with_first = process_memory();
+        engine.unload();
+        let after_unload = process_memory();
+        match engine.load_gguf(next) {
+            Ok(_) => {
+                let with_second = process_memory();
+                println!(
+                    "switch footprint_mb: with_first={:.0} after_unload={:.0} (freed {:.0}) with_second={:.0} loaded={} load_count={}",
+                    mb(with_first.footprint_bytes),
+                    mb(after_unload.footprint_bytes),
+                    mb(with_first.footprint_bytes.saturating_sub(after_unload.footprint_bytes)),
+                    mb(with_second.footprint_bytes),
+                    engine.metadata().map(|m| m.architecture).unwrap_or_default(),
+                    engine.load_count()
+                );
+            }
+            Err(e) => {
+                eprintln!("error: {e} ({})", e.detail());
+                failed = true;
+            }
         }
     }
     if failed {
