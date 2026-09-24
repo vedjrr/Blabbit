@@ -31,6 +31,7 @@ core:
 bindings: core
 	cd "$(CORE)" && ./target/release/uniffi-bindgen generate \
 		--library target/release/libutter_ffi.a --language swift --out-dir "$(BINDINGS)"
+	mkdir -p "$(APP)/Sources/UtterFFI/include" "$(APP)/Sources/UtterCore"
 	install -m 644 "$(BINDINGS)/UtterFFI.h" "$(APP)/Sources/UtterFFI/include/UtterFFI.h"
 	install -m 644 "$(BINDINGS)/UtterFFI.modulemap" "$(APP)/Sources/UtterFFI/include/module.modulemap"
 	install -m 644 "$(BINDINGS)/UtterCore.swift" "$(APP)/Sources/UtterCore/UtterCore.swift"
