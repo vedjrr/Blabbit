@@ -172,3 +172,135 @@ pub fn word_error_rate(reference: String, hypothesis: String) -> f64 {
 pub fn process_footprint_bytes() -> u64 {
     utter_core::memory::process_memory().footprint_bytes
 }
+
+// MARK: Model catalog and downloads (M3)
+
+use utter_core::catalog::{self, InstallState};
+use utter_core::download::{self as dl, Control, Outcome, Stopped};
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ModelEntry {
+    pub id: String,
+    pub name: String,
+    pub family: String,
+    pub description: String,
+    pub languages: Vec<String>,
+    pub size_bytes: u64,
+    pub license: String,
+    pub license_url: String,
+    pub license_requires_acceptance: bool,
+    pub recommended: bool,
+    /// Word error rate on the TTS fixture set, measured on the dev machine.
+    pub measured_wer: f64,
+    pub measured_rtf: f64,
+    pub measured_p50_ms: u64,
+    pub measured_footprint_mb: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ModelInstallState {
+    NotInstalled,
+    Partial { bytes: u64 },
+    Installed,
+}
+
+#[uniffi::export]
+pub fn catalog_entries() -> Vec<ModelEntry> {
+    catalog::models()
+        .iter()
+        .map(|m| ModelEntry {
+            id: m.id.clone(),
+            name: m.name.clone(),
+            family: m.family.clone(),
+            description: m.description.clone(),
+            languages: m.languages.clone(),
+            size_bytes: m.size_bytes,
+            license: m.license.clone(),
+            license_url: m.license_url.clone(),
+            license_requires_acceptance: m.license_requires_acceptance,
+            recommended: m.recommended,
+            measured_wer: m.measured.wer_tts_fixtures,
+            measured_rtf: m.measured.rtf,
+            measured_p50_ms: m.measured.p50_ms_5s_clip,
+            measured_footprint_mb: m.measured.footprint_mb,
+        })
+        .collect()
+}
+
+#[uniffi::export]
+pub fn model_state(models_dir: String, id: String) -> Result<ModelInstallState, CoreError> {
+    let m = catalog::find(&id)?;
+    Ok(match m.state(Path::new(&models_dir)) {
+        InstallState::NotInstalled => ModelInstallState::NotInstalled,
+        InstallState::Partial(bytes) => ModelInstallState::Partial { bytes },
+        InstallState::Installed => ModelInstallState::Installed,
+    })
+}
+
+#[uniffi::export]
+pub fn model_path(models_dir: String, id: String) -> Result<String, CoreError> {
+    Ok(catalog::find(&id)?.path(Path::new(&models_dir)).display().to_string())
+}
+
+/// Full SHA-256 check (~1 s per GB); call off the main thread.
+#[uniffi::export]
+pub fn verify_model(models_dir: String, id: String) -> Result<(), CoreError> {
+    Ok(catalog::find(&id)?.verify(Path::new(&models_dir))?)
+}
+
+#[uniffi::export]
+pub fn delete_model(models_dir: String, id: String) -> Result<(), CoreError> {
+    Ok(catalog::find(&id)?.delete(Path::new(&models_dir))?)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum DownloadOutcome {
+    Completed,
+    Paused,
+    Cancelled,
+    Failed { user_message: String, detail: String },
+}
+
+/// Implemented in Swift. Called from the download thread.
+#[uniffi::export(with_foreign)]
+pub trait DownloadListener: Send + Sync {
+    fn on_progress(&self, downloaded: u64, total: u64);
+    fn on_finished(&self, outcome: DownloadOutcome);
+}
+
+#[derive(uniffi::Object)]
+pub struct ModelDownload {
+    control: Control,
+}
+
+#[uniffi::export]
+impl ModelDownload {
+    /// Starts (or resumes) downloading `id` into `models_dir` on a background thread.
+    #[uniffi::constructor]
+    pub fn start(models_dir: String, id: String, listener: Arc<dyn DownloadListener>) -> Result<Arc<Self>, CoreError> {
+        let spec = catalog::find(&id)?.download_spec(Path::new(&models_dir));
+        let control = Control::default();
+        let worker_control = control.clone();
+        std::thread::Builder::new()
+            .name(format!("utter-download-{id}"))
+            .spawn(move || {
+                let outcome = match dl::download(&spec, &worker_control, |p| listener.on_progress(p.downloaded, p.total)) {
+                    Ok(Outcome::Completed) => DownloadOutcome::Completed,
+                    Ok(Outcome::Stopped(Stopped::Paused)) => DownloadOutcome::Paused,
+                    Ok(Outcome::Stopped(Stopped::Cancelled)) => DownloadOutcome::Cancelled,
+                    Err(e) => DownloadOutcome::Failed { user_message: e.to_string(), detail: e.detail() },
+                };
+                listener.on_finished(outcome);
+            })
+            .map_err(|e| CoreError::DownloadFailed { user_message: "The download could not be started.".into(), detail: e.to_string() })?;
+        Ok(Arc::new(ModelDownload { control }))
+    }
+
+    pub fn pause(&self) {
+        self.control.pause();
+    }
+
+    pub fn cancel(&self) {
+        self.control.cancel();
+    }
+}

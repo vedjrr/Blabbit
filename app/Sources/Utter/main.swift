@@ -9,11 +9,13 @@ if CommandLine.arguments.contains("--version") {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let controller = DictationController()
+    private let controller = DictationController(models: ModelManager())
     private var menu: StatusMenuController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        menu = StatusMenuController(controller: controller)
+        let menu = StatusMenuController(controller: controller)
+        controller.onNeedsModel = { [weak menu] in menu?.showModelManager() }
+        self.menu = menu
         controller.launch()
     }
 }
