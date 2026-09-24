@@ -41,6 +41,13 @@ public final class HotkeyMonitor: @unchecked Sendable {
 
     public var isRunning: Bool { tap != nil }
 
+    /// Clears a held state the tap may have missed the key-up for (watchdog).
+    /// Returns true if the shortcut had been considered held.
+    @discardableResult
+    public func forceRelease() -> Bool {
+        matcher.withLock { $0.reset() }
+    }
+
     public func start() throws {
         guard tap == nil else { return }
         let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)

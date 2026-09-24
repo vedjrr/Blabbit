@@ -10,6 +10,7 @@ public struct InsertTiming: Sendable {
     public var reads = 0
     public var restoredNs: UInt64?
     public var clipboardReadable = true
+    public var clipboardAccess: ClipboardAccess = .allowed
     public var frontmostBundleID: String?
 }
 
@@ -39,8 +40,12 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     public typealias SendPaste = @MainActor () -> String?
 
     private let pasteboard: NSPasteboard
+    private let reader: PasteboardReading
     private let sendPaste: SendPaste
     private let checkSecureInput: Bool
+    /// Pasteboard reads for the snapshot can block on the source app (promised
+    /// data), so they run here instead of on the main thread.
+    private let snapshotQueue = DispatchQueue(label: "dev.utter.clipboard-snapshot", qos: .userInitiated)
     private var pendingText = ""
     private var receiptCount = 0
     private var waiter: CheckedContinuation<Void, Never>?
@@ -55,8 +60,10 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     public var receiptTimeout: Duration = .milliseconds(2000)
     public private(set) var lastTiming = InsertTiming()
 
-    public init(pasteboard: NSPasteboard = .general, checkSecureInput: Bool = true, sendPaste: @escaping SendPaste = PasteInserter.postCommandV) {
+    public init(pasteboard: NSPasteboard = .general, reader: PasteboardReading? = nil, checkSecureInput: Bool = true,
+                sendPaste: @escaping SendPaste = PasteInserter.postCommandV) {
         self.pasteboard = pasteboard
+        self.reader = reader ?? pasteboard
         self.checkSecureInput = checkSecureInput
         self.sendPaste = sendPaste
     }
@@ -82,7 +89,19 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
         lastTiming = InsertTiming(startedNs: MonoClock.nowNs())
         lastTiming.frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         if checkSecureInput && Self.secureInputActive { return .blockedBySecureInput }
-        let snapshot = PasteboardSnapshot.capture(pasteboard)
+        let access = ClipboardAccess.current(for: pasteboard)
+        lastTiming.clipboardAccess = access
+        let snapshot: PasteboardSnapshot
+        if access == .allowed {
+            nonisolated(unsafe) let reader = self.reader
+            snapshot = await withCheckedContinuation { continuation in
+                snapshotQueue.async { continuation.resume(returning: PasteboardSnapshot.capture(from: reader)) }
+            }
+        } else {
+            // Reading would raise a macOS alert on every dictation (or is denied):
+            // don't read; the transcript is simply left on the clipboard.
+            snapshot = .unreadable
+        }
         lastTiming.snapshotMs = MonoClock.ms(from: lastTiming.startedNs, to: MonoClock.nowNs())
         lastTiming.clipboardReadable = snapshot.readable
         pendingText = text
@@ -91,7 +110,11 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
         pasteboard.clearContents()
         let item = NSPasteboardItem()
         item.setDataProvider(self, forTypes: [.string])
-        for marker in Self.transientMarkers { item.setData(Data(), forType: marker) }
+        if snapshot.readable {
+            // The transcript is only passing through; ask clipboard managers to skip it.
+            // If we can't restore, it stays as ordinary clipboard text instead.
+            for marker in Self.transientMarkers { item.setData(Data(), forType: marker) }
+        }
         guard pasteboard.writeObjects([item]) else {
             snapshot.restore(to: pasteboard)
             return .failed("Could not write to the clipboard.")
@@ -148,7 +171,15 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
             Log.info("clipboard changed by someone else during paste; not restoring")
             return
         }
-        snapshot.restore(to: pasteboard)
+        if snapshot.readable {
+            snapshot.restore(to: pasteboard)
+        } else {
+            // Nothing to put back: leave this transcript as plain clipboard text
+            // rather than a promise whose provider will serve the next dictation.
+            pasteboard.clearContents()
+            pasteboard.setString(pendingText, forType: .string)
+            Log.info("clipboard not restored (access=\(lastTiming.clipboardAccess)); transcript left on clipboard")
+        }
         lastTiming.restoredNs = MonoClock.nowNs()
     }
 

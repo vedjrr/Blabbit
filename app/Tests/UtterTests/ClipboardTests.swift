@@ -2,6 +2,12 @@ import AppKit
 import Testing
 @testable import UtterKit
 
+/// Simulates a read where macOS (or the source app) withheld some data.
+struct FakeReader: PasteboardReading {
+    var items: [[(type: String, data: Data?)]]?
+    func readItems() -> [[(type: String, data: Data?)]]? { items }
+}
+
 /// Uses private named pasteboards so tests never touch the user's clipboard.
 @MainActor @Suite struct ClipboardTests {
     func makePasteboard() -> NSPasteboard {
@@ -20,14 +26,14 @@ import Testing
         second.setString("file:///tmp/example.txt", forType: .fileURL)
         #expect(pb.writeObjects([first, second]))
 
-        let snapshot = PasteboardSnapshot.capture(pb)
+        let snapshot = PasteboardSnapshot.capture(from: pb)
         #expect(snapshot.items.count == 2)
 
         pb.clearContents()
         pb.setString("transcript", forType: .string)
         snapshot.restore(to: pb)
 
-        #expect(PasteboardSnapshot.capture(pb) == snapshot)
+        #expect(PasteboardSnapshot.capture(from: pb) == snapshot)
         #expect(pb.pasteboardItems?.first?.string(forType: .string) == "SENTINEL")
         #expect(pb.pasteboardItems?.last?.data(forType: .png) == Data([0x89, 0x50, 0x4E, 0x47, 1, 2, 3]))
     }
@@ -36,7 +42,7 @@ import Testing
         let pb = makePasteboard()
         defer { pb.releaseGlobally() }
         pb.clearContents()
-        let snapshot = PasteboardSnapshot.capture(pb)
+        let snapshot = PasteboardSnapshot.capture(from: pb)
         pb.setString("transcript", forType: .string)
         snapshot.restore(to: pb)
         #expect((pb.pasteboardItems ?? []).isEmpty)
@@ -162,5 +168,43 @@ import Testing
         #expect(t.reads == 1)
         #expect(t.firstReadNs! >= t.pasteSentNs! || t.firstReadNs! >= t.startedNs)
         #expect(t.restoredNs! > t.firstReadNs!)
+    }
+
+    @Test func partialOrDeniedReadsAreUnreadable() {
+        #expect(!PasteboardSnapshot.capture(from: FakeReader(items: nil)).readable)
+        let partial = FakeReader(items: [[("public.utf8-plain-text", Data("a".utf8)), ("public.rtf", nil)]])
+        #expect(!PasteboardSnapshot.capture(from: partial).readable)
+        let empty = FakeReader(items: [])
+        #expect(PasteboardSnapshot.capture(from: empty).readable)
+    }
+
+    @Test func oversizedClipboardIsNotKept() {
+        let big = FakeReader(items: [[("public.png", Data(count: 2_000))]])
+        #expect(!PasteboardSnapshot.capture(from: big, maxBytes: 1_000).readable)
+        #expect(PasteboardSnapshot.capture(from: big, maxBytes: 4_000).readable)
+    }
+
+    @Test func declinedReadLeavesTranscriptAsPlainClipboardText() async {
+        let pb = makePasteboard()
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        pb.setString("user data we could not read", forType: .string)
+        var typesSeenByTarget: [NSPasteboard.PasteboardType] = []
+        let inserter = PasteInserter(pasteboard: pb, reader: FakeReader(items: [[("public.utf8-plain-text", nil)]]),
+                                     checkSecureInput: false) {
+            typesSeenByTarget = pb.types ?? []
+            _ = pb.string(forType: .string)
+            return nil
+        }
+        inserter.quietPeriod = .milliseconds(20)
+        let outcome = await inserter.insert("transcript kept")
+        #expect(outcome == .pasted(receipt: true))
+        #expect(!inserter.lastTiming.clipboardReadable)
+        // Not transient: clipboard managers may keep it, since it stays on the clipboard.
+        #expect(!typesSeenByTarget.contains(PasteInserter.transientMarkers[0]))
+        // A concrete copy, not a promise tied to the next dictation.
+        #expect(pb.string(forType: .string) == "transcript kept")
+        _ = await inserter.insert("next dictation")
+        #expect(pb.string(forType: .string) == "next dictation")
     }
 }

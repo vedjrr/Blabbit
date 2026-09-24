@@ -42,7 +42,10 @@ public final class Resampler {
             inputStatus.pointee = .haveData
             return buffer
         }
-        guard status != .error, let data = out.floatChannelData else { return [] }
+        guard status != .error, let data = out.floatChannelData else {
+            Log.error("resampler failed; dropped \(buffer.frameLength) input frames: \(error?.localizedDescription ?? "unknown")")
+            return []
+        }
         return Array(UnsafeBufferPointer(start: data[0], count: Int(out.frameLength)))
     }
 

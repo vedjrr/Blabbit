@@ -32,6 +32,13 @@ public final class DictationController {
     private let inserter = PasteInserter()
     private var press: KeyTiming?
     private var recordStartedNs: UInt64 = 0
+    /// Set when the mic can't be used; shown instead of "Ready" once the model loads.
+    private var micProblem: String?
+    /// Watches a hotkey-driven recording for a missed key-up (see `startWatchdog`).
+    private var watchdog: Timer?
+    private var recordingFromHotkey = false
+    /// Hard cap so a lost key-up can never leave the microphone on indefinitely.
+    public static let maxRecordingSeconds: TimeInterval = 10 * 60
 
     public init() {}
 
@@ -61,11 +68,15 @@ public final class DictationController {
                 let recorder = self.recorder
                 audioQueue.async {
                     do { try recorder.prepare() } catch let error as AudioRecorderError {
-                        Task { @MainActor in self.fail(error.userMessage) }
+                        Task { @MainActor in
+                            self.micProblem = self.message(for: error)
+                            self.fail(self.message(for: error))
+                        }
                     } catch {}
                 }
             } else {
-                fail("Utter needs microphone access. Allow it in System Settings → Privacy & Security → Microphone.")
+                micProblem = Self.micDeniedMessage
+                fail(Self.micDeniedMessage)
             }
         }
         loadModel()
@@ -98,7 +109,7 @@ public final class DictationController {
                                 MonoClock.ms(from: started, to: MonoClock.nowNs()), engine.loadCount()))
                 await MainActor.run {
                     self.modelLoaded = true
-                    self.state = .ready
+                    if let problem = self.micProblem { self.state = .failed(problem) } else { self.state = .ready }
                 }
             } catch let error as CoreError {
                 Log.error("model load failed: \(error.logDetail)")
@@ -119,21 +130,84 @@ public final class DictationController {
             return
         }
         press = timing
+        recordStartedNs = 0
         state = .recording
+        recordingFromHotkey = !startedFromMenu
+        startedFromMenu = false
+        startWatchdog()
         let recorder = self.recorder
         audioQueue.async {
             do {
                 try recorder.start()
                 let started = MonoClock.nowNs()
-                Task { @MainActor in self.recordStartedNs = started }
+                Task { @MainActor in
+                    self.recordStartedNs = started
+                    self.micProblem = nil
+                }
             } catch let error as AudioRecorderError {
-                Task { @MainActor in self.fail(error.userMessage) }
+                Task { @MainActor in
+                    self.stopWatchdog()
+                    self.micProblem = self.message(for: error)
+                    self.fail(self.message(for: error))
+                }
             } catch {}
         }
     }
 
+    private var startedFromMenu = false
+
+    private static let micDeniedMessage = "Utter needs microphone access. Allow it in System Settings → Privacy & Security → Microphone."
+
+    /// A denied permission looks like "no input device" to AVAudioEngine; say which it is.
+    private func message(for error: AudioRecorderError) -> String {
+        if Permissions.microphoneStatus == .denied || Permissions.microphoneStatus == .restricted {
+            return Self.micDeniedMessage
+        }
+        return error.userMessage
+    }
+
+    /// While a hotkey recording runs, check every 250 ms that the key is still
+    /// physically down and secure input is off; otherwise release it ourselves.
+    /// Also enforces the hard length cap. Menu-started recordings only get the cap.
+    private func startWatchdog() {
+        stopWatchdog()
+        let started = Date()
+        let keyCode = CGKeyCode(hotkey.shortcut.keyCode)
+        let fromHotkey = recordingFromHotkey
+        var keyUpChecks = 0
+        watchdog = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.state == .recording else { return }
+                var reason: String?
+                if Date().timeIntervalSince(started) >= Self.maxRecordingSeconds {
+                    reason = "max_length"
+                    self.lastMessage = "Recording stopped after \(Int(Self.maxRecordingSeconds / 60)) minutes."
+                } else if fromHotkey {
+                    if PasteInserter.secureInputActive {
+                        reason = "secure_input"
+                    } else if !CGEventSource.keyState(.combinedSessionState, key: keyCode) {
+                        keyUpChecks += 1
+                        if keyUpChecks >= 2 { reason = "key_not_down" }
+                    } else {
+                        keyUpChecks = 0
+                    }
+                }
+                guard let reason else { return }
+                Log.error("watchdog released recording reason=\(reason)")
+                self.hotkey.forceRelease()
+                self.released(KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0))
+            }
+        }
+    }
+
+    private func stopWatchdog() {
+        watchdog?.invalidate()
+        watchdog = nil
+    }
+
     private func released(_ timing: KeyTiming) {
         guard state == .recording, let press else { return }
+        stopWatchdog()
         state = .transcribing
         let recorder = self.recorder
         audioQueue.async {
@@ -145,10 +219,23 @@ public final class DictationController {
     /// Menu-driven start/stop (same path as the hotkey).
     public func toggleFromMenu() {
         let now = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0)
-        if state == .recording { released(now) } else { pressed(now) }
+        if state == .recording {
+            released(now)
+        } else {
+            startedFromMenu = true
+            pressed(now)
+        }
     }
 
     private func finish(_ recording: Recording, press: KeyTiming, release: KeyTiming) async {
+        guard recording.didRecord else {
+            // The microphone never started (the failure is already shown); keep that state.
+            if state == .transcribing { state = micProblem.map { .failed($0) } ?? .ready }
+            return
+        }
+        if recording.interruptedByDeviceChange {
+            lastMessage = "The microphone changed while you were speaking; only the part before the change was transcribed."
+        }
         let engine = self.engine
         let samples = recording.samples
         let result: TranscriptionResult
@@ -194,7 +281,8 @@ public final class DictationController {
         let t = inserter.lastTiming
         let fields: [(String, String)] = [
             ("audio_ms", "\(result.audioMs)"),
-            ("keydown_to_record_started_ms", ms(press.callbackNs, recordStartedNs)),
+            ("keydown_to_record_started_ms", recordStartedNs == 0 ? "n/a" : ms(press.callbackNs, recordStartedNs)),
+            ("device_changed", "\(rec.interruptedByDeviceChange)"),
             ("keydown_to_first_sample_ms", ms(press.callbackNs, rec.firstSampleNs)),
             ("keydown_to_first_callback_ms", ms(press.callbackNs, rec.firstCallbackNs)),
             ("release_to_last_sample_end_ms", ms(release.callbackNs, rec.lastSampleEndNs)),

@@ -82,13 +82,14 @@ Toolchain: Swift 6.4 (Command Line Tools, **no Xcode.app installed**), rustc 1.9
 - **Verified in M0.** Parakeet V3 and Whisper Small downloaded from pinned URLs; `shasum -a 256` equals the catalog hashes (`5859f779…`, `9b9c8811…`).
 
 ### ADR-008 — Threading model
-- Main actor: AppKit/SwiftUI only. Never blocks.
-- Hotkey thread: CGEventTap run loop; posts events to the coordinator (actor).
-- Audio: AVAudioEngine render/tap thread → lock-protected append, no allocation after the first `reserveCapacity`.
-- `DictationCoordinator` (Swift actor): state machine idle → recording → transcribing → processing → inserting.
-- Rust engine: one `Engine` object owning the loaded model + session behind a `Mutex`; called from a detached task; model loads once at launch on a background task, warms up with 1 s of silence, stays resident until the user switches models (unload + RSS measurement in M3).
-- Insertion: AX calls run on a dedicated serial `DispatchQueue` (never the main thread), because `AXUIElementCopyAttributeValue`/`SetAttributeValue` block until the target app answers (default messaging timeout ≈ 6 s against a hung app). Each AX element gets `AXUIElementSetMessagingTimeout(element, 0.25)`; a timeout means "fall through to paste". Pasteboard writes and the ⌘V `CGEvent` post happen on the main thread (both return immediately); the wait before restoring the clipboard happens off-main.
-- Sources: https://developer.apple.com/documentation/applicationservices/1459345-axuielementsetmessagingtimeout , https://developer.apple.com/documentation/swift/actor
+- **Main actor**: AppKit UI and `DictationController` (the state machine idle → recording → transcribing → inserting). It never blocks: the only Rust calls it makes are lock-free status reads (`loadCount`, `isLoaded`, atomics in `Engine`); load and transcribe run in `Task.detached`.
+- **Hotkey thread**: CGEventTap on its own run loop. It only runs the pure `ShortcutMatcher` and hops to the main actor to start or stop.
+- **Realtime audio thread**: `AVAudioSinkNode` callback (IO-sized buffers, ~10 ms). It downmixes into preallocated scratch and copies into `SampleRing` under a tiny unfair lock that nothing ever holds while allocating (the consumer copies outside the lock). No Objective-C calls; host time is converted with integer arithmetic (`MonoClock`).
+- **Audio queue** (serial, userInteractive): engine start/stop/prepare, ring drain every 20 ms, resampling (`AVAudioConverter`, single-threaded use), tail wait on release (≤ 150 ms for audio up to the release instant), rebuild on `AVAudioEngineConfigurationChange`.
+- **Rust engine**: one `Engine` with the model behind a `Mutex` (held for a whole load or inference) and status in atomics + an `RwLock` that is only held for copies. The model loads once at launch, warms up with 1 s of silence, and stays resident. Measured: 2.7 M status polls during a live inference, worst 106 µs.
+- **Insertion**: the pasteboard snapshot is read on a dedicated serial queue (reads can block on the source app's promised data). Pasteboard writes and the ⌘V post happen on main (they return immediately). The receipt/quiet-period wait is an `await`, not a block. Future AX calls (M2) go on their own serial queue with `AXUIElementSetMessagingTimeout(element, 0.25)`, and a timeout means "fall through to paste".
+- **Watchdog**: a 250 ms main-run-loop timer during hotkey recordings. It releases if the key is no longer physically down (`CGEventSource.keyState`) or secure input turns on, and enforces a 10-minute hard cap.
+- Sources: https://developer.apple.com/documentation/avfaudio/avaudiosinknode , https://developer.apple.com/documentation/applicationservices/1459345-axuielementsetmessagingtimeout , https://developer.apple.com/documentation/os/osallocatedunfairlock
 
 ### ADR-009 — Persistence
 - Settings: `UserDefaults` via a Codable `Settings` struct with explicit keys, one migration version field.

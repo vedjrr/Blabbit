@@ -12,6 +12,10 @@ public struct Recording: Sendable {
     public var lastSampleEndNs: UInt64?
     /// Samples lost because the drain fell behind (should be 0).
     public var droppedFrames: Int
+    /// The input device/format changed mid-recording; audio after that point is missing.
+    public var interruptedByDeviceChange = false
+    /// False if the microphone never started for this recording.
+    public var didRecord = true
     public var durationMs: Double { Double(samples.count) / 16.0 }
 }
 
@@ -30,8 +34,9 @@ public enum AudioRecorderError: Error, Equatable {
 }
 
 /// Mono float ring buffer shared between the realtime audio thread (producer)
-/// and the recorder's serial queue (consumer). Storage is allocated once; the
-/// realtime side only copies under an uncontended unfair lock.
+/// and the recorder's serial queue (consumer). Storage is allocated once. Both
+/// sides take a tiny unfair lock only to read/update indices (and the producer
+/// to copy one IO buffer); nothing allocates while holding it.
 final class SampleRing: @unchecked Sendable {
     struct Cursor {
         var write = 0
@@ -91,21 +96,30 @@ final class SampleRing: @unchecked Sendable {
         if signal { tailArrived.signal() }
     }
 
-    /// Consumer: moves everything written so far into `out`.
+    /// Consumer: moves everything written so far into `out`. The copy happens
+    /// outside the lock: with one producer and one consumer the producer never
+    /// touches samples in [read, write), so only the indices need the lock.
+    /// This keeps allocation (appending to `out`) off the realtime thread's path.
     func drain(into out: inout [Float]) {
-        var drained: [Float] = []
-        cursor.withLockUnchecked { c in
-            var n = c.write - c.read
-            drained.reserveCapacity(n)
-            while n > 0 {
-                let start = c.read % capacity
-                let chunk = min(n, capacity - start)
-                drained.append(contentsOf: UnsafeBufferPointer(start: storage + start, count: chunk))
-                c.read += chunk
-                n -= chunk
-            }
+        let (read, write) = cursor.withLock { ($0.read, $0.write) }
+        var n = write - read
+        guard n > 0 else { return }
+        out.reserveCapacity(out.count + n)
+        var position = read
+        while n > 0 {
+            let start = position % capacity
+            let chunk = min(n, capacity - start)
+            out.append(contentsOf: UnsafeBufferPointer(start: storage + start, count: chunk))
+            position += chunk
+            n -= chunk
         }
-        out.append(contentsOf: drained)
+        cursor.withLock { $0.read = write }
+    }
+
+    /// Realtime thread: records frames the callback could not accept.
+    func noteDropped(_ count: Int) {
+        guard count > 0 else { return }
+        cursor.withLock { $0.dropped += count }
     }
 }
 
@@ -124,12 +138,14 @@ public final class AudioRecorder: @unchecked Sendable {
     private var samples: [Float] = []
     private var drainTimer: DispatchSourceTimer?
     private var needsRebuild = false
+    /// Set when the device changed mid-recording (reported on the Recording).
+    private var interrupted = false
     private var configObserver: NSObjectProtocol?
     private let levelState = OSAllocatedUnfairLock(initialState: Float(0))
     private let recordingState = OSAllocatedUnfairLock(initialState: false)
     /// Scratch buffer for the realtime downmix, sized for the largest IO buffer.
     private var mixScratch: UnsafeMutablePointer<Float>?
-    private let mixCapacity = 8192
+    private let mixCapacity = 16_384
 
     public init(queue: DispatchQueue) {
         self.queue = queue
@@ -173,6 +189,7 @@ public final class AudioRecorder: @unchecked Sendable {
         let sink = AVAudioSinkNode { timestamp, frameCount, bufferList -> OSStatus in
             let now = MonoClock.nowNs()
             let frames = min(Int(frameCount), mixCapacity)
+            ring.noteDropped(Int(frameCount) - frames)
             let abl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferList))
             guard frames > 0, !abl.isEmpty else { return noErr }
             // Non-interleaved float: one buffer per channel. Interleaved: one buffer, stride = channels.
@@ -245,7 +262,9 @@ public final class AudioRecorder: @unchecked Sendable {
     /// last word is not cut off.
     public func stop(releaseNs: UInt64) -> Recording {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard let ring else { return Recording(samples: [], droppedFrames: 0) }
+        guard let ring, isRecording || interrupted else {
+            return Recording(samples: [], droppedFrames: 0, didRecord: false)
+        }
         if isRecording {
             let alreadyThere = ring.cursor.withLock { c -> Bool in
                 if c.lastEndNs >= releaseNs { return true }
@@ -264,8 +283,10 @@ public final class AudioRecorder: @unchecked Sendable {
         samples.append(contentsOf: resampler?.flush() ?? [])
         let c = ring.cursor.withLock { $0 }
         let recording = Recording(samples: samples, firstSampleNs: c.firstSampleNs, firstCallbackNs: c.firstCallbackNs,
-                                  lastSampleEndNs: c.lastEndNs == 0 ? nil : c.lastEndNs, droppedFrames: c.dropped)
+                                  lastSampleEndNs: c.lastEndNs == 0 ? nil : c.lastEndNs, droppedFrames: c.dropped,
+                                  interruptedByDeviceChange: interrupted)
         samples = []
+        interrupted = false
         levelState.withLock { $0 = 0 }
         return recording
     }
@@ -306,6 +327,11 @@ public final class AudioRecorder: @unchecked Sendable {
         if isRecording {
             // Keep what was captured; the graph is rebuilt on the next start.
             drainAndConvert()
+            interrupted = true
+            recordingState.withLock { $0 = false }
+            drainTimer?.cancel()
+            drainTimer = nil
+            Log.error("input device changed while recording; audio after the change is lost")
         } else {
             try? prepare()
         }
