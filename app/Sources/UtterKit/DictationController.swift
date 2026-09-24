@@ -29,7 +29,7 @@ public final class DictationController {
     private let audioQueue = DispatchQueue(label: "dev.utter.audio", qos: .userInteractive)
     private lazy var recorder = AudioRecorder(queue: audioQueue)
     private let engine = UtterEngine()
-    private let inserter = PasteInserter()
+    private let inserter = TextInserter()
     private var press: KeyTiming?
     private var recordStartedNs: UInt64 = 0
     /// Set when the mic can't be used; shown instead of "Ready" once the model loads.
@@ -253,16 +253,18 @@ public final class DictationController {
         }
         let transcribedNs = MonoClock.nowNs()
         if let skipped = result.skipped {
-            logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, outcome: "skipped_\(skipped)")
+            logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs,
+                         report: InsertReport(result: .failed("skipped_\(skipped)"), bundleID: nil))
             state = .ready
             return
         }
-        let outcome = await inserter.insert(result.text)
-        logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, outcome: "\(outcome)")
-        switch outcome {
-        case .pasted:
-            if !inserter.lastTiming.clipboardReadable {
-                lastMessage = "macOS did not let Utter read the clipboard, so the transcript was left on it. Allow Utter under System Settings → Privacy & Security → Paste from Other Apps."
+        let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let report = await inserter.insert(result.text, bundleID: bundleID)
+        logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, report: report)
+        switch report.result {
+        case .inserted, .unverified:
+            if let paste = report.paste, !paste.clipboardReadable {
+                lastMessage = "Utter could not save your clipboard first, so the transcript was left on it. To keep your clipboard, allow Utter under System Settings → Privacy & Security → Paste from Other Apps."
             }
             state = .ready
         case .blockedBySecureInput:
@@ -273,12 +275,13 @@ public final class DictationController {
     }
 
     /// One line per dictation with every stage, so latency can be read from the log.
-    private func logDictation(_ rec: Recording, _ result: TranscriptionResult, press: KeyTiming, release: KeyTiming, transcribedNs: UInt64, outcome: String) {
+    private func logDictation(_ rec: Recording, _ result: TranscriptionResult, press: KeyTiming, release: KeyTiming, transcribedNs: UInt64, report: InsertReport) {
+        let doneNs = MonoClock.nowNs()
         func ms(_ from: UInt64, _ to: UInt64?) -> String {
             guard let to else { return "n/a" }
             return String(format: "%.1f", MonoClock.ms(from: from, to: to))
         }
-        let t = inserter.lastTiming
+        let t = report.paste ?? InsertTiming()
         let fields: [(String, String)] = [
             ("audio_ms", "\(result.audioMs)"),
             ("keydown_to_record_started_ms", recordStartedNs == 0 ? "n/a" : ms(press.callbackNs, recordStartedNs)),
@@ -288,7 +291,7 @@ public final class DictationController {
             ("release_to_last_sample_end_ms", ms(release.callbackNs, rec.lastSampleEndNs)),
             ("release_to_transcribed_ms", ms(release.callbackNs, transcribedNs)),
             ("inference_ms", String(format: "%.1f", result.inferenceMs)),
-            ("release_to_paste_sent_ms", ms(release.callbackNs, t.pasteSentNs)),
+            ("release_to_paste_sent_ms", t.pasteSentNs == nil ? "n/a" : ms(release.callbackNs, t.pasteSentNs)),
             ("release_to_target_read_ms", ms(release.callbackNs, t.firstReadNs)),
             ("release_to_restored_ms", ms(release.callbackNs, t.restoredNs)),
             ("snapshot_ms", String(format: "%.1f", t.snapshotMs)),
@@ -297,9 +300,11 @@ public final class DictationController {
             ("dropped_frames", "\(rec.droppedFrames)"),
             ("key_event_ts", "\(press.eventTimestamp)"),
             ("key_callback_ns", "\(press.callbackNs)"),
-            ("front_app", t.frontmostBundleID ?? "n/a"),
+            ("release_to_insert_done_ms", ms(release.callbackNs, doneNs)),
+            ("front_app", report.bundleID ?? "n/a"),
             ("chars", "\(result.text.count)"),
-            ("outcome", outcome),
+            ("result", "\(report.result)".replacingOccurrences(of: " ", with: "_")),
+            ("attempts", "\"" + report.attempts.joined(separator: "; ") + "\""),
             ("load_count", "\(engine.loadCount())"),
         ]
         Log.info("dictation " + fields.map { "\($0.0)=\($0.1)" }.joined(separator: " "))

@@ -1,0 +1,28 @@
+// Test-only helper (not shipped): hosts a real NSTextView (and an NSSecureTextField)
+// so tests can exercise Accessibility insertion against genuine AppKit controls.
+// Prints "READY <pid>" once the text view is first responder.
+import AppKit
+
+let app = NSApplication.shared
+app.setActivationPolicy(.accessory)
+let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
+let secure = CommandLine.arguments.contains("--secure")
+if secure {
+    let field = NSSecureTextField(frame: NSRect(x: 10, y: 10, width: 300, height: 24))
+    window.contentView?.addSubview(field)
+    window.makeKeyAndOrderFront(nil)
+    window.makeFirstResponder(field)
+} else {
+    let scroll = NSTextView.scrollableTextView()
+    scroll.frame = NSRect(x: 0, y: 0, width: 400, height: 200)
+    let textView = scroll.documentView as! NSTextView
+    textView.string = "Hello world"
+    textView.setSelectedRange(NSRange(location: 5, length: 0))
+    window.contentView?.addSubview(scroll)
+    window.makeKeyAndOrderFront(nil)
+    window.makeFirstResponder(textView)
+}
+app.activate(ignoringOtherApps: true)
+print("READY \(ProcessInfo.processInfo.processIdentifier)")
+fflush(stdout)
+app.run()

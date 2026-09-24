@@ -48,6 +48,11 @@ let package = Package(
             dependencies: ["UtterKit"],
             path: "Sources/Utter"
         ),
+        // Test-only helper app hosting real AppKit text controls (never bundled).
+        .executableTarget(
+            name: "UtterAXHost",
+            path: "Sources/UtterAXHost"
+        ),
         .testTarget(
             name: "UtterTests",
             dependencies: ["UtterCore", "UtterKit"],

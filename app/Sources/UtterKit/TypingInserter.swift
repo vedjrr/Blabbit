@@ -1,0 +1,72 @@
+import CoreGraphics
+import Foundation
+
+/// Inserts text as synthetic Unicode key events. Used where paste is blocked.
+public enum TypingInserter {
+    /// CGEvent accepts at most 20 UTF-16 units per event; never split a
+    /// surrogate pair or a composed character across events.
+    public static let maxUnitsPerEvent = 20
+
+    public enum Piece: Equatable, Sendable {
+        case text([UInt16])
+        /// Newlines go as a real Return key so terminals and chat apps see Enter.
+        case newline
+    }
+
+    /// Splits text into ≤ 20-unit chunks on grapheme boundaries, with newlines separate.
+    public static func pieces(for text: String) -> [Piece] {
+        var result: [Piece] = []
+        var current: [UInt16] = []
+        func flush() {
+            if !current.isEmpty { result.append(.text(current)); current = [] }
+        }
+        for character in text {
+            if character.isNewline {
+                flush()
+                result.append(.newline)
+                continue
+            }
+            let units = Array(String(character).utf16)
+            if current.count + units.count > maxUnitsPerEvent { flush() }
+            if units.count > maxUnitsPerEvent {
+                // A single giant grapheme (rare emoji sequences): send it alone.
+                result.append(.text(units))
+            } else {
+                current.append(contentsOf: units)
+            }
+        }
+        flush()
+        return result
+    }
+
+    /// Posts the pieces. Returns an error message or nil.
+    @MainActor
+    public static func type(_ text: String) async -> String? {
+        guard let source = CGEventSource(stateID: .combinedSessionState) else { return "Could not create keyboard events." }
+        for piece in pieces(for: text) {
+            switch piece {
+            case .newline:
+                guard let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
+                      let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false) else { return "Could not create keyboard events." }
+                down.flags = []
+                up.flags = []
+                down.post(tap: .cghidEventTap)
+                up.post(tap: .cghidEventTap)
+            case .text(let units):
+                guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                      let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { return "Could not create keyboard events." }
+                units.withUnsafeBufferPointer { buf in
+                    down.keyboardSetUnicodeString(stringLength: buf.count, unicodeString: buf.baseAddress)
+                    up.keyboardSetUnicodeString(stringLength: buf.count, unicodeString: buf.baseAddress)
+                }
+                down.flags = []
+                up.flags = []
+                down.post(tap: .cghidEventTap)
+                up.post(tap: .cghidEventTap)
+            }
+            // Pace events so slower apps (Electron, remote desktops) don't drop them.
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        return nil
+    }
+}
