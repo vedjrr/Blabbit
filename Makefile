@@ -50,7 +50,7 @@ bundle: app
 
 test: test-rust test-swift
 
-test-rust:
+test-rust: models
 	cd "$(CORE)" && cargo test --release --workspace
 
 test-swift: bindings
