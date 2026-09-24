@@ -7,3 +7,4 @@
 5. Emergency stop: `touch STOP` in the repo root. Cap: 200 iterations (`UTTER_MAX_ITERS`).
 
 Files: `CLAUDE.md` (rules), `docs/GOAL.md` (done = checkable), `docs/MILESTONES.md` (order + gates), `docs/BRIEF.md` (your original spec), `PROGRESS.md` (loop state), `.claude/agents/critic.md` (independent reviewer), `.claude/hooks/keep-going.sh` (the loop).
+# Utter
