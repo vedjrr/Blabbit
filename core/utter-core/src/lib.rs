@@ -1,3 +1,14 @@
+pub mod audio;
+pub mod engine;
+pub mod error;
+pub mod memory;
+pub mod model;
+pub mod wer;
+
+pub use engine::Engine;
+pub use error::{Result, UtterError};
+pub use model::{GgufModel, SpeechModel, TranscribeOptions, Transcription};
+
 pub fn runtime_version() -> String {
     format!("transcribe-cpp {} ({})", transcribe_cpp::version(), transcribe_cpp::version_commit())
 }

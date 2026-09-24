@@ -1,3 +1,134 @@
-fn main() {
-    println!("{}", utter_core::runtime_version());
+//! utter-cli — transcribe WAV files with the same engine the app uses.
+//!
+//!   utter-cli --model model.gguf a.wav b.wav        # text + timings (+ WER if a.txt exists)
+//!   utter-cli --model model.gguf --json fixtures/audio/*.wav
+use clap::Parser;
+use std::path::PathBuf;
+use std::process::ExitCode;
+use utter_core::{audio, wer, Engine, TranscribeOptions};
+
+#[derive(Parser)]
+#[command(version, about = "Transcribe 16 kHz WAV files locally with Utter's engine")]
+struct Args {
+    /// Path to a GGUF speech model.
+    #[arg(long)]
+    model: PathBuf,
+    /// Language hint (ISO code); default auto.
+    #[arg(long)]
+    language: Option<String>,
+    /// Whisper initial prompt (vocabulary hint).
+    #[arg(long)]
+    prompt: Option<String>,
+    /// Emit one JSON object per line instead of text.
+    #[arg(long)]
+    json: bool,
+    /// Transcribe each file this many times (latency percentiles).
+    #[arg(long, default_value_t = 1)]
+    repeat: usize,
+    /// WAV files (16 kHz). A sibling .txt is used as the WER reference.
+    #[arg(required = true)]
+    files: Vec<PathBuf>,
+}
+
+fn main() -> ExitCode {
+    let args = Args::parse();
+    let engine = Engine::new();
+    let stats = match engine.load_gguf(&args.model) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: {e} ({})", e.detail());
+            return ExitCode::FAILURE;
+        }
+    };
+    let meta = engine.metadata();
+    let arch = meta.as_ref().map(|m| m.architecture.clone()).unwrap_or_default();
+    let backend = meta.as_ref().map(|m| m.backend.clone()).unwrap_or_default();
+    let mem = engine.memory_requirements().unwrap_or_default();
+    if args.json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "event": "load", "model": args.model, "arch": arch, "backend": backend,
+                "load_ms": stats.load_ms, "warmup_ms": stats.warmup_ms,
+                "file_bytes": mem.file_bytes, "footprint_delta_bytes": mem.measured_load_bytes,
+                "footprint_after_bytes": stats.after.footprint_bytes,
+            })
+        );
+    } else {
+        println!(
+            "model {} arch={arch} backend={backend} load={:.0}ms warmup={:.0}ms footprint+{}MB",
+            args.model.display(),
+            stats.load_ms,
+            stats.warmup_ms,
+            mem.measured_load_bytes / (1024 * 1024)
+        );
+    }
+
+    let options = TranscribeOptions { language: args.language.clone(), translate: false, initial_prompt: args.prompt.clone() };
+    let mut failed = false;
+    let mut total_errors = 0usize;
+    let mut total_ref_words = 0usize;
+    for file in &args.files {
+        let pcm = match audio::load_wav_16k_mono(file) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: {e} ({})", e.detail());
+                failed = true;
+                continue;
+            }
+        };
+        let mut latencies = Vec::with_capacity(args.repeat);
+        let mut last = None;
+        for _ in 0..args.repeat.max(1) {
+            match engine.transcribe(&pcm, &options) {
+                Ok(t) => {
+                    latencies.push(t.inference_ms);
+                    last = Some(t);
+                }
+                Err(e) => {
+                    eprintln!("error: {}: {e} ({})", file.display(), e.detail());
+                    failed = true;
+                    break;
+                }
+            }
+        }
+        let Some(t) = last else { continue };
+        latencies.sort_by(f64::total_cmp);
+        let p50 = latencies[latencies.len() / 2];
+        let reference = std::fs::read_to_string(file.with_extension("txt")).ok();
+        let counts = reference.as_deref().map(|r| wer::wer_counts(r, &t.text));
+        if let Some(c) = counts {
+            total_errors += c.errors();
+            total_ref_words += c.reference_words;
+        }
+        let rtf = p50 / t.audio_ms.max(1) as f64;
+        if args.json {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "event": "transcribe", "file": file, "audio_ms": t.audio_ms,
+                    "infer_ms_p50": p50, "infer_ms_min": latencies[0], "infer_ms_max": latencies[latencies.len() - 1],
+                    "runs": latencies.len(), "rtf": rtf, "text": t.text, "language": t.language,
+                    "skipped": t.skipped.map(|s| format!("{s:?}")),
+                    "reference": reference.as_deref().map(str::trim), "wer": counts.map(|c| c.wer()),
+                })
+            );
+        } else {
+            let wer_s = counts.map(|c| format!(" wer={:.3}", c.wer())).unwrap_or_default();
+            println!("{}\taudio={}ms infer_p50={p50:.0}ms rtf={rtf:.3}{wer_s}\t{}", file.display(), t.audio_ms, t.text);
+        }
+    }
+    if total_ref_words > 0 {
+        let agg = total_errors as f64 / total_ref_words as f64;
+        if args.json {
+            println!("{}", serde_json::json!({"event": "summary", "wer": agg, "errors": total_errors, "reference_words": total_ref_words, "model_loads": engine.load_count()}));
+        } else {
+            println!("aggregate wer={agg:.3} ({total_errors}/{total_ref_words} words) model_loads={}", engine.load_count());
+        }
+    }
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
