@@ -1,4 +1,4 @@
-STATUS: IN_PROGRESS
+STATUS: WAITING_ON_HUMAN
 
 # Progress (loop state — Claude owns this file)
 
@@ -81,6 +81,7 @@ Iteration: 3
 - [M2] `docs/TEST_CHECKLIST.md`: an expected strategy per app, how to read the `dictation` log line, a secure-keyboard-entry check, and a verified `defaults write` override recipe. PARITY: 15 rows now **Built**.
 
 ## Blocked on human
+- **2026-09-24, cloud session (claude/practical-galileo-7yfkue): no loop work possible here.** This session runs on a Linux x86_64 container (`uname -sm` → `Linux x86_64`): no Swift/AppKit/Metal/TCC, and `make test` fails at `make models` (`curl: (22) … 403`). Also, branch `m3` (catalog, downloader, Model Manager, 83 tests) exists only on the Mac and was never pushed, and the M2 critic re-review (PASS, 0 BLOCKERs, 6 MAJORs: keyState dependency, mid-chain password field, unknown Electron/Chromium → paste default, +3 unrecorded) was not saved to the repo. **To resume:** on the Mac, `git push origin main m3`, then `/loop M2 re-review passed with 6 majors; fix them, merge m3, continue M3`. Set line 1 back to `STATUS: IN_PROGRESS` there.
 - **Required once (takes 2 minutes, no voice needed):** with the Mac unlocked, run `cd "/Users/ved/Documents 2/utter-kit" && make test`. Three real-Accessibility tests (`AXIntegrationTests`) only run on an unlocked screen, and they are the only proof the AX layer works against real AppKit controls. A test window will flash briefly.
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.
 - **Deferred to the end (by your choice): live dictation into TextEdit** (needs your voice). Utter (build 01a38e5) is **already running**: its log shows the shortcut active (Accessibility is granted) and the microphone graph ready. If it isn't running: `cd "/Users/ved/Documents 2/utter-kit" && make build && open build/Utter.app`. A waveform icon appears in the menu bar.
