@@ -65,6 +65,12 @@ public final class TextInserter {
         self.typer = typer
     }
 
+    /// Where the target app lives on disk, for detecting Electron/Chromium apps.
+    private func bundleURL(_ bundleID: String?) -> URL? {
+        guard let bundleID else { return nil }
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+    }
+
     private func onAXQueue<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { continuation in
             axQueue.async { continuation.resume(returning: work()) }
@@ -118,7 +124,7 @@ public final class TextInserter {
             break
         }
 
-        for strategy in table.chain(for: bundleID) {
+        for strategy in table.chain(for: bundleID, bundleURL: bundleURL(bundleID)) {
             switch strategy {
             case .accessibility:
                 let result = await onAXQueue { AccessibilityInserter.insert(text, into: focus()) }
@@ -128,6 +134,7 @@ public final class TextInserter {
                     return report
                 case .secureField:
                     report.result = .blockedBySecureInput
+                    report.secureFieldFocused = true
                     return report
                 case .unverified:
                     report.result = .unverified(.accessibility)
@@ -139,8 +146,9 @@ public final class TextInserter {
                     report.attempts.append("accessibility: \(why)")
                 }
             case .paste:
-                paste.pasteDelay = .milliseconds(settings.pasteDelayMs)
-                paste.restoreDelay = .milliseconds(settings.pasteDelayAfterMs)
+                // Clamped: a bad setting must not stall the paste queue.
+                paste.pasteDelay = .milliseconds(min(max(settings.pasteDelayMs, 0), 5_000))
+                paste.restoreDelay = .milliseconds(min(max(settings.pasteDelayAfterMs, 0), 5_000))
                 let outcome = await paste.insert(text)
                 report.paste = paste.lastTiming
                 switch outcome {
@@ -154,6 +162,12 @@ public final class TextInserter {
                     report.attempts.append("paste: \(why)")
                 }
             case .typing:
+                // Focus may have moved since the chain started: re-check before posting keys.
+                if checkSecureInput && secureInputActive() {
+                    report.result = .blockedBySecureInput
+                    report.attempts.append("secure event input turned on before typing")
+                    return report
+                }
                 if let error = await typer(text) {
                     report.attempts.append("typing: \(error)")
                 } else {

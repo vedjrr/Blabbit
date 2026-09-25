@@ -82,6 +82,32 @@ final class FakeElement: FocusedTextElement, @unchecked Sendable {
         #expect(loaded.chain(for: "com.apple.TextEdit") == [.accessibility, .paste, .typing])
     }
 
+    @Test func unlistedChromiumAppsPasteFirst() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("utter-bundles-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        func makeApp(_ name: String, framework: String?) throws -> URL {
+            let app = root.appendingPathComponent("\(name).app")
+            let frameworks = app.appendingPathComponent("Contents/Frameworks")
+            try FileManager.default.createDirectory(at: frameworks, withIntermediateDirectories: true)
+            if let framework {
+                try FileManager.default.createDirectory(at: frameworks.appendingPathComponent(framework), withIntermediateDirectories: true)
+            }
+            return app
+        }
+        let electron = try makeApp("Electron", framework: "Electron Framework.framework")
+        let cef = try makeApp("CEF", framework: "Chromium Embedded Framework.framework")
+        let native = try makeApp("Native", framework: "Sparkle.framework")
+        let table = AppInsertionTable()
+        #expect(table.chain(for: "com.example.electron", bundleURL: electron) == [.paste, .typing])
+        #expect(table.chain(for: "com.example.cef", bundleURL: cef) == [.paste, .typing])
+        #expect(table.chain(for: "com.example.native", bundleURL: native) == [.accessibility, .paste, .typing])
+        #expect(table.chain(for: "com.example.missing", bundleURL: root.appendingPathComponent("Gone.app")) == [.accessibility, .paste, .typing])
+        // Known apps and user overrides win over detection.
+        #expect(table.chain(for: "com.apple.TextEdit", bundleURL: electron) == [.accessibility, .paste, .typing])
+        let overridden = AppInsertionTable(overrides: ["com.example.electron": [.typing]])
+        #expect(overridden.chain(for: "com.example.electron", bundleURL: electron) == [.typing])
+    }
+
     @Test func emptyOverrideFallsBackToDefault() {
         let table = AppInsertionTable(overrides: ["com.apple.Terminal": []])
         #expect(table.chain(for: "com.apple.Terminal") == [.paste, .typing])
@@ -283,6 +309,23 @@ final class FakeElement: FocusedTextElement, @unchecked Sendable {
         #expect(report.secureFieldFocused)
     }
 
+    @Test func secureInputTurningOnBeforeTypingBlocksTyping() async {
+        let pb = makePasteboard(); defer { pb.releaseGlobally() }
+        pb.clearContents(); pb.setString("SENTINEL", forType: .string)
+        // Secure input is off for the up-front check, then on by the time typing starts.
+        nonisolated(unsafe) var checksSoFar = 0
+        let paste = PasteInserter(pasteboard: pb, checkSecureInput: false) { nil }
+        var typed = false
+        let ins = TextInserter(paste: paste, checkSecureInput: true,
+                               secureInputActive: { checksSoFar += 1; return checksSoFar > 1 },
+                               focus: { nil }, typer: { _ in typed = true; return nil })
+        ins.table.overrides["com.example.app"] = [.typing]
+        let report = await ins.insert("secret", bundleID: "com.example.app")
+        #expect(report.result == .blockedBySecureInput)
+        #expect(!typed)
+        #expect(pb.string(forType: .string) == "SENTINEL")
+    }
+
     @Test func autoSubmitSkippedWhenUnverified() async {
         let pb = makePasteboard(); defer { pb.releaseGlobally() }
         let field = FakeElement(); field.onWrite = .mangle
@@ -310,9 +353,14 @@ final class FakeElement: FocusedTextElement, @unchecked Sendable {
         // Key-up is only trusted after two consecutive observations.
         #expect(WatchdogPolicy.releaseReason(elapsed: 1, maxSeconds: 600, source: .tap, keyDown: false, secureInput: false, keyUpChecks: &checks) == nil)
         #expect(WatchdogPolicy.releaseReason(elapsed: 1.25, maxSeconds: 600, source: .tap, keyDown: false, secureInput: false, keyUpChecks: &checks) == "key_not_down")
-        checks = 1
-        #expect(WatchdogPolicy.releaseReason(elapsed: 1, maxSeconds: 600, source: .carbon, keyDown: true, secureInput: false, keyUpChecks: &checks) == nil)
+        // Carbon recordings ignore key state: Carbon sends its own key-up, and
+        // key state may be unreadable under secure input.
+        checks = 0
+        for _ in 0..<5 {
+            #expect(WatchdogPolicy.releaseReason(elapsed: 1, maxSeconds: 600, source: .carbon, keyDown: false, secureInput: true, keyUpChecks: &checks) == nil)
+        }
         #expect(checks == 0)
+        #expect(WatchdogPolicy.releaseReason(elapsed: 600, maxSeconds: 600, source: .carbon, keyDown: true, secureInput: true, keyUpChecks: &checks) == "max_length")
     }
 
     @Test func secureInputFallback() {

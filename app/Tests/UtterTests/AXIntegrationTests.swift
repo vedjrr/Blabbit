@@ -95,11 +95,21 @@ struct AXIntegrationTests {
         let host = try launchHost(["--frontmost"])
         defer { host.terminate() }
         var element: AXFocusedElement?
-        for _ in 0..<60 {
-            if let e = AXFocusedElement.current(), e.pid == host.processIdentifier { element = e; break }
+        var seen = ""
+        // macOS 14+ activation is cooperative: a background-launched host can't
+        // take focus from the terminal itself, so bring it forward through AX.
+        let hostApp = AXUIElementCreateApplication(host.processIdentifier)
+        for attempt in 0..<60 {
+            if attempt % 10 == 0 {
+                AXUIElementSetAttributeValue(hostApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+                NSRunningApplication(processIdentifier: host.processIdentifier)?.activate(options: [])
+            }
+            let e = AXFocusedElement.current()
+            seen = "focused pid \(e?.pid ?? -1), frontmost \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil") \(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1), host \(host.processIdentifier)"
+            if let e, e.pid == host.processIdentifier { element = e; break }
             try await Task.sleep(for: .milliseconds(50))
         }
-        let focused = try #require(element, "the host never became the focused app; nothing was written")
+        let focused = try #require(element, "the host never became the focused app; nothing was written (\(seen))")
         #expect(focused.role == "AXTextArea")
         #expect(AccessibilityInserter.insert(", dictated", into: focused) == .inserted)
         #expect(focused.value == "Hello, dictated world")

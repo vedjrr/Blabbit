@@ -58,10 +58,23 @@ public struct AppInsertionTable: Sendable {
         self.overrides = overrides
     }
 
-    public func chain(for bundleID: String?) -> [InsertionStrategy] {
+    public func chain(for bundleID: String?, bundleURL: URL? = nil) -> [InsertionStrategy] {
         guard let bundleID else { return Self.unknownChain }
         if let custom = overrides[bundleID], !custom.isEmpty { return custom }
-        return Self.defaults[bundleID] ?? Self.unknownChain
+        if let known = Self.defaults[bundleID] { return known }
+        // Apps not in the table that embed Chromium/Electron update their AX tree
+        // asynchronously, so an AX write can land after verification gives up;
+        // paste first there to rule out duplicate text.
+        if let bundleURL, Self.embedsChromium(bundleURL) { return Self.pasteFirstChain }
+        return Self.unknownChain
+    }
+
+    static let chromiumFrameworks = ["Electron Framework.framework", "Chromium Embedded Framework.framework"]
+
+    /// True if the app bundle ships Electron or CEF (a cheap directory check).
+    public static func embedsChromium(_ bundleURL: URL) -> Bool {
+        let frameworks = bundleURL.appendingPathComponent("Contents/Frameworks")
+        return chromiumFrameworks.contains { FileManager.default.fileExists(atPath: frameworks.appendingPathComponent($0).path) }
     }
 
     // MARK: Persistence

@@ -21,6 +21,9 @@ public enum WatchdogPolicy {
         // Only a tap recording is cut by secure input: the tap can no longer see
         // the key-up. Carbon recordings exist precisely because secure input is on.
         if source == .tap, secureInput { return "secure_input" }
+        // Carbon delivers its own key-up, and key state may not be readable under
+        // secure input; rely on the release event and the hard cap instead.
+        if source == .carbon { return nil }
         if keyDown {
             keyUpChecks = 0
             return nil

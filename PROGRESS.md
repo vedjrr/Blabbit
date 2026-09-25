@@ -3,7 +3,7 @@ STATUS: IN_PROGRESS
 # Progress (loop state — Claude owns this file)
 
 Current milestone: M2 — insertion reliability
-Iteration: 3
+Iteration: 4
 
 ## Environment (verified 2026-09-24)
 - Apple M4, 16 GB, macOS 27.0 (26A428), arm64.
@@ -78,10 +78,11 @@ Iteration: 3
   (4) Secure input has automated evidence: an injected probe, and every method is blocked with the clipboard untouched (parameterised test).
   MAJORs/minors fixed: unknown-app AX also settles; Carbon double-free on failed init; hotkey ID check; re-register on shortcut change; timers in common modes; auto-submit skipped for unverified/script; B8 after-delay + ordering test; oversize graphemes split on scalar boundaries; local-key suppression while typing; the secure notice no longer clobbers other messages; failed insertion leaves the text on the clipboard; AX host startup timeout; production `current()` path test with a pid safety check. Deferred: the G2 "overlay notice" is menu text until the overlay exists (M4).
 - [M2] Tests: Swift 79 in 15 suites (3 AX integration tests skipped: screen locked); Rust 14 + 3. The real-AppKit AX integration tests (`AXIntegrationTests`, helper `UtterAXHost` with a real NSTextView/NSSecureTextField) are **skipped while the screen is locked** (`CGSSessionScreenIsLocked=1`; the window server then exposes no window contents to AX). Three attempts confirmed this, then I changed approach to an explicit skip. They run automatically in an unlocked session.
+- [M2] Pre-re-review hardening: Carbon recordings ignore key state (Carbon sends its own key-up; key state may be unreadable under secure input), only the 10-min cap applies; apps not in the table that ship `Electron Framework.framework` or `Chromium Embedded Framework.framework` get paste-first (async AX tree → possible late write); secure input re-checked right before typing; paste delays clamped to 0–5000 ms; an AX-detected password field sets `secureFieldFocused`. Tests: `unlistedChromiumAppsPasteFirst`, `secureInputTurningOnBeforeTypingBlocksTyping`, Carbon watchdog cases.
+- [M2] **Real-AppKit AX integration tests now run and pass** (screen unlocked): `make test` → Rust 14 + 3 ok; Swift `Test run with 81 tests in 15 suites passed`, `Suite AXIntegrationTests passed` (insert at caret into NSTextView, NSSecureTextField detected + refused, production `AXFocusedElement.current()` path) → `evidence/m2/make_test_unlocked.log`. 3/3 consecutive runs green. Fix needed: macOS activation is cooperative, so the test brings the host forward (`AXFrontmost` + `NSRunningApplication.activate`) before reading system-wide focus.
 - [M2] `docs/TEST_CHECKLIST.md`: an expected strategy per app, how to read the `dictation` log line, a secure-keyboard-entry check, and a verified `defaults write` override recipe. PARITY: 15 rows now **Built**.
 
 ## Blocked on human
-- **Required once (takes 2 minutes, no voice needed):** with the Mac unlocked, run `cd "/Users/ved/Documents 2/utter-kit" && make test`. Three real-Accessibility tests (`AXIntegrationTests`) only run on an unlocked screen, and they are the only proof the AX layer works against real AppKit controls. A test window will flash briefly.
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.
 - **Deferred to the end (by your choice): live dictation into TextEdit** (needs your voice). Utter (build 01a38e5) is **already running**: its log shows the shortcut active (Accessibility is granted) and the microphone graph ready. If it isn't running: `cd "/Users/ved/Documents 2/utter-kit" && make build && open build/Utter.app`. A waveform icon appears in the menu bar.
   2. Grant **Accessibility**: System Settings → Privacy & Security → Accessibility → enable **Utter** (use the + button and pick `build/Utter.app` if it is not listed). Grant **Microphone** when prompted (or System Settings → Privacy & Security → Microphone → Utter).
