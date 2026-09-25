@@ -302,3 +302,60 @@ fn trimming_long_silences_keeps_the_words_and_saves_time() {
     assert!(trim_err <= orig_err + 2, "trimming lost words: {trim_err} errors vs {orig_err} on the original clips");
     assert!(trim_ms < plain_ms * 0.7, "trimming should save inference time: {trim_ms:.0} vs {plain_ms:.0} ms");
 }
+
+/// PARITY A18: live previews use the resident model but stay out of the way
+/// of real transcriptions: none starts while one is pending, and one already
+/// running delays the real transcription by at most its own (short) run.
+#[test]
+fn previews_stay_out_of_the_way_of_real_transcriptions() {
+    let _serial = serial();
+    let engine = std::sync::Arc::new(Engine::new());
+    engine.load_gguf(&require_model(PARAKEET_V3)).expect("load");
+    let meta = engine.metadata().expect("metadata");
+    eprintln!("{} reports supports_cancellation={}", meta.architecture, meta.supports_cancellation);
+    let clips: Vec<Vec<f32>> = fixtures().iter().map(|(wav, _)| audio::load_wav_16k_mono(wav).unwrap()).collect();
+    let all: Vec<f32> = clips.iter().flatten().copied().collect();
+    let window: Vec<f32> = all[..8 * 16_000].to_vec(); // the app's preview cap for Parakeet
+    let long: Vec<f32> = clips.iter().cycle().take(clips.len() * 12).flatten().copied().collect(); // ~6 min
+    let short = clips[1].clone();
+    let opts = TranscribeOptions::default();
+
+    let t = std::time::Instant::now();
+    let alone = engine.preview(&window, &opts).expect("preview").expect("a preview when idle");
+    let preview_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = std::time::Instant::now();
+    engine.transcribe(&short, &opts).expect("short");
+    let short_ms = t.elapsed().as_secs_f64() * 1e3;
+    eprintln!("8 s preview alone {preview_ms:.0} ms {:?}; short transcription alone {short_ms:.0} ms", alone.text);
+    assert!(!alone.text.is_empty());
+
+    // 1. While a real transcription runs, a preview returns at once with nothing.
+    let background = std::sync::Arc::clone(&engine);
+    let long_for_thread = long.clone();
+    let real = std::thread::spawn(move || background.transcribe(&long_for_thread, &TranscribeOptions::default()));
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let t = std::time::Instant::now();
+    let during = engine.preview(&window, &opts);
+    let refused_ms = t.elapsed().as_secs_f64() * 1e3;
+    assert_eq!(during, Ok(None));
+    assert!(refused_ms < 5.0, "a refused preview must not wait: {refused_ms:.2} ms");
+    assert!(real.join().unwrap().is_ok_and(|t| !t.text.is_empty()));
+
+    // 2. A real transcription arriving during a preview waits at most for that preview.
+    let mut worst_extra: f64 = 0.0;
+    for _ in 0..5 {
+        let background = std::sync::Arc::clone(&engine);
+        let w = window.clone();
+        let preview = std::thread::spawn(move || background.preview(&w, &TranscribeOptions::default()));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let t = std::time::Instant::now();
+        let r = engine.transcribe(&short, &opts).expect("real");
+        let real_ms = t.elapsed().as_secs_f64() * 1e3;
+        let _ = preview.join().unwrap();
+        assert!(!r.text.is_empty());
+        worst_extra = worst_extra.max(real_ms - short_ms);
+    }
+    eprintln!("real transcription during a preview: worst extra wait {worst_extra:.0} ms (preview alone {preview_ms:.0} ms)");
+    assert!(worst_extra <= preview_ms + 60.0, "waited {worst_extra:.0} ms for a {preview_ms:.0} ms preview");
+    assert_eq!(engine.load_count(), 1);
+}

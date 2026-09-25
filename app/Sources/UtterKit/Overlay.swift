@@ -10,10 +10,69 @@ public enum OverlayPhase: Equatable, Sendable {
     case notice(String, AttentionCue)
 }
 
+/// Settings → General → Overlay (PARITY F7).
+public enum OverlayStyle: String, Codable, CaseIterable, Sendable {
+    /// No pill while dictating (notices such as secure input still show).
+    case none
+    /// Level meter and timer.
+    case minimal
+    /// Meter and timer plus the words so far (PARITY A18).
+    case live
+
+    public static let defaultsKey = "overlay.style"
+
+    public var title: String {
+        switch self {
+        case .none: "None"
+        case .minimal: "Meter and Timer"
+        case .live: "Live Text"
+        }
+    }
+
+    public static func load(from defaults: UserDefaults = .standard) -> OverlayStyle {
+        defaults.string(forKey: defaultsKey).flatMap(OverlayStyle.init(rawValue:)) ?? .minimal
+    }
+
+    public func save(to defaults: UserDefaults = .standard) {
+        defaults.set(rawValue, forKey: Self.defaultsKey)
+    }
+}
+
+/// How much recent audio a live preview may transcribe for a model, so a
+/// preview still running at release delays the text by at most `budget`
+/// (transcribe.cpp's Parakeet one-shot path can't be interrupted mid-run).
+public enum LivePreviewPolicy {
+    public static let budgetSeconds = 0.12
+    public static let maxWindowSeconds = 8.0
+    /// Below this, a preview shows too few words to be worth it.
+    public static let minWindowSeconds = 3.0
+    public static let interval: TimeInterval = 0.8
+
+    /// nil: the model is too slow for live text.
+    public static func windowSeconds(measuredRTF rtf: Double) -> Double? {
+        guard rtf > 0 else { return nil }
+        let window = min(budgetSeconds / rtf, maxWindowSeconds)
+        return window >= minWindowSeconds ? window : nil
+    }
+
+    /// The overlay line: text already transcribed plus the newest preview,
+    /// kept to the last `limit` characters (the start scrolls away).
+    public static func display(committed: String, preview: String?, truncatedAudio: Bool, limit: Int = 90) -> String {
+        var parts: [String] = []
+        if !committed.isEmpty { parts.append(committed) }
+        if let preview, !preview.isEmpty { parts.append((truncatedAudio && committed.isEmpty ? "… " : "") + preview) }
+        let text = parts.joined(separator: " ")
+        guard text.count > limit else { return text }
+        return "… " + String(text.suffix(limit)).drop(while: { !$0.isWhitespace }).trimmingCharacters(in: .whitespaces)
+    }
+}
+
 /// Observable state behind the overlay view.
 @MainActor @Observable
 public final class OverlayModel {
     public var phase: OverlayPhase = .hidden
+    /// Live Text style: the words so far (nil hides the line).
+    public var liveText: String?
     /// Recent input levels (0…1), newest last, for the meter.
     public private(set) var levels: [Float] = Array(repeating: 0, count: OverlayModel.barCount)
 
@@ -57,6 +116,9 @@ public final class OverlayController {
     private let levelProvider: () -> Float
 
     public static let size = NSSize(width: 240, height: 48)
+    public static let liveSize = NSSize(width: 460, height: 84)
+    /// Live Text style: the recording pill is wider and has a text line.
+    public var live = false
     public static let noticeSize = NSSize(width: 420, height: 64)
     /// How long a notice stays up.
     public var noticeDuration: Duration = .seconds(4)
@@ -119,7 +181,11 @@ public final class OverlayController {
         hideTask?.cancel()
         model.phase = phase
         let size: NSSize
-        if case .notice = phase { size = Self.noticeSize } else { size = Self.size }
+        switch phase {
+        case .notice: size = Self.noticeSize
+        case .recording where live: size = Self.liveSize
+        default: size = Self.size
+        }
         if let screen = Self.activeScreen {
             panel.setFrame(Self.frame(for: size, in: screen.visibleFrame), display: false)
         }
@@ -129,6 +195,7 @@ public final class OverlayController {
             return
         case .recording:
             model.resetLevels()
+            model.liveText = nil
             startMeter()
         case .transcribing:
             stopMeter()
@@ -188,17 +255,27 @@ struct OverlayView: View {
         case .hidden:
             EmptyView()
         case .recording(let startedAt):
-            HStack(spacing: 12) {
-                Circle().fill(.red).frame(width: 10, height: 10)
-                LevelMeter(levels: model.levels)
-                TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                    Text(Self.elapsed(from: startedAt, to: context.date))
-                        .font(.system(.callout, design: .monospaced))
-                        .foregroundStyle(.primary)
+            VStack(spacing: 6) {
+                HStack(spacing: 12) {
+                    Circle().fill(.red).frame(width: 10, height: 10)
+                    LevelMeter(levels: model.levels)
+                    TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                        Text(Self.elapsed(from: startedAt, to: context.date))
+                            .font(.system(.callout, design: .monospaced))
+                            .foregroundStyle(.primary)
+                    }
+                }
+                if let live = model.liveText {
+                    Text(live.isEmpty ? " " : live)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Utter is listening")
+            .accessibilityLabel(model.liveText.map { "Utter is listening: \($0)" } ?? "Utter is listening")
         case .transcribing:
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)

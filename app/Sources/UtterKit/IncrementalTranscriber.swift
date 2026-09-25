@@ -64,6 +64,11 @@ public final class IncrementalTranscriber: @unchecked Sendable {
     public var isBusy: Bool { lock.lock(); defer { lock.unlock() }; return busy }
     /// Samples fed so far (the recorder index to continue from).
     public var fed: Int { lock.lock(); defer { lock.unlock() }; return received }
+    /// Audio already transcribed (16 kHz samples) and its text, for the live overlay.
+    public var committedSnapshot: (samples: Int, text: String) {
+        lock.lock(); defer { lock.unlock() }
+        return (committed, Self.join(texts))
+    }
     /// True once any segment was started: the release must go through `finish`
     /// (a one-shot pass would first wait for that segment, then redo its audio).
     public var hasStarted: Bool { lock.lock(); defer { lock.unlock() }; return segmentCount > 0 || busy }

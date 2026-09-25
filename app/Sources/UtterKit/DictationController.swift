@@ -196,12 +196,23 @@ public final class DictationController {
         return OverlayController(levelProvider: { recorder.level })
     }()
 
+    /// Settings → General → Overlay.
+    public var overlayStyle = OverlayStyle.load() {
+        didSet { overlayStyle.save() }
+    }
+
     private func updateOverlay(from old: State) {
+        if state != .recording { stopLivePreview() }
         switch state {
         case .recording:
+            // "None": no pill while dictating; notices below still show.
+            guard overlayStyle != .none else { break }
+            overlay.live = livePreviewWindow != nil
             overlay.show(.recording(startedAt: Date()))
             overlayShownNs = MonoClock.nowNs()
+            startLivePreview()
         case .transcribing:
+            guard overlayStyle != .none else { overlay.hide(); break }
             overlay.show(.transcribing)
         case .failed(let message) where old == .recording || old == .transcribing:
             // A dictation failed: say so where the user is looking.
@@ -444,6 +455,60 @@ public final class DictationController {
         return DictationOptions(language: language, translate: text.translateToEnglish && family == "whisper",
                                 initialPrompt: text.initialPrompt(forModelFamily: family, modelID: loadedModelID),
                                 trimSilence: captureSettings.trimSilence)
+    }
+
+    // MARK: Live text in the overlay (PARITY A18)
+
+    /// Seconds of recent audio a preview may use with the loaded model, or nil
+    /// when live text is off or the model is too slow for it.
+    public var livePreviewWindow: Double? {
+        guard overlayStyle == .live, let entry = loadedModelEntry else { return nil }
+        return LivePreviewPolicy.windowSeconds(measuredRTF: entry.measuredRtf)
+    }
+
+    private var previewTimer: Timer?
+    private var previewInFlight = false
+    private let previewQueue = DispatchQueue(label: "dev.utter.preview", qos: .utility)
+
+    private func startLivePreview() {
+        stopLivePreview()
+        guard let window = livePreviewWindow else { return }
+        overlay.model.liveText = ""
+        let windowSamples = Int(window * 16_000)
+        let serial = dictationSerial
+        let options = dictationOptions(noticeUnsupportedLanguage: false)
+        let timer = Timer(timeInterval: LivePreviewPolicy.interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.state == .recording, !self.previewInFlight else { return }
+                self.previewInFlight = true
+                let (base, committed) = self.incremental?.committedSnapshot ?? (0, "")
+                let recorder = self.recorder
+                let engine = self.engine
+                let previewQueue = self.previewQueue
+                self.audioQueue.async {
+                    let pending = recorder.isRecording ? recorder.samplesSoFar(from: base) : []
+                    let truncated = pending.count > windowSamples
+                    let audio = truncated ? Array(pending.suffix(windowSamples)) : pending
+                    previewQueue.async {
+                        let text = audio.isEmpty ? nil : (try? engine.preview(pcm: audio, options: options)) ?? nil
+                        Task { @MainActor in
+                            self.previewInFlight = false
+                            // Only for this recording, and never after it ended.
+                            guard self.state == .recording, self.dictationSerial == serial, let text else { return }
+                            self.overlay.model.liveText = LivePreviewPolicy.display(committed: committed, preview: text,
+                                                                                    truncatedAudio: truncated)
+                        }
+                    }
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        previewTimer = timer
+    }
+
+    private func stopLivePreview() {
+        previewTimer?.invalidate()
+        previewTimer = nil
     }
 
     // MARK: Incremental transcription of long dictations

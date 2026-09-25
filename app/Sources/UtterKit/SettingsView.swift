@@ -17,6 +17,7 @@ public final class SettingsModel {
     var privacy: PrivacySettings { didSet { if !reloading { controller.privacySettings = privacy } } }
     var sounds: SoundSettings { didSet { if !reloading { controller.soundSettings = sounds } } }
     var capture: CaptureSettings { didSet { if !reloading { controller.captureSettings = capture } } }
+    var overlayStyle: OverlayStyle { didSet { if !reloading { controller.overlayStyle = overlayStyle } } }
     var launchAtLogin = LaunchAtLogin.isEnabled
     var message: String?
     var newTerm = ""
@@ -49,6 +50,7 @@ public final class SettingsModel {
         privacy = controller.privacySettings
         sounds = controller.soundSettings
         capture = controller.captureSettings
+        overlayStyle = controller.overlayStyle
         launchAtLogin = LaunchAtLogin.isEnabled
         refreshShortcuts()
         refreshAPIKeyState()
@@ -88,6 +90,7 @@ public final class SettingsModel {
         privacy = controller.privacySettings
         sounds = controller.soundSettings
         capture = controller.captureSettings
+        overlayStyle = controller.overlayStyle
         refreshShortcuts()
         shortcutObserver = NotificationCenter.default.addObserver(forName: DictationController.shortcutsChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshShortcuts() }
@@ -222,6 +225,11 @@ struct SettingsView: View {
                 ForEach(GeneralSettings.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             Toggle("Show the menu bar icon when idle", isOn: $model.general.showMenuBarIcon)
+            Picker("While dictating, show", selection: $model.overlayStyle) {
+                ForEach(OverlayStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Text(Self.overlayNote(model.overlayStyle, entry: model.controller.loadedModelEntry))
+                .font(.caption).foregroundStyle(.secondary)
             Text("It always appears while you dictate. With the icon hidden, open Settings by launching Utter again.")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Open setup at launch when a permission is missing", isOn: $model.general.showSetupWhenNeeded)
@@ -519,6 +527,19 @@ struct SettingsView: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
+    }
+
+    static func overlayNote(_ style: OverlayStyle, entry: ModelEntry?) -> String {
+        switch style {
+        case .none: return "No pill while you speak. Notices (secure input, text that couldn't be confirmed) still appear."
+        case .minimal: return "A small pill with a level meter and timer."
+        case .live:
+            guard let entry else { return "The words appear as you speak." }
+            if let window = LivePreviewPolicy.windowSeconds(measuredRTF: entry.measuredRtf) {
+                return "The words appear as you speak (the last \(Int(window)) s with \(entry.name)). The final text is transcribed again when you stop."
+            }
+            return "\(entry.name) is too slow for live text, so the meter and timer are shown. Parakeet, SenseVoice and Moonshine support it."
+        }
     }
 
     static func statusText(_ status: ModelManager.Status?) -> String {

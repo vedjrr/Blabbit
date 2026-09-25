@@ -4,8 +4,8 @@ use crate::audio::skip_reason;
 use crate::error::{Result, UtterError};
 use crate::model::{GgufModel, LoadStats, MemoryRequirements, ModelMetadata, SpeechModel, TranscribeOptions, Transcription};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Mutex, RwLock, TryLockError};
 
 /// `model` is locked for the whole of a load or an inference (seconds). Status
 /// queries (`is_loaded`, `metadata`, `memory_requirements`, `load_count`) never
@@ -15,6 +15,21 @@ pub struct Engine {
     loaded: AtomicBool,
     info: RwLock<Option<(ModelMetadata, MemoryRequirements)>>,
     loads: AtomicU64,
+    /// Live previews give way to real transcriptions (see `preview`).
+    cancel: RwLock<Option<transcribe_cpp::CancelToken>>,
+    /// Real transcriptions waiting for or holding the model.
+    pending_real: AtomicUsize,
+    /// A preview holds the model right now.
+    preview_running: AtomicBool,
+}
+
+/// Decrements the pending-transcription count when a transcription ends.
+struct Pending<'a>(&'a AtomicUsize);
+
+impl Drop for Pending<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Default for Engine {
@@ -29,7 +44,15 @@ impl Engine {
         // instead of stderr; they are debug-level noise for users.
         static LOGGING: std::sync::Once = std::sync::Once::new();
         LOGGING.call_once(transcribe_cpp::init_logging);
-        Engine { model: Mutex::new(None), loaded: AtomicBool::new(false), info: RwLock::new(None), loads: AtomicU64::new(0) }
+        Engine {
+            model: Mutex::new(None),
+            loaded: AtomicBool::new(false),
+            info: RwLock::new(None),
+            loads: AtomicU64::new(0),
+            cancel: RwLock::new(None),
+            pending_real: AtomicUsize::new(0),
+            preview_running: AtomicBool::new(false),
+        }
     }
 
     fn set_info(&self, info: Option<(ModelMetadata, MemoryRequirements)>) {
@@ -57,6 +80,7 @@ impl Engine {
         if let Some(meta) = model.metadata() {
             self.set_info(Some((meta, model.memory_requirements())));
         }
+        *self.cancel.write().unwrap_or_else(|p| p.into_inner()) = model.cancel_token();
         *slot = Some(model);
         self.loads.fetch_add(1, Ordering::Relaxed);
         self.loaded.store(true, Ordering::Release);
@@ -104,7 +128,21 @@ impl Engine {
         }
         let trimmed = if options.trim_silence { crate::vad::trim_silence(pcm_16k_mono) } else { None };
         let pcm = trimmed.as_ref().map_or(pcm_16k_mono, |t| &t.pcm);
+        // Announce ourselves first, then stop a running preview: it must never
+        // delay the text the user is waiting for (see `preview`).
+        self.pending_real.fetch_add(1, Ordering::SeqCst);
+        let _pending = Pending(&self.pending_real);
+        let token = self.cancel.read().unwrap_or_else(|p| p.into_inner()).clone();
+        if self.preview_running.load(Ordering::SeqCst) {
+            if let Some(token) = &token {
+                token.cancel();
+            }
+        }
         let mut slot = self.guard();
+        // Nothing else runs now; clear a cancel aimed at the preview before us.
+        if let Some(token) = &token {
+            token.reset();
+        }
         let model = slot.as_mut().ok_or(UtterError::ModelNotLoaded)?;
         let mut result = model.transcribe(pcm, options)?;
         if let Some(t) = trimmed {
@@ -113,6 +151,46 @@ impl Engine {
             result.trimmed_ms = t.removed_ms;
         }
         Ok(result)
+    }
+}
+
+impl Engine {
+    /// A best-effort transcription of audio still being recorded, for the live
+    /// overlay (PARITY A18). Returns `Ok(None)` instead of waiting: when the
+    /// model is busy, when a real transcription is pending, or when the audio
+    /// is too short or silent. A real transcription that arrives meanwhile
+    /// cancels the preview where the model family polls for it mid-run; where
+    /// it only checks before a run (Parakeet's one-shot path in transcribe.cpp
+    /// 0.2.3), the real one waits for this preview, so callers keep previews
+    /// short (the app caps the window from the model's measured speed).
+    pub fn preview(&self, pcm_16k_mono: &[f32], options: &TranscribeOptions) -> Result<Option<Transcription>> {
+        if self.pending_real.load(Ordering::SeqCst) > 0 || skip_reason(pcm_16k_mono).is_some() {
+            return Ok(None);
+        }
+        let mut slot = match self.model.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::WouldBlock) => return Ok(None),
+            Err(TryLockError::Poisoned(p)) => p.into_inner(),
+        };
+        // Order matters (SeqCst): mark the preview, then re-check. A real
+        // transcription that arrives after this check sees `preview_running`
+        // and cancels us.
+        self.preview_running.store(true, Ordering::SeqCst);
+        let result = if self.pending_real.load(Ordering::SeqCst) > 0 {
+            Ok(None)
+        } else {
+            match slot.as_mut() {
+                None => Ok(None),
+                Some(model) => match model.transcribe(pcm_16k_mono, options) {
+                    Ok(t) => Ok(Some(t)),
+                    // Aborted for a real transcription: not an error.
+                    Err(_) if self.pending_real.load(Ordering::SeqCst) > 0 => Ok(None),
+                    Err(e) => Err(e),
+                },
+            }
+        };
+        self.preview_running.store(false, Ordering::SeqCst);
+        result
     }
 }
 
@@ -133,6 +211,13 @@ mod tests {
         let r = engine.transcribe(&[0.0; 1_000], &TranscribeOptions::default()).unwrap();
         assert_eq!(r.skipped, Some(crate::audio::SkipReason::TooShort));
         assert!(r.text.is_empty());
+    }
+
+    #[test]
+    fn preview_without_a_model_is_quietly_nothing() {
+        let engine = Engine::new();
+        let speech: Vec<f32> = (0..16_000).map(|i| 0.2 * (i as f32 * 0.05).sin()).collect();
+        assert_eq!(engine.preview(&speech, &TranscribeOptions::default()), Ok(None));
     }
 
     #[test]

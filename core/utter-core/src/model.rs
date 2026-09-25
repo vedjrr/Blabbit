@@ -38,6 +38,8 @@ pub struct ModelMetadata {
     pub supports_language_detect: bool,
     pub supports_translate: bool,
     pub supports_streaming: bool,
+    /// The family honours the abort callback (needed for live previews).
+    pub supports_cancellation: bool,
     /// 0 = no practical limit.
     pub max_audio_ms: i64,
 }
@@ -67,11 +69,16 @@ pub trait SpeechModel: Send {
     fn metadata(&self) -> Option<ModelMetadata>;
     fn supported_languages(&self) -> Vec<String>;
     fn memory_requirements(&self) -> MemoryRequirements;
+    /// A token that aborts the run in flight (models that support it).
+    fn cancel_token(&self) -> Option<transcribe_cpp::CancelToken> {
+        None
+    }
 }
 
 struct Loaded {
     session: transcribe_cpp::Session,
     metadata: ModelMetadata,
+    cancel: transcribe_cpp::CancelToken,
 }
 
 /// Any GGUF model transcribe.cpp understands (Parakeet, Whisper, Moonshine, SenseVoice, …).
@@ -108,9 +115,12 @@ impl SpeechModel for GgufModel {
             supports_language_detect: caps.supports_language_detect,
             supports_translate: caps.supports_translate,
             supports_streaming: caps.supports_streaming,
+            supports_cancellation: model.supports(transcribe_cpp::Feature::Cancellation),
             max_audio_ms: caps.max_audio_ms,
         };
         let mut session = model.session()?;
+        let cancel = transcribe_cpp::CancelToken::new();
+        session.set_cancel_token(&cancel);
         let load_ms = started.elapsed().as_secs_f64() * 1e3;
 
         // Warm-up: the first run pays for Metal pipeline creation and buffer
@@ -121,7 +131,7 @@ impl SpeechModel for GgufModel {
 
         let after = process_memory();
         self.measured_load_bytes = after.footprint_bytes.saturating_sub(before.footprint_bytes);
-        self.loaded = Some(Loaded { session, metadata });
+        self.loaded = Some(Loaded { session, metadata, cancel });
         log::info!(
             "model loaded path={} load_ms={load_ms:.0} warmup_ms={warmup_ms:.0} footprint_delta_mb={}",
             self.path.display(),
@@ -173,6 +183,10 @@ impl SpeechModel for GgufModel {
 
     fn metadata(&self) -> Option<ModelMetadata> {
         self.loaded.as_ref().map(|l| l.metadata.clone())
+    }
+
+    fn cancel_token(&self) -> Option<transcribe_cpp::CancelToken> {
+        self.loaded.as_ref().map(|l| l.cancel.clone())
     }
 
     fn supported_languages(&self) -> Vec<String> {

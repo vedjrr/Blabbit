@@ -106,9 +106,11 @@ import Testing
             ("transcribing", .transcribing, OverlayController.size),
             ("notice_blocked", .notice(SecureInputFallback.action(secureFieldFocused: false).message, .blocked), OverlayController.noticeSize),
             ("notice_unconfirmed", .notice(InsertionOutcome.unconfirmedMessage, .unconfirmed), OverlayController.noticeSize),
+            ("recording_live", .recording(startedAt: Date().addingTimeInterval(-4)), OverlayController.liveSize),
         ]
         for (name, phase, size) in phases {
             model.phase = phase
+            model.liveText = name == "recording_live" ? "Testing Utter, one two three. HoldMyCode uses" : nil
             let renderer = ImageRenderer(content: OverlayView(model: model).frame(width: size.width, height: size.height).padding(8).background(Color.gray))
             renderer.scale = 2
             let image = try #require(renderer.cgImage, "\(name) did not render")
@@ -163,5 +165,53 @@ import Testing
             let png = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
             try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("permissions_setup.png"))
         }
+    }
+}
+
+/// Overlay styles and live text (PARITY A18, F7).
+@Suite struct LivePreviewPolicyTests {
+    @Test func windowFollowsTheModelsMeasuredSpeed() {
+        // Parakeet V3 (RTF 0.0178): 6.7 s of audio ≈ 120 ms per preview.
+        let parakeet = LivePreviewPolicy.windowSeconds(measuredRTF: 0.0178)
+        #expect(parakeet != nil && abs(parakeet! - 6.74) < 0.1)
+        #expect(LivePreviewPolicy.windowSeconds(measuredRTF: 0.013) == LivePreviewPolicy.maxWindowSeconds) // SenseVoice, capped
+        #expect(LivePreviewPolicy.windowSeconds(measuredRTF: 0.0848) == nil)  // Whisper Small: too slow
+        #expect(LivePreviewPolicy.windowSeconds(measuredRTF: 0) == nil)
+        // The budget bounds the extra wait at release.
+        if let w = parakeet { #expect(w * 0.0178 <= LivePreviewPolicy.budgetSeconds + 1e-9) }
+    }
+
+    @Test func displayJoinsCommittedTextAndKeepsTheEnd() {
+        #expect(LivePreviewPolicy.display(committed: "", preview: "hello there", truncatedAudio: false) == "hello there")
+        #expect(LivePreviewPolicy.display(committed: "First part.", preview: "and more", truncatedAudio: true) == "First part. and more")
+        #expect(LivePreviewPolicy.display(committed: "", preview: "the tail", truncatedAudio: true) == "… the tail")
+        let long = String(repeating: "word ", count: 60) + "end"
+        let shown = LivePreviewPolicy.display(committed: "", preview: long, truncatedAudio: false, limit: 40)
+        #expect(shown.hasPrefix("… ") && shown.hasSuffix("end") && shown.count <= 43)
+        #expect(!shown.dropFirst(2).hasPrefix("ord"), "cut at a word boundary: \(shown)")
+    }
+
+    @Test func styleDefaultsToMinimalAndPersists() throws {
+        let suite = "dev.utter.test.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(OverlayStyle.load(from: defaults) == .minimal)
+        OverlayStyle.live.save(to: defaults)
+        #expect(OverlayStyle.load(from: defaults) == .live)
+    }
+
+    @MainActor @Test func liveTextShowsInAWiderPill() throws {
+        let overlay = OverlayController(levelProvider: { 0.05 })
+        overlay.live = true
+        overlay.show(.recording(startedAt: Date()))
+        #expect(overlay.model.liveText == nil)
+        #expect(overlay.panel.frame.size == OverlayController.liveSize)
+        overlay.model.liveText = "Testing Utter one two three"
+        overlay.panel.contentView?.layoutSubtreeIfNeeded()
+        overlay.hide()
+        overlay.live = false
+        overlay.show(.recording(startedAt: Date()))
+        #expect(overlay.panel.frame.size == OverlayController.size)
+        overlay.hide()
     }
 }

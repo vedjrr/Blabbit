@@ -141,6 +141,18 @@ impl UtterEngine {
         })
     }
 
+    /// Live overlay text for audio still being recorded (PARITY A18). Never
+    /// waits for a busy model: returns nil instead. Call off the main thread.
+    pub fn preview(&self, pcm: Vec<f32>, options: DictationOptions) -> Result<Option<String>, CoreError> {
+        let opts = TranscribeOptions {
+            language: options.language,
+            translate: options.translate,
+            initial_prompt: options.initial_prompt,
+            trim_silence: false,
+        };
+        Ok(self.inner.preview(&pcm, &opts)?.map(|t| t.text))
+    }
+
     /// Transcribes 16 kHz mono f32 PCM; blocks, so call off the main thread.
     pub fn transcribe(&self, pcm: Vec<f32>, options: DictationOptions) -> Result<TranscriptionResult, CoreError> {
         let opts = TranscribeOptions {
