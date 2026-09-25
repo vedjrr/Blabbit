@@ -324,3 +324,66 @@ impl ModelDownload {
         self.control.cancel();
     }
 }
+
+// MARK: Text pipeline (M5, G4)
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum TextMode {
+    Exact,
+    Clean,
+    Code,
+    Professional,
+    Custom,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TextSettings {
+    pub mode: TextMode,
+    pub vocabulary: Vec<String>,
+    pub vocabulary_threshold: f64,
+    pub remove_fillers: bool,
+    pub capitalize: bool,
+    pub auto_punctuation: bool,
+    pub spoken_line_breaks: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ProcessedText {
+    pub text: String,
+    pub changes: Vec<String>,
+}
+
+/// Runs the pure Rust stages for `settings.mode` (fast; safe on any thread).
+#[uniffi::export]
+pub fn process_text(raw: String, settings: TextSettings) -> ProcessedText {
+    use utter_core::text::{self, Mode, TextOptions};
+    let options = TextOptions {
+        mode: match settings.mode {
+            TextMode::Exact => Mode::Exact,
+            TextMode::Clean => Mode::Clean,
+            TextMode::Code => Mode::Code,
+            TextMode::Professional => Mode::Professional,
+            TextMode::Custom => Mode::Custom,
+        },
+        vocabulary: settings.vocabulary,
+        vocabulary_threshold: settings.vocabulary_threshold,
+        remove_fillers: settings.remove_fillers,
+        capitalize: settings.capitalize,
+        auto_punctuation: settings.auto_punctuation,
+        spoken_line_breaks: settings.spoken_line_breaks,
+    };
+    let processed = text::process(&raw, &options);
+    ProcessedText { text: processed.text, changes: processed.changes }
+}
+
+/// Whisper initial prompt built from the user's vocabulary.
+#[uniffi::export]
+pub fn vocabulary_prompt(vocabulary: Vec<String>) -> Option<String> {
+    utter_core::text::whisper_prompt(&vocabulary)
+}
+
+/// Default similarity threshold for vocabulary corrections.
+#[uniffi::export]
+pub fn default_vocabulary_threshold() -> f64 {
+    utter_core::text::DEFAULT_THRESHOLD
+}

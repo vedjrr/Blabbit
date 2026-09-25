@@ -224,6 +224,18 @@ public final class DictationController {
         released(KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0, source: recordingSource))
     }
 
+    /// How text is shaped after transcription (Settings → Dictation).
+    public var textSettings = TextPipelineSettings.load() {
+        didSet { textSettings.save() }
+    }
+    /// Which AI processor Professional/Custom use (Settings → Processing).
+    public var processorSettings = ProcessorSettings.load() {
+        didSet { processorSettings.save() }
+    }
+    /// The last dictation's pipeline result (for history).
+    public private(set) var lastPipeline: PipelineResult?
+    private var processedNs: UInt64 = 0
+
     public nonisolated static let keepMicReadyKey = "audio.keepMicrophoneReady"
     public var keepMicrophoneReady: Bool { UserDefaults.standard.bool(forKey: Self.keepMicReadyKey) }
 
@@ -539,10 +551,14 @@ public final class DictationController {
         }
         let engine = self.engine
         let samples = recording.samples
+        let text = textSettings
+        let family = loadedModelID.flatMap { models.entry($0)?.family }
+        let options = DictationOptions(language: text.language, translate: false,
+                                       initialPrompt: text.initialPrompt(forModelFamily: family))
         let result: TranscriptionResult
         do {
             result = try await Task.detached(priority: .userInitiated) {
-                try engine.transcribe(pcm: samples, options: DictationOptions(language: nil, translate: false, initialPrompt: nil))
+                try engine.transcribe(pcm: samples, options: options)
             }.value
         } catch let error as CoreError {
             Log.error("transcribe failed: \(error.logDetail)")
@@ -570,7 +586,13 @@ public final class DictationController {
             return
         }
         let transcribedNs = MonoClock.nowNs()
-        let skipped = result.skipped.map { "\($0)" } ?? (TranscriptPolicy.isBlank(result.text) ? "empty" : nil)
+        // Raw transcript → local stages → optional AI processor → final text.
+        let pipeline = TextPipeline(settings: text, processor: text.mode.usesProcessor ? processorSettings.makeProcessor() : nil)
+        let processed = result.skipped == nil ? await pipeline.run(result.text) : PipelineResult(raw: result.text, final: "", changes: [])
+        lastPipeline = processed
+        processedNs = MonoClock.nowNs()
+        // A lone "um" cleans up to nothing: skip it like silence.
+        let skipped = result.skipped.map { "\($0)" } ?? (TranscriptPolicy.isBlank(processed.final) ? "empty" : nil)
         if let skipped {
             logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs,
                          report: InsertReport(result: .failed("skipped_\(skipped)"), bundleID: nil))
@@ -581,7 +603,8 @@ public final class DictationController {
             return
         }
         let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        let report = await inserter.insert(result.text, bundleID: bundleID)
+        let report = await inserter.insert(processed.final, bundleID: bundleID)
+        if let problem = processed.processorProblem, lastMessage == nil { lastMessage = problem }
         logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, report: report)
         let plan = InsertionOutcome.plan(for: report)
         // Keep the words rather than lose them when they may not have gone in.
@@ -629,6 +652,10 @@ public final class DictationController {
             ("keydown_to_first_callback_ms", ms(press.callbackNs, rec.firstCallbackNs)),
             ("release_to_last_sample_end_ms", ms(release.callbackNs, rec.lastSampleEndNs)),
             ("release_to_transcribed_ms", ms(release.callbackNs, transcribedNs)),
+            ("text_mode", textSettings.mode.rawValue),
+            ("processing_ms", processedNs >= transcribedNs ? ms(transcribedNs, processedNs) : "n/a"),
+            ("text_changes", "\(lastPipeline?.changes.count ?? 0)"),
+            ("processor", lastPipeline?.processor.map { "\"\($0)\"" } ?? "none"),
             ("inference_ms", String(format: "%.1f", result.inferenceMs)),
             ("release_to_paste_sent_ms", t.pasteSentNs == nil ? "n/a" : ms(release.callbackNs, t.pasteSentNs)),
             ("release_to_target_read_ms", ms(release.callbackNs, t.firstReadNs)),
