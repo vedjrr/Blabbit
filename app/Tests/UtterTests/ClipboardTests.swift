@@ -200,7 +200,7 @@ struct HangingReader: PasteboardReading {
         defer { pb.releaseGlobally() }
         pb.clearContents()
         pb.setString("SENTINEL", forType: .string)
-        let inserter = PasteInserter(pasteboard: pb, reader: HangingReader(seconds: 3), checkSecureInput: false) {
+        let inserter = PasteInserter(pasteboard: pb, reader: HangingReader(seconds: 10), checkSecureInput: false) {
             _ = pb.string(forType: .string)
             return nil
         }
@@ -208,7 +208,8 @@ struct HangingReader: PasteboardReading {
         inserter.quietPeriod = .milliseconds(20)
         let started = Date()
         let outcome = await inserter.insert("not stalled")
-        #expect(Date().timeIntervalSince(started) < 1.5)
+        // Far below the 10 s hang (margin for other main-actor suites running in parallel).
+        #expect(Date().timeIntervalSince(started) < 6)
         #expect(outcome == .pasted(receipt: true))
         #expect(inserter.lastTiming.clipboardReadable == false)
         // Unreadable, so never "restored": the transcript stays as plain text.
@@ -216,7 +217,8 @@ struct HangingReader: PasteboardReading {
         // The stuck capture is still running: the next dictation doesn't queue behind it.
         let second = Date()
         #expect(await inserter.insert("also not stalled") == .pasted(receipt: true))
-        #expect(Date().timeIntervalSince(second) < 0.15)
+        #expect(inserter.lastTiming.snapshotSkippedBusy, "no second wait on the stuck owner")
+        #expect(Date().timeIntervalSince(second) < 1.5)
         #expect(inserter.lastTiming.clipboardReadable == false)
     }
 

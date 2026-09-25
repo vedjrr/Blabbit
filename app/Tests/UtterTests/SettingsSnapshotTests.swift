@@ -13,7 +13,7 @@ import Testing
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = NSHostingView(rootView: view)
         window.contentView?.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.2)) // let SwiftUI settle
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05)) // let SwiftUI settle
         let content = try #require(window.contentView)
         content.wantsLayer = true
         content.layoutSubtreeIfNeeded()

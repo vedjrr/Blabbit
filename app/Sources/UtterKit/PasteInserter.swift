@@ -5,6 +5,8 @@ import Carbon.HIToolbox
 public struct InsertTiming: Sendable {
     public var startedNs: UInt64 = 0
     public var snapshotMs: Double = 0
+    /// The clipboard wasn't read because an earlier read was still stuck.
+    public var snapshotSkippedBusy = false
     public var pasteSentNs: UInt64?
     public var firstReadNs: UInt64?
     public var reads = 0
@@ -106,6 +108,7 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
         let access = ClipboardAccess.current(for: pasteboard)
         lastTiming.clipboardAccess = access
         let snapshot: PasteboardSnapshot
+        let skippedBusy = AtomicFlag()
         if access == .allowed {
             nonisolated(unsafe) let reader = self.reader
             // The owner of promised clipboard data can hang while serving it; past
@@ -116,6 +119,7 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
                 // A capture from an earlier dictation is still stuck on a hung
                 // owner: don't queue behind it (and wait the full limit again).
                 if busy.isSet {
+                    skippedBusy.set(true)
                     Log.info("previous clipboard snapshot still running; treating the clipboard as unreadable")
                     continuation.resume(returning: .unreadable)
                     return
@@ -140,6 +144,7 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
             snapshot = .unreadable
         }
         lastTiming.snapshotMs = MonoClock.ms(from: lastTiming.startedNs, to: MonoClock.nowNs())
+        lastTiming.snapshotSkippedBusy = skippedBusy.isSet
         lastTiming.clipboardReadable = snapshot.readable
         pendingText = text
         receiptCount = 0
