@@ -24,12 +24,6 @@ cask "utter" do
 
   app "Utter.app"
 
-  # Not notarised (no paid Apple Developer account): Gatekeeper asks once.
-  caveats <<~EOS
-    Utter is signed but not notarised. If macOS blocks the first launch, open
-    System Settings → Privacy & Security and click "Open Anyway".
-  EOS
-
   uninstall quit: "dev.utter.mac"
 
   zap trash: [
@@ -39,4 +33,10 @@ cask "utter" do
     "~/Library/Logs/Utter",
     "~/Library/Preferences/dev.utter.mac.plist",
   ]
+
+  # Not notarised (no paid Apple Developer account): Gatekeeper asks once.
+  caveats <<~EOS
+    Utter is signed but not notarised. If macOS blocks the first launch, open
+    System Settings → Privacy & Security and click "Open Anyway".
+  EOS
 end

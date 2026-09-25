@@ -51,6 +51,10 @@ bundle: app
 	rm -rf "$(BUNDLE)"
 	mkdir -p "$(BUNDLE)/Contents/MacOS" "$(BUNDLE)/Contents/Resources"
 	install -m 755 "$(SWIFT_OUT)/$(APP_NAME)" "$(BUNDLE)/Contents/MacOS/$(APP_NAME)"
+	@# SwiftPM adds the Command Line Tools' Swift library folder as an rpath; it
+	@# doesn't exist on users' Macs (the OS has the runtime), so drop it.
+	@otool -l "$(BUNDLE)/Contents/MacOS/$(APP_NAME)" | awk '/LC_RPATH/{r=1} r&&/ path /{print $$2; r=0}' | grep '^/Library/Developer/' | \
+		while read -r p; do install_name_tool -delete_rpath "$$p" "$(BUNDLE)/Contents/MacOS/$(APP_NAME)"; done
 	install -m 644 "$(APP)/Resources/Info.plist" "$(BUNDLE)/Contents/Info.plist"
 	install -m 644 "$(APP)/Resources/AppIcon.icns" "$(BUNDLE)/Contents/Resources/AppIcon.icns"
 	mkdir -p "$(BUNDLE)/Contents/Frameworks"

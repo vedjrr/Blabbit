@@ -18,6 +18,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let controller = DictationController(models: ModelManager())
 
+    /// `make build` output inside a checkout (build/Utter.app next to the
+    /// Makefile): never replaced by a release through Sparkle.
+    static var isDevelopmentBuild: Bool {
+        let folder = Bundle.main.bundleURL.deletingLastPathComponent()
+        return folder.lastPathComponent == "build"
+            && FileManager.default.fileExists(atPath: folder.deletingLastPathComponent().appendingPathComponent("Makefile").path)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         controller.shutdown()
     }
@@ -44,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = StatusMenuController(controller: controller)
         menu.hideIconThisSession = options.noTray
         // Sparkle only in the real bundle (not the bench's second instance).
-        if ProcessInfo.processInfo.environment["UTTER_BENCH_SECOND_INSTANCE"] == nil {
+        if ProcessInfo.processInfo.environment["UTTER_BENCH_SECOND_INSTANCE"] == nil, !Self.isDevelopmentBuild {
             let updates = Updates()
             updates.isBusy = { [controller] in controller.state == .recording || controller.state == .transcribing }
             menu.updates = updates
