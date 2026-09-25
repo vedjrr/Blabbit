@@ -232,6 +232,37 @@ public final class DictationController {
     public var processorSettings = ProcessorSettings.load() {
         didSet { processorSettings.save() }
     }
+    /// Settings → Privacy.
+    public var privacySettings = PrivacySettings.load() {
+        didSet { privacySettings.save() }
+    }
+    /// Local history (nil if the database couldn't be opened; dictation still works).
+    public private(set) lazy var history: HistoryStore? = {
+        do { return try HistoryStore() } catch {
+            Log.error("history unavailable: \(error)")
+            return nil
+        }
+    }()
+    private let historyQueue = DispatchQueue(label: "dev.utter.history", qos: .utility)
+
+    /// Saves a finished dictation off the main thread (text only unless audio retention is on).
+    private func recordHistory(_ pipeline: PipelineResult, recording: Recording, app: String?) {
+        guard privacySettings.historyEnabled, let history else { return }
+        let keepAudio = privacySettings.keepAudio
+        let entry = HistoryEntry(durationMs: recording.durationMs, model: loadedModelID ?? "unknown",
+                                 mode: textSettings.mode.rawValue, raw: pipeline.raw, final: pipeline.final, app: app)
+        let samples = keepAudio ? recording.samples : []
+        historyQueue.async {
+            do {
+                var e = entry
+                if keepAudio { e.audioFile = try history.saveAudio(samples) }
+                try history.add(e)
+            } catch {
+                Log.error("history write failed: \(error)")
+            }
+        }
+    }
+
     /// The last dictation's pipeline result (for history).
     public private(set) var lastPipeline: PipelineResult?
     private var processedNs: UInt64 = 0
@@ -587,7 +618,9 @@ public final class DictationController {
         }
         let transcribedNs = MonoClock.nowNs()
         // Raw transcript → local stages → optional AI processor → final text.
-        let pipeline = TextPipeline(settings: text, processor: text.mode.usesProcessor ? processorSettings.makeProcessor() : nil)
+        // Local-only mode (the default) never uses a cloud processor.
+        let allowed = processorSettings.provider != .anthropic || !privacySettings.localOnly
+        let pipeline = TextPipeline(settings: text, processor: text.mode.usesProcessor && allowed ? processorSettings.makeProcessor() : nil)
         let processed = result.skipped == nil ? await pipeline.run(result.text) : PipelineResult(raw: result.text, final: "", changes: [])
         lastPipeline = processed
         processedNs = MonoClock.nowNs()
@@ -605,6 +638,13 @@ public final class DictationController {
         let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let report = await inserter.insert(processed.final, bundleID: bundleID)
         if let problem = processed.processorProblem, lastMessage == nil { lastMessage = problem }
+        switch report.result {
+        case .inserted, .unverified, .copiedToClipboard, .handledByScript:
+            recordHistory(processed, recording: recording, app: report.bundleID ?? bundleID)
+        case .blockedBySecureInput, .failed, .skipped:
+            // Nothing reached an app (a password field must leave no trace either).
+            break
+        }
         logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, report: report)
         let plan = InsertionOutcome.plan(for: report)
         // Keep the words rather than lose them when they may not have gone in.

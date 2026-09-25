@@ -11,6 +11,10 @@ let package = Package(
     products: [
         .executable(name: "Utter", targets: ["Utter"]),
     ],
+    dependencies: [
+        // History (SQLite + FTS5), ADR-009. MIT.
+        .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
+    ],
     targets: [
         .target(
             name: "UtterFFI",
@@ -35,7 +39,7 @@ let package = Package(
         ),
         .target(
             name: "UtterKit",
-            dependencies: ["UtterCore"],
+            dependencies: ["UtterCore", .product(name: "GRDB", package: "GRDB.swift")],
             path: "Sources/UtterKit",
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
