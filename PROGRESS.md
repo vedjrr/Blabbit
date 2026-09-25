@@ -203,6 +203,20 @@ Iteration: 9
   MINORs: "new line" counts as a command only after a clause end ("that was a new line." stays); "ER" isn't a filler; "i’ll" with a curly apostrophe is capitalised; the log uses this dictation's pipeline result; text left on the clipboard after a failed insertion can be copied again (never after a password-field block); Keychain reads and writes in Settings are off main; history queries run off main (the newest search wins); the database is never opened from main; history uses `PRAGMA secure_delete = ON`; the Language list follows the loaded model; the Turbo no-prompt rule is an explicit model set; the history observer is removable.
 - [M5] Final `make test` (lid closed): Rust 29 + 10 + 4; Swift `Test run with 152 tests in 31 suites passed`; AX and live-capture suites skipped for the stated reasons, device suites ran.
 
+- [M6] `make bench` is now `utter-bench` (Swift, `app/Sources/UtterBench`; replaces `scripts/bench.sh`). It builds the app first and writes `bench/results/<date>.json` plus `docs/BENCHMARKS.md`. It measures:
+  - Per model (6 clips × 3 runs, Metal): load, warm-up, mean RTF, WER, peak and model RSS, and CPU % during inference.
+  - A short utterance back to back vs after idle.
+  - The text pipeline, and paste to ⌘V handed over.
+  - AX insert + verify into a real NSTextView (when unlocked).
+  - Capture start, cold and warm (when a live mic exists).
+  - App launch → shortcut ready and → model ready, and idle RSS/CPU, by launching the real app binary (`UTTER_BENCH_SECOND_INSTANCE` lets it run next to the user's copy).
+  - Real dictations parsed from the app log.
+  Whatever can't be measured right now says why (this run: lid closed, so no capture and no AX numbers).
+- [M6] **Measured, 2026-09-25** (`bench/results/2026-09-25.json`, `docs/BENCHMARKS.md`): Parakeet V3 load 199 ms, RTF 0.018, model RSS ~884 MB. App launch → model ready ~490 ms; idle RSS ~930 MB, idle CPU 0–0.1 %. Text pipeline, ~900 words: 3.2 ms. Paste → ⌘V: 1.3 ms.
+- [M6] **The user's first real dictation** is in the log (13:22, into VS Code, 0.47 s): event → callback 0.2 ms, key-down → overlay 7.8 ms, key-down → first sample 52.8 ms (cold mic), release → transcribed 152 ms, release → text read by the app 182.8 ms, release → clipboard restored ("insert done") 615.8 ms. G1's < 700 ms holds for this sample.
+- [M6] Investigated the first-launch slowdown (7–8.5 s to model ready): ggml embeds its Metal shader *source* and compiles it at runtime. The system caches the result per executable **path** (tested: a copy at a new path took 6927 ms vs 113 ms; the same path survives replacing the file, changing its bytes and re-signing). So users pay it once per install location, and again after a ggml upgrade. Shipping a precompiled `default.metallib` removes it, but that needs Xcode's Metal compiler (the CLT has none): optional human item.
+- [M6] Investigated the cold-inference penalty: a 1 s utterance takes ~38 ms back to back but 66–79 ms after ≥ 200 ms idle (Apple silicon lowers clocks within ~100 ms). Tried and measured: a warm-up pass on key-down (no gain), a keep-alive pass every 150 ms while recording (no gain; each pass ran cold at ~71 ms), user-interactive QoS (no change), and a 50 ms CPU spin before inference (saves ~19 ms, costs 50 ms). None is worth shipping; the probe code was removed.
+
 ## Blocked on human
 - **Decision needed (G1, M4): should "Keep Microphone Ready" be on by default?** When the microphone starts from cold it takes 40–65 ms (measured; the hardware start, the same with every capture API), which misses G1's "< 50 ms". With Keep Microphone Ready on, recording starts in 0.0–0.1 ms and even includes the 150 ms before your key press. The catch is that macOS shows the orange microphone indicator the whole time Utter runs, and a Bluetooth headset stays in call-quality mode. My recommendation: keep it **off** by default (privacy) and accept G1 as "< 50 ms with the option on; cold start logged". The details are under Proposed goal changes. Reply with "default off" or "default on".
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.
@@ -217,7 +231,7 @@ Iteration: 9
   7. Repeat 3–5 times with ~5 s sentences, then run `/loop did the M1 TextEdit test: <what you saw>`. I'll read the `dictation … keydown_to_first_sample_ms … release_to_insert_done_ms` lines in `~/Library/Logs/Utter/utter.log`.
   (Signing uses your local "Apple Development" identity, so these grants survive rebuilds.)
 - (non-blocking, wanted before M1 gate) **Record your own voice fixtures.** The TTS clips are synthetic. Please record 3–5 clips (~5 s each), save as `fixtures/audio/human_NN.wav` with the exact words in `human_NN.txt`. Quick way: QuickTime → New Audio Recording, export, then `afconvert -f WAVE -d LEI16@16000 -c 1 in.m4a fixtures/audio/human_01.wav`. Include: "Testing Utter, one two three. HoldMyCode uses PostgreSQL." and a sentence with Decivra, Maynooth, TypeScript, SwiftUI, WhisperKit.
-- (optional) Install Xcode.app if you want Instruments profiling in M6; the build does not need it.
+- (optional) Install Xcode.app: its Metal compiler would let the build ship a precompiled `default.metallib`, removing the one-time 7–8 s shader compile on first launch (M6 finding). It would also allow Instruments profiling.
 
 ## Proposed goal changes
 - **BRIEF §10 Settings → General → "Updates"**: until Sparkle (M7), the row is an honest "Check for Updates…" button that opens https://github.com/vedjrr/Utter/releases. Automatic update checks arrive with Sparkle in M7; no toggle without a working updater (hard rule 1).

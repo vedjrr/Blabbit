@@ -45,12 +45,19 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("Carbon"),
+                .linkedFramework("IOKit"),
             ]
         ),
         .executableTarget(
             name: "Utter",
             dependencies: ["UtterKit"],
             path: "Sources/Utter"
+        ),
+        // `make bench`: measures the real app, models, capture and insertion (never bundled).
+        .executableTarget(
+            name: "utter-bench",
+            dependencies: ["UtterKit", "UtterCore"],
+            path: "Sources/UtterBench"
         ),
         // Test-only helper app hosting real AppKit text controls (never bundled).
         .executableTarget(

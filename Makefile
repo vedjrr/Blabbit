@@ -63,9 +63,10 @@ test-rust: models
 test-swift: bindings
 	cd "$(APP)" && UTTER_LOG_FILE="$${TMPDIR:-/tmp}/utter-tests.log" swift test $(SWIFT_FLAGS) $(SWIFT_TEST_FLAGS)
 
-bench: core
-	cd "$(CORE)" && cargo build --release -p utter-core --example runtime_probe
-	./scripts/bench.sh
+bench: build
+	cd "$(APP)" && swift build $(SWIFT_FLAGS) --product utter-bench
+	cd "$(APP)" && swift build $(SWIFT_FLAGS) --product UtterAXHost
+	"$(APP)/.build/arm64-apple-macosx/release/utter-bench"
 
 models:
 	./scripts/fetch-models.sh

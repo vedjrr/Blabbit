@@ -85,6 +85,10 @@ public enum AccessibilityInserter {
 /// Real `FocusedTextElement` backed by an AXUIElement. Use only on the AX queue.
 public struct AXFocusedElement: FocusedTextElement {
     let element: AXUIElement
+
+    public init(element: AXUIElement) {
+        self.element = element
+    }
     /// Short timeout so a hung app can't stall insertion (default is ~6 s).
     public static let messagingTimeout: Float = 0.25
 

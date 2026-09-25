@@ -7,22 +7,9 @@ import Testing
 /// Everything that touches the real audio hardware runs one test at a time
 /// (nested suites inherit `.serialized`): parallel captures keep the device
 /// running and would falsify the start-latency numbers.
-/// Whether live microphone input can exist, judged independently of the
-/// recorder under test: a closed MacBook lid switches the built-in mic off,
-/// and a sleeping display or locked screen goes with it here. When this says
-/// available, the hardware tests run and a silent recorder fails them.
+/// Live input judged independently of the recorder under test (SystemState).
 enum LiveAudio {
-    static var lidClosed: Bool {
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
-        defer { IOObjectRelease(service) }
-        let value = IORegistryEntryCreateCFProperty(service, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
-            .takeRetainedValue()
-        return (value as? Bool) ?? false
-    }
-
-    static var available: Bool {
-        !lidClosed && CGDisplayIsAsleep(CGMainDisplayID()) == 0 && !screenIsLocked()
-    }
+    static var available: Bool { SystemState.liveInputUnavailableReason == nil }
 }
 
 @Suite(.serialized,

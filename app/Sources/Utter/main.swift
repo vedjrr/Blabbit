@@ -39,7 +39,9 @@ let showSettingsNotification = Notification.Name("dev.utter.mac.showSettings")
 
 // One Utter at a time: a second launch hands over to the running one and
 // quits, so two event taps never fight over the shortcut.
-if let bundleID = Bundle.main.bundleIdentifier,
+// `make bench` measures a fresh launch next to the user's running copy.
+if ProcessInfo.processInfo.environment["UTTER_BENCH_SECOND_INSTANCE"] == nil,
+   let bundleID = Bundle.main.bundleIdentifier,
    NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
        .contains(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
     DistributedNotificationCenter.default().postNotificationName(showSettingsNotification, object: nil, userInfo: nil,

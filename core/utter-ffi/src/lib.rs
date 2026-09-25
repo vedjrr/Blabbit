@@ -426,3 +426,24 @@ pub fn error_messages() -> Vec<ErrorMessage> {
     ];
     all.into_iter().map(|(kind, e)| ErrorMessage { kind: kind.into(), message: e.to_string() }).collect()
 }
+
+// MARK: Benchmark support (M6)
+
+/// Reads a WAV file as 16 kHz mono samples (fixtures for utter-bench).
+#[uniffi::export]
+pub fn load_wav_16k_mono(path: String) -> Result<Vec<f32>, CoreError> {
+    Ok(utter_core::audio::load_wav_16k_mono(Path::new(&path))?)
+}
+
+#[derive(Debug, Clone, Copy, uniffi::Record)]
+pub struct ProcessMemory {
+    pub resident_bytes: u64,
+    pub footprint_bytes: u64,
+}
+
+/// Current resident size and physical footprint of this process.
+#[uniffi::export]
+pub fn process_memory() -> ProcessMemory {
+    let m = utter_core::memory::process_memory();
+    ProcessMemory { resident_bytes: m.resident_bytes, footprint_bytes: m.footprint_bytes }
+}
