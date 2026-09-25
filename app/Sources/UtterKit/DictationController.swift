@@ -39,7 +39,36 @@ public final class DictationController {
     /// Set when the background load completes; never queried from Rust on main.
     public private(set) var modelLoaded = false
 
-    public let hotkey = HotkeyMonitor()
+    public let hotkey = HotkeyMonitor(shortcut: Shortcut.load())
+    public private(set) var mode = DictationMode.load()
+
+    public func setMode(_ newMode: DictationMode) {
+        mode = newMode
+        newMode.save()
+        Log.info("dictation mode \(newMode.rawValue)")
+    }
+
+    /// Changes the shortcut (validated) and saves it.
+    public func setShortcut(_ shortcut: Shortcut) {
+        guard shortcut.problem == nil else { return }
+        hotkey.shortcut = shortcut
+        shortcut.save()
+        Log.info("shortcut changed to \(shortcut.displayString)")
+        onStateChange?(state)
+    }
+
+    private func hotkeyEvent(keyDown: Bool, _ timing: KeyTiming) {
+        switch HotkeyPolicy.decide(keyDown: keyDown, mode: mode, recording: state == .recording) {
+        case .start:
+            var timing = timing
+            if mode == .toggle { timing.source = .toggle }
+            pressed(timing)
+        case .stop:
+            released(timing)
+        case .ignore:
+            break
+        }
+    }
     /// Mic start/stop and resampling run here so neither the event-tap thread
     /// nor the main thread blocks on audio.
     private let audioQueue = DispatchQueue(label: "dev.utter.audio", qos: .userInteractive)
@@ -99,10 +128,10 @@ public final class DictationController {
             Log.info("pasteboard access_behavior=\(NSPasteboard.general.accessBehavior.rawValue) (0 default, 1 ask, 2 allow, 3 deny)")
         }
         hotkey.onPress = { [weak self] timing in
-            Task { @MainActor in self?.pressed(timing) }
+            Task { @MainActor in self?.hotkeyEvent(keyDown: true, timing) }
         }
         hotkey.onRelease = { [weak self] timing in
-            Task { @MainActor in self?.released(timing) }
+            Task { @MainActor in self?.hotkeyEvent(keyDown: false, timing) }
         }
         hotkey.onSecureInputChange = { [weak self] sustained in
             self?.secureInputNotice = sustained

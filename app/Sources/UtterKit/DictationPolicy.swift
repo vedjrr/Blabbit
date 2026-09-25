@@ -8,6 +8,47 @@ public enum RecordingSource: Sendable, Equatable {
     case carbon
     /// Start/Stop in the menu (toggle, no key to watch).
     case menu
+    /// The shortcut in toggle mode: pressed once to start, again to stop.
+    case toggle
+}
+
+/// How the dictation shortcut behaves (G1: push-to-talk and toggle).
+public enum DictationMode: String, Codable, CaseIterable, Sendable {
+    /// Hold to record, release to transcribe.
+    case pushToTalk
+    /// Press to start, press again to stop.
+    case toggle
+
+    public static let defaultsKey = "dictation.mode"
+
+    public var title: String {
+        switch self {
+        case .pushToTalk: "Hold to Talk"
+        case .toggle: "Press to Start and Stop"
+        }
+    }
+
+    public static func load(from defaults: UserDefaults = .standard) -> DictationMode {
+        defaults.string(forKey: defaultsKey).flatMap(DictationMode.init(rawValue:)) ?? .pushToTalk
+    }
+
+    public func save(to defaults: UserDefaults = .standard) {
+        defaults.set(rawValue, forKey: Self.defaultsKey)
+    }
+}
+
+/// What a shortcut key event does, given the mode and whether a recording runs.
+public enum HotkeyPolicy {
+    public enum Decision: Equatable, Sendable { case start, stop, ignore }
+
+    public static func decide(keyDown: Bool, mode: DictationMode, recording: Bool) -> Decision {
+        switch (mode, keyDown) {
+        case (.pushToTalk, true): return recording ? .ignore : .start
+        case (.pushToTalk, false): return recording ? .stop : .ignore
+        case (.toggle, true): return recording ? .stop : .start
+        case (.toggle, false): return .ignore
+        }
+    }
 }
 
 /// Pure rules for the recording watchdog (tested without timers or keys).
@@ -17,7 +58,8 @@ public enum WatchdogPolicy {
     public static func releaseReason(elapsed: TimeInterval, maxSeconds: TimeInterval, source: RecordingSource,
                                      keyDown: Bool, secureInput: Bool, keyUpChecks: inout Int) -> String? {
         if elapsed >= maxSeconds { return "max_length" }
-        guard source != .menu else { return nil }
+        // Menu and toggle recordings have no key held down to watch.
+        guard source != .menu, source != .toggle else { return nil }
         // Only a tap recording is cut by secure input: the tap can no longer see
         // the key-up. Carbon recordings exist precisely because secure input is on.
         if source == .tap, secureInput { return "secure_input" }

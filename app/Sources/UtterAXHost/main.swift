@@ -3,6 +3,13 @@
 // Prints "READY <pid>" once the text view is first responder.
 import AppKit
 
+// Never outlive the test process: an orphaned host would keep the test
+// runner's inherited file descriptors open and hang `swift test`.
+let parent = getppid()
+Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+    if getppid() != parent { exit(0) }
+}
+
 let app = NSApplication.shared
 // Regular policy so the host can become frontmost for system-wide focus tests.
 app.setActivationPolicy(CommandLine.arguments.contains("--frontmost") ? .regular : .accessory)

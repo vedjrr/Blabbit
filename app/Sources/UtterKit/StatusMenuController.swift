@@ -80,8 +80,21 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         toggle.target = self
         toggle.isEnabled = controller.modelLoaded || recording
         menu.addItem(toggle)
-        let shortcut = NSMenuItem(title: "Shortcut: hold \(controller.hotkey.shortcut.displayString)", action: nil, keyEquivalent: "")
-        shortcut.isEnabled = false
+        let verb = controller.mode == .pushToTalk ? "hold" : "press"
+        let shortcut = NSMenuItem(title: "Shortcut: \(verb) \(controller.hotkey.shortcut.displayString)", action: nil, keyEquivalent: "")
+        let shortcutMenu = NSMenu()
+        for mode in DictationMode.allCases {
+            let item = NSMenuItem(title: mode.title, action: #selector(chooseMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = controller.mode == mode ? .on : .off
+            shortcutMenu.addItem(item)
+        }
+        shortcutMenu.addItem(.separator())
+        let change = NSMenuItem(title: "Change Shortcut…", action: #selector(changeShortcut), keyEquivalent: "")
+        change.target = self
+        shortcutMenu.addItem(change)
+        shortcut.submenu = shortcutMenu
         menu.addItem(shortcut)
         let model = NSMenuItem(title: "Model: \(controller.modelName)\(controller.modelLoaded ? "" : " (not loaded)")", action: nil, keyEquivalent: "")
         let modelMenu = NSMenu()
@@ -157,6 +170,20 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
 
     /// Opens the Model Manager (e.g. first launch with no model).
     public func showModelManager() { modelWindow.show() }
+    private let shortcutWindow = ShortcutRecorderWindowController()
+
+    @objc private func chooseMode(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? String, let mode = DictationMode(rawValue: raw) { controller.setMode(mode) }
+    }
+
+    @objc private func changeShortcut() {
+        // The event tap would otherwise catch the current shortcut while recording a new one.
+        controller.hotkey.stop()
+        shortcutWindow.show(current: controller.hotkey.shortcut,
+                            onSave: { [weak self] in self?.controller.setShortcut($0) },
+                            onClose: { [weak self] in self?.controller.startHotkey() })
+    }
+
     @objc private func chooseMicrophone(_ sender: NSMenuItem) {
         controller.selectMicrophone(uid: sender.representedObject as? String)
     }

@@ -126,6 +126,14 @@ Iteration: 7
 - [M4] Device change mid-recording (AirPods connecting, USB mic unplugged): capture no longer stops. The recorder keeps the samples so far, rebuilds on the device now available, restarts, and appends (first-sample timing and drop counts carried over). The message says which device took over; if none can, it says the audio after the change was lost. `DeviceChangeTests` start a real capture, trigger the handler that `AVAudioEngineConfigurationChange` triggers, and check capture continues and samples span both sides. A real configuration change during the test run was also recovered: `input device changed while recording; continuing on MacBook Air Microphone samples_so_far=171`.
 - [M4] `make test`: Swift `Test run with 113 tests in 23 suites passed`; Rust 16 + 10 + 4.
 
+- [M4] G1 "push-to-talk and toggle modes; hotkey configurable":
+  - `DictationMode` (Hold to Talk / Press to Start and Stop) is saved and chosen in the Shortcut submenu. `HotkeyPolicy.decide` is the single rule for press/release in each mode. Toggle recordings are only subject to the length cap in the watchdog (no key is held).
+  - "Change Shortcut…" opens a recorder window. The event tap is paused while it is open, so the current shortcut can't fire. Validation rejects a bare key (except F-keys), ⇧ alone, Esc, and combos macOS or most apps use (⌘Space, ⌃Space, ⌃⌘Space, ⌘Tab, ⌘Q/W/C/V/X/Z/A/S/F/N/M/O/H). The shortcut is saved as JSON (`hotkey.shortcut`), and an invalid saved value falls back to ⌥Space.
+  - Key names come from the current keyboard layout (UCKeyTranslate) plus named keys (Space, arrows, F1–F20).
+  - Tests: `HotkeyModeTests` (6).
+- [M4] Crash found and fixed: TIS/TSM aborts the process when called from two threads at once (`~/Library/Logs/DiagnosticReports/swiftpm-testing-helper-2026-09-25-114852.ips`: "Text Input Sources … being called in two threads concurrently"). All TIS calls now go through one lock, and off the main thread only cached key names are used (tested from a detached task). The crash orphaned `UtterAXHost`, which kept the test runner's pipe open and hung `swift test` for 10 minutes. The helper now exits when its parent dies (verified: the host exits after its parent dies), no longer inherits stderr, and a failed start terminates it.
+- [M4] `make test`: Swift `Test run with 119 tests in 24 suites passed`; Rust 16 + 10 + 4.
+
 ## Blocked on human
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.
 - **Deferred to the end (by your choice): live dictation into TextEdit** (needs your voice). Utter (build 01a38e5) is **already running**: its log shows the shortcut active (Accessibility is granted) and the microphone graph ready. If it isn't running: `cd "/Users/ved/Documents 2/utter-kit" && make build && open build/Utter.app`. A waveform icon appears in the menu bar.

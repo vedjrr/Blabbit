@@ -29,6 +29,9 @@ struct AXIntegrationTests {
         process.arguments = args
         let out = Pipe()
         process.standardOutput = out
+        // Don't hand the host our stderr: if it outlived us it would hold the
+        // test runner's pipe open.
+        process.standardError = FileHandle.nullDevice
         try process.run()
         // Bounded wait for "READY": a hung host must not hang the test run.
         nonisolated(unsafe) var line = ""
@@ -42,7 +45,11 @@ struct AXIntegrationTests {
             Issue.record("host did not report READY within 10 s")
             throw CancellationError()
         }
-        try #require(line.hasPrefix("READY"), "host did not start: \(line)")
+        guard line.hasPrefix("READY") else {
+            process.terminate()
+            Issue.record("host did not start: \(line)")
+            throw CancellationError()
+        }
         return process
     }
 

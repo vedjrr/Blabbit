@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// A key + modifier combination, e.g. ⌥Space.
 public struct Shortcut: Equatable, Sendable, Codable {
@@ -22,7 +23,44 @@ public struct Shortcut: Equatable, Sendable, Codable {
         if f.contains(.maskAlternate) { s += "⌥" }
         if f.contains(.maskShift) { s += "⇧" }
         if f.contains(.maskCommand) { s += "⌘" }
-        return s + (keyCode == 49 ? "Space" : "Key \(keyCode)")
+        return s + KeyboardLayout.name(for: keyCode)
+    }
+
+    public static let defaultsKey = "hotkey.shortcut"
+
+    public static func load(from defaults: UserDefaults = .standard) -> Shortcut {
+        guard let data = defaults.data(forKey: defaultsKey),
+              let saved = try? JSONDecoder().decode(Shortcut.self, from: data),
+              saved.problem == nil else { return .optionSpace }
+        return saved
+    }
+
+    public func save(to defaults: UserDefaults = .standard) {
+        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey)
+    }
+
+    /// Shortcuts macOS or nearly every app already uses.
+    static let reserved: [Shortcut] = [
+        Shortcut(keyCode: 49, modifiers: CGEventFlags.maskCommand.rawValue),                              // ⌘Space Spotlight
+        Shortcut(keyCode: 49, modifiers: CGEventFlags.maskControl.rawValue),                              // ⌃Space input source
+        Shortcut(keyCode: 49, modifiers: CGEventFlags([.maskControl, .maskCommand]).rawValue),            // ⌃⌘Space emoji
+        Shortcut(keyCode: 48, modifiers: CGEventFlags.maskCommand.rawValue),                              // ⌘Tab
+    ] + [12, 13, 8, 9, 7, 6, 0, 1, 3, 45, 46, 31, 4].map {                                                  // ⌘Q W C V X Z A S F N M O H
+        Shortcut(keyCode: $0, modifiers: CGEventFlags.maskCommand.rawValue)
+    }
+
+    /// Why this can't be the dictation shortcut, or nil if it can.
+    public var problem: String? {
+        if keyCode == 53 { return "Esc can't be the shortcut." }
+        let mods = CGEventFlags(rawValue: modifiers)
+        if mods.isEmpty && !KeyboardLayout.functionKeys.contains(keyCode) {
+            return "Add ⌥, ⌃, ⇧ or ⌘ (or use an F-key), so typing that key still works."
+        }
+        if mods == .maskShift && !KeyboardLayout.functionKeys.contains(keyCode) {
+            return "⇧ alone would block typing capital letters. Add ⌥, ⌃ or ⌘."
+        }
+        if Self.reserved.contains(self) { return "\(displayString) is already used by macOS or most apps." }
+        return nil
     }
 }
 
