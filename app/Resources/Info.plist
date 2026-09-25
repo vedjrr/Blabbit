@@ -4,22 +4,33 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Utter</string>
 	<key>CFBundleExecutable</key>
 	<string>Utter</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>dev.utter.mac</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
 	<key>CFBundleName</key>
-	<string>Utter</string>
-	<key>CFBundleDisplayName</key>
 	<string>Utter</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>dev.utter.mac</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>utter</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
@@ -28,13 +39,13 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Utter contributors. MIT License.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Utter records your voice only while you hold the dictation shortcut, and transcribes it on this Mac.</string>
 	<key>SUFeedURL</key>
 	<string>https://github.com/vedjrr/Utter/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>S3w7gf/+R83bFMQ4nl70jhd/2QPKo54vt/cU7xcE6XY=</string>
-	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 Utter contributors. MIT License.</string>
 </dict>
 </plist>

@@ -28,8 +28,22 @@ public struct GeneralSettings: Codable, Equatable, Sendable {
     public var showMenuBarIcon = true
     /// Open the setup window at launch when a permission is missing.
     public var showSetupWhenNeeded = true
+    /// Let `utter://` links start, stop or cancel dictation (PARITY F14). Off by
+    /// default: a web page can open such a link, and start would turn on the microphone.
+    public var allowURLCommands = false
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey { case appearance, showMenuBarIcon, showSetupWhenNeeded, allowURLCommands }
+
+    /// Settings saved by an older version lack newer keys: they keep their defaults.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        appearance = try c.decodeIfPresent(Appearance.self, forKey: .appearance) ?? .system
+        showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? true
+        showSetupWhenNeeded = try c.decodeIfPresent(Bool.self, forKey: .showSetupWhenNeeded) ?? true
+        allowURLCommands = try c.decodeIfPresent(Bool.self, forKey: .allowURLCommands) ?? false
+    }
 
     public static let defaultsKey = "general.settings"
 

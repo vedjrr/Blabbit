@@ -218,7 +218,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
-        if updates != nil {
+        if let updates, !updates.isLocked {
             let check = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
             check.target = self
             menu.addItem(check)
@@ -272,11 +272,13 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     private var general = GeneralSettings.load()
+    /// `--no-tray`: no icon this session, except while dictating.
+    public var hideIconThisSession = false { didSet { updateVisibility() } }
 
     /// The icon hides when idle if the user chose so; it always shows while dictating.
     private func updateVisibility() {
         let busy = controller.state == .recording || controller.state == .transcribing
-        statusItem.isVisible = general.showMenuBarIcon || busy
+        statusItem.isVisible = (general.showMenuBarIcon && !hideIconThisSession) || busy
     }
     @objc private func chooseModel(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? String { controller.models.setDefault(id) }

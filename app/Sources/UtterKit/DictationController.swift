@@ -960,6 +960,9 @@ public final class DictationController {
         }
     }
 
+    func remotePress(_ timing: KeyTiming) { pressed(timing) }
+    func remoteRelease(_ timing: KeyTiming) { released(timing) }
+
     /// Menu-driven start/stop (same path as the hotkey).
     public func toggleFromMenu() {
         let now = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0, source: .menu)

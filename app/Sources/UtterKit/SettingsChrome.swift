@@ -252,7 +252,9 @@ struct AboutPage: View {
                 .padding(.vertical, 6)
             }
             Section("Updates") {
-                if let updates = model.updates {
+                if let updates = model.updates, updates.isLocked {
+                    LabeledContent("Updates", value: "Turned off by your administrator")
+                } else if let updates = model.updates {
                     Toggle("Check for updates automatically", isOn: Binding(get: { updates.automaticallyChecks },
                                                                             set: { updates.automaticallyChecks = $0 }))
                     LabeledContent("Updates") { Button("Check Now") { updates.checkForUpdates() } }

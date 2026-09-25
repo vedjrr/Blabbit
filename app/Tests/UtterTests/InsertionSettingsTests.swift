@@ -192,3 +192,16 @@ import Testing
         #expect(old.restoreClipboard && old.newlines == .keep && old.copyToClipboard)
     }
 }
+
+/// PARITY F23: an administrator's UpdateChecksDisabled turns update checks off.
+@Suite struct UpdatePolicyTests {
+    @Test func lockFollowsTheDefault() throws {
+        let suite = "dev.utter.test.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(!UpdatePolicy.isLocked(defaults))
+        defaults.set(true, forKey: UpdatePolicy.key)
+        #expect(UpdatePolicy.isLocked(defaults))
+        #expect(!UpdatePolicy.isManaged(defaults), "set by the user, not a profile")
+    }
+}

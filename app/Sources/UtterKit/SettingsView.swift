@@ -286,6 +286,8 @@ struct SettingsView: View {
                 }
                 Toggle("Show the menu bar icon when idle", isOn: $model.general.showMenuBarIcon)
                 Toggle("Open setup at launch when a permission is missing", isOn: $model.general.showSetupWhenNeeded)
+                Toggle("Allow utter:// links to control dictation", isOn: $model.general.allowURLCommands)
+                    .help("For Shortcuts, Raycast or scripts: utter://toggle, utter://start, utter://stop, utter://cancel. Off by default, because any web page can open a link.")
             } header: {
                 Text("App")
             } footer: {
