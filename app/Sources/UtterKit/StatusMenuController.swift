@@ -43,7 +43,11 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         panel.close = { [weak self] in self?.popover.performClose(nil) }
         popover.behavior = .transient
         popover.animates = true
-        popover.contentViewController = NSHostingController(rootView: MenuPanelView(model: panel))
+        let hosting = NSHostingController(rootView: MenuPanelView(model: panel))
+        // The popover follows the panel's own size (it grows when a notice or
+        // the last dictation appears), never wider than the panel.
+        hosting.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hosting
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(statusItemClicked(_:))

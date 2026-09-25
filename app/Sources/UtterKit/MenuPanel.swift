@@ -124,8 +124,11 @@ struct MenuPanelView: View {
             Divider()
             footer.padding(.horizontal, 8).padding(.vertical, 6)
         }
-        .frame(width: 320)
+        .frame(width: MenuPanelView.width)
+        .fixedSize(horizontal: false, vertical: true)
     }
+
+    static let width: CGFloat = 320
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -203,16 +206,14 @@ struct MenuPanelView: View {
                                                    set: { model.controller.models.setDefault($0) })) {
                     ForEach(model.controller.models.installedEntries, id: \.id) { Text($0.name).tag($0.id) }
                 }
-                .fixedSize()
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 10) {
                 label("Mode", "text.bubble")
                 Picker("Mode", selection: Binding(get: { model.textMode }, set: { model.setTextMode($0) })) {
                     ForEach(TextPipelineSettings.Mode.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
-                .fixedSize()
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             if model.textMode == .custom {
                 HStack(spacing: 10) {
@@ -220,8 +221,7 @@ struct MenuPanelView: View {
                     Picker("Prompt", selection: Binding(get: { model.promptID }, set: { model.setPrompt($0) })) {
                         ForEach(model.prompts) { Text($0.name).tag($0.id) }
                     }
-                    .fixedSize()
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             HStack(spacing: 10) {
@@ -230,13 +230,11 @@ struct MenuPanelView: View {
                     Text("System Default").tag("")
                     ForEach(AudioDeviceCache.shared.devices, id: \.uid) { Text($0.name).tag($0.uid) }
                 }
-                .fixedSize()
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .labelsHidden()
         .controlSize(.small)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func label(_ text: String, _ symbol: String) -> some View {
