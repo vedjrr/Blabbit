@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let menu = StatusMenuController(controller: controller)
         controller.onNeedsModel = { [weak menu] in menu?.showModelManager() }
+        controller.onNeedsPermissions = { [weak menu] in menu?.showPermissions() }
         self.menu = menu
         controller.launch()
         if CommandLine.arguments.contains("--model-manager") { menu.showModelManager() }

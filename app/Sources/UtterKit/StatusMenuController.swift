@@ -102,11 +102,11 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         managerItem.target = self
         menu.addItem(managerItem)
 
-        if !Permissions.accessibilityGranted || !controller.hotkey.isRunning {
+        if !PermissionSnapshot.current().allGranted || !controller.hotkey.isRunning {
             menu.addItem(.separator())
-            let grant = NSMenuItem(title: "Allow Accessibility Access…", action: #selector(openAccessibility), keyEquivalent: "")
-            grant.target = self
-            menu.addItem(grant)
+            let setup = NSMenuItem(title: "Set Up Permissions…", action: #selector(openPermissions), keyEquivalent: "")
+            setup.target = self
+            menu.addItem(setup)
             let retry = NSMenuItem(title: "Retry Shortcut", action: #selector(retryHotkey), keyEquivalent: "")
             retry.target = self
             menu.addItem(retry)
@@ -138,7 +138,20 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
 
     /// Opens the Model Manager (e.g. first launch with no model).
     public func showModelManager() { modelWindow.show() }
-    @objc private func openAccessibility() { NSWorkspace.shared.open(Permissions.accessibilitySettingsURL) }
-    @objc private func retryHotkey() { controller.startHotkey() }
+    @objc private func retryHotkey() { controller.startHotkey(prompt: true) }
+
+    private lazy var permissionsWindow: PermissionsWindowController = {
+        let window = PermissionsWindowController()
+        window.model.onChange = { [weak self] snapshot in self?.controller.permissionsChanged(snapshot) }
+        return window
+    }()
+
+    /// Opens the permission setup window (first launch or from the menu).
+    public func showPermissions() {
+        permissionsWindow.model.shortcutDisplay = controller.hotkey.shortcut.displayString
+        permissionsWindow.show()
+    }
+
+    @objc private func openPermissions() { showPermissions() }
     @objc private func openLog() { NSWorkspace.shared.open(Log.fileURL) }
 }

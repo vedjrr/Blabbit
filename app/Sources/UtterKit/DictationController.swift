@@ -31,6 +31,8 @@ public final class DictationController {
     public var modelName: String { models.defaultEntry?.name ?? "No model" }
     /// Called when no usable model is installed (e.g. first launch) so the UI can open the Model Manager.
     public var onNeedsModel: (() -> Void)?
+    /// Called at launch when a permission is missing, so the UI can open the setup window.
+    public var onNeedsPermissions: (() -> Void)?
     public private(set) var lastMessage: String?
     /// Shown while secure input is sustained (kept apart from `lastMessage`).
     public private(set) var secureInputNotice: String?
@@ -108,29 +110,52 @@ public final class DictationController {
                 : nil
             self?.onStateChange?(self?.state ?? .ready)
         }
+        // No system prompts at launch: the setup window explains each
+        // permission and asks when the user clicks.
+        let permissions = PermissionSnapshot.current()
         startHotkey()
-        Task {
-            if await Permissions.requestMicrophone() {
-                let recorder = self.recorder
-                audioQueue.async {
-                    do { try recorder.prepare() } catch let error as AudioRecorderError {
-                        Task { @MainActor in
-                            self.micProblem = self.message(for: error)
-                            self.fail(self.message(for: error))
-                        }
-                    } catch {}
-                }
-            } else {
-                micProblem = Self.micDeniedMessage
-                fail(Self.micDeniedMessage)
-            }
-        }
+        prepareMicrophone(permissions.microphone)
         loadModel(id: models.defaultModelID)
+        if !permissions.allGranted { onNeedsPermissions?() }
     }
 
-    public func startHotkey() {
+    /// Called by the setup window when a permission changes, so a grant takes
+    /// effect without relaunching Utter.
+    public func permissionsChanged(_ snapshot: PermissionSnapshot) {
+        if snapshot.accessibility, !hotkey.isRunning { startHotkey() }
+        prepareMicrophone(snapshot.microphone)
+        onStateChange?(state)
+    }
+
+    private func prepareMicrophone(_ access: PermissionSnapshot.Mic) {
+        switch access {
+        case .granted:
+            let recorder = self.recorder
+            if micProblem == Self.micDeniedMessage || micProblem == Self.micNotAskedMessage {
+                micProblem = nil
+                if case .failed = state, modelLoaded { state = .ready }
+            }
+            audioQueue.async {
+                do { try recorder.prepare() } catch let error as AudioRecorderError {
+                    Task { @MainActor in
+                        self.micProblem = self.message(for: error)
+                        self.fail(self.message(for: error))
+                    }
+                } catch {}
+            }
+        case .notDetermined:
+            micProblem = Self.micNotAskedMessage
+        case .denied:
+            micProblem = Self.micDeniedMessage
+            fail(Self.micDeniedMessage)
+        }
+    }
+
+    /// `prompt`: show the system Accessibility prompt if not trusted (only on a
+    /// user action, never by itself at launch).
+    public func startHotkey(prompt: Bool = false) {
         guard !hotkey.isRunning else { return }
-        if !Permissions.accessibilityGranted { Permissions.requestAccessibility() }
+        if prompt, !Permissions.accessibilityGranted { Permissions.requestAccessibility() }
         do {
             try hotkey.start()
             if lastMessage == HotkeyError.tapCreationFailed.userMessage { lastMessage = nil }
@@ -313,6 +338,7 @@ public final class DictationController {
     }
 
     private static let micDeniedMessage = "Utter needs microphone access. Allow it in System Settings → Privacy & Security → Microphone."
+    private static let micNotAskedMessage = "Utter needs microphone access. Choose Set Up Permissions… in the Utter menu."
 
     /// A denied permission looks like "no input device" to AVAudioEngine; say which it is.
     private func message(for error: AudioRecorderError) -> String {

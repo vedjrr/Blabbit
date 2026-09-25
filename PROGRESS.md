@@ -12,7 +12,7 @@ Iteration: 7
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M4: permissions onboarding (Microphone + Accessibility, deep links, live re-check), then input device selection + route change/disconnect mid-recording, then short/silent/long recording behaviour checks; live overlay latency when the screen is unlocked.
+- M4: input device selection + route change/disconnect mid-recording, then short/silent/long recording behaviour checks; live overlay latency when the screen is unlocked.
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -118,6 +118,9 @@ Iteration: 7
 
 - [M4] Overlay (`app/Sources/UtterKit/Overlay.swift`): a borderless `.nonactivatingPanel` `NSPanel` subclass that can never become key or main, ignores the mouse, sits at `.statusBar` level on all Spaces and over full-screen apps, and has no show animation. It is a SwiftUI pill at the bottom centre of the screen under the pointer, showing: recording (red dot, 16-bar log-scale level meter at 30 Hz from the recorder's RMS, m:ss timer), transcribing (spinner), and notices (lock for secure input, bubble for unconfirmed insertion, failures) that hide after 4 s. It is driven from `DictationController.state` (shown in the same main-actor turn as `.recording`); the dictation log line gains `keydown_to_overlay_ms`. `OverlayTests` (7): can't take focus, showing changes neither `NSApp.keyWindow` nor `isActive`, a warm show takes under 16.7 ms (worst of 20), the notice hides itself, the meter follows the level, geometry/format. Offscreen renders → `evidence/m4/overlay_{recording,transcribing,notice_blocked,notice_unconfirmed}.png`. G2 carry-over: blocked/unverified notices now show in the overlay (the menu bar cue stays).
 - [M4] `make test`: Rust 16 + 10 + 4; Swift `Test run with 107 tests in 20 suites passed`. Not yet measured live: key-down → overlay on screen with a real key press (screen locked this session); `scripts/e2e-textedit.swift` will record `keydown_to_overlay_ms` when unlocked.
+
+- [M4] Permission onboarding (`PermissionsOnboarding.swift`): a "Set up Utter" window with one row each for Microphone and Accessibility. Each row explains why the permission is needed, shows its status, and has one button: ask (system prompt) or, once macOS won't prompt again, a deep link to the exact Privacy pane. The window re-checks every 1 s (macOS sends no notification), and a grant takes effect at once: `permissionsChanged` starts the event tap or prepares the microphone without a relaunch. There are no system prompts at launch; the window opens instead if anything is missing, and the menu shows "Set Up Permissions…" while anything is missing. Tests: every row state, live re-check (one event per grant), offscreen render → `evidence/m4/permissions_setup.png`. App launch with both granted: no setup window, `hotkey tap started`, `audio graph ready`, `model_load … load_count=1`.
+- [M4] `make test`: Swift `Test run with 110 tests in 21 suites passed`; Rust 16 + 10 + 4.
 
 ## Blocked on human
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.

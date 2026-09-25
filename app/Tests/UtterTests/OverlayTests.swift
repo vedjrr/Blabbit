@@ -103,3 +103,49 @@ import Testing
         }
     }
 }
+
+@MainActor @Suite struct PermissionsOnboardingTests {
+    @Test func rowsForEveryState() {
+        let micAsk = PermissionRow.microphone(.notDetermined)
+        #expect(!micAsk.granted && micAsk.action == .requestMicrophone)
+        let micDenied = PermissionRow.microphone(.denied)
+        #expect(micDenied.action == .openSettings(Permissions.microphoneSettingsURL))
+        #expect(micDenied.status.contains("System Settings"))
+        #expect(PermissionRow.microphone(.granted).action == nil)
+
+        #expect(PermissionRow.accessibility(false, asked: false).action == .requestAccessibility)
+        // macOS prompts only once; afterwards the deep link is the only way.
+        #expect(PermissionRow.accessibility(false, asked: true).action == .openSettings(Permissions.accessibilitySettingsURL))
+        #expect(PermissionRow.accessibility(true, asked: true).granted)
+        #expect(Permissions.accessibilitySettingsURL.absoluteString.hasSuffix("Privacy_Accessibility"))
+        #expect(Permissions.microphoneSettingsURL.absoluteString.hasSuffix("Privacy_Microphone"))
+    }
+
+    @Test func liveRecheckReportsGrants() async throws {
+        nonisolated(unsafe) var current = PermissionSnapshot(microphone: .notDetermined, accessibility: false)
+        let model = PermissionsModel(probe: { current })
+        var seen: [PermissionSnapshot] = []
+        model.onChange = { seen.append($0) }
+        model.startPolling(interval: 0.05)
+        defer { model.stopPolling() }
+        #expect(!model.snapshot.allGranted)
+        current.accessibility = true // the user flips the switch in System Settings
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.snapshot.accessibility && model.rows[1].granted)
+        current.microphone = .granted
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.snapshot.allGranted)
+        #expect(seen.count == 2, "one change event per grant, none while nothing changes")
+    }
+
+    @Test func rendersTheSetupWindow() throws {
+        let model = PermissionsModel(probe: { PermissionSnapshot(microphone: .granted, accessibility: false) })
+        let renderer = ImageRenderer(content: PermissionsView(model: model, onDone: {}).background(Color.white))
+        renderer.scale = 2
+        let image = try #require(renderer.cgImage)
+        if let dir = ProcessInfo.processInfo.environment["UTTER_SNAPSHOT_DIR"] {
+            let png = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("permissions_setup.png"))
+        }
+    }
+}
