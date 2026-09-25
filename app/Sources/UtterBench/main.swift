@@ -92,7 +92,8 @@ let fixtures: [(wav: URL, reference: String)] = {
 var report: [String: Any] = [:]
 let date = ISO8601DateFormatter().string(from: Date())
 report["date"] = date
-report["git"] = run("/usr/bin/git", ["rev-parse", "--short", "HEAD"]).trimmingCharacters(in: .whitespacesAndNewlines)
+let dirty = !run("/usr/bin/git", ["status", "--porcelain", "--untracked-files=no"]).isEmpty
+report["git"] = run("/usr/bin/git", ["rev-parse", "--short", "HEAD"]).trimmingCharacters(in: .whitespacesAndNewlines) + (dirty ? "-dirty" : "")
 report["runtime"] = coreVersion()
 report["machine"] = [
     "cpu": sysctlString("machdep.cpu.brand_string"),
@@ -164,8 +165,8 @@ for entry in installed {
             "clips": clips,
         ])
         log("  \(entry.id): load \(Int(info.loadMs)) ms, RTF \(round1(inferenceTotal / max(audioTotal, 1) * 1000) / 1000)")
-    } catch let error as CoreError {
-        log("  \(entry.id) FAILED: \(error.logDetail)")
+    } catch {
+        log("  \(entry.id) FAILED: \((error as? CoreError)?.logDetail ?? "\(error)")")
         failed = true
     }
     engine.unload()
@@ -199,50 +200,64 @@ if let entry = installed.first(where: { $0.recommended }) ?? installed.first,
 }
 
 // MARK: 1c. Long dictation: work left at release, one-shot vs incremental
+//
+// Real-time-faithful: audio arrives 2 s at a time, and between arrivals the
+// background segment gets at most the 2 s it would have had while the user
+// kept talking (no waiting for it to finish). Release follows the last chunk.
+
+func longDictation(_ entry: ModelEntry, seconds: Double) async -> [String: Any]? {
+    guard let path = await MainActor.run(body: { manager.path(for: entry.id) }) else { return nil }
+    let engine = UtterEngine()
+    defer { engine.unload() }
+    guard (try? engine.loadModel(path: path)) != nil else { return nil }
+    var audio: [Float] = []
+    var reference = ""
+    while Double(audio.count) < seconds * 16_000 {
+        for (wav, text) in fixtures {
+            audio += (try? loadWav16kMono(path: wav.path)) ?? []
+            audio += [Float](repeating: 0, count: 12_800)
+            reference += text + " "
+        }
+    }
+    let options = DictationOptions(language: nil, translate: false, initialPrompt: nil)
+    let t0 = nowNs()
+    let oneShot = try? engine.transcribe(pcm: audio, options: options)
+    let oneShotMs = ms(t0, nowNs())
+    let inc = IncrementalTranscriber(engine: engine, options: options)
+    var fed = 0
+    while fed < audio.count {
+        let next = min(fed + 32_000, audio.count)
+        inc.append(Array(audio[fed..<next]))
+        fed = next
+        let deadline = nowNs() + 2_000_000_000
+        pause(0.01)
+        while inc.isBusy, nowNs() < deadline { pause(0.005) }
+    }
+    let t1 = nowNs()
+    let result = try? await inc.finish(complete: audio)
+    let releaseMs = ms(t1, nowNs())
+    return [
+        "model": entry.id, "audio_s": audio.count / 16_000,
+        "one_shot_release_ms": round1(oneShotMs), "incremental_release_ms": round1(releaseMs),
+        "segments": result?.segments ?? 0,
+        "wer_one_shot": ((wordErrorRate(reference: reference, hypothesis: oneShot?.text ?? "")) * 1000).rounded() / 1000,
+        "wer_incremental": ((wordErrorRate(reference: reference, hypothesis: result?.text ?? "")) * 1000).rounded() / 1000,
+    ]
+}
 
 log("long dictation…")
-if let entry = installed.first(where: { $0.recommended }) ?? installed.first,
-   let path = await MainActor.run(body: { manager.path(for: entry.id) }) {
-    let engine = UtterEngine()
-    if (try? engine.loadModel(path: path)) != nil {
-        var audio: [Float] = []
-        var reference = ""
-        while audio.count < 5 * 60 * 16_000 {
-            for (wav, text) in fixtures {
-                audio += (try? loadWav16kMono(path: wav.path)) ?? []
-                audio += [Float](repeating: 0, count: 12_800)
-                reference += text + " "
-            }
-        }
-        let options = DictationOptions(language: nil, translate: false, initialPrompt: nil)
-        let t0 = nowNs()
-        let oneShot = try? engine.transcribe(pcm: audio, options: options)
-        let oneShotMs = ms(t0, nowNs())
-        // Fed 2 s at a time; after each feed, the segment the live app would have
-        // had 2 s to finish is allowed to complete (inference is ~50× real time).
-        let inc = IncrementalTranscriber(engine: engine, options: options)
-        var fed = 0
-        while fed < audio.count {
-            let next = min(fed + 32_000, audio.count)
-            inc.append(Array(audio[fed..<next]))
-            fed = next
-            pause(0.02)
-            while inc.isBusy { pause(0.005) }
-        }
-        let t1 = nowNs()
-        let result = try? inc.finish(complete: audio)
-        let releaseMs = ms(t1, nowNs())
-        report["long_dictation"] = [
-            "model": entry.id, "audio_s": audio.count / 16_000,
-            "one_shot_release_ms": round1(oneShotMs), "incremental_release_ms": round1(releaseMs),
-            "segments": result?.segments ?? 0,
-            "wer_one_shot": ((wordErrorRate(reference: reference, hypothesis: oneShot?.text ?? "")) * 1000).rounded() / 1000,
-            "wer_incremental": ((wordErrorRate(reference: reference, hypothesis: result?.text ?? "")) * 1000).rounded() / 1000,
-        ]
-        log("  5 min: release work one-shot \(Int(oneShotMs)) ms, incremental \(Int(releaseMs)) ms, segments \(result?.segments ?? 0)")
+var longRuns: [[String: Any]] = []
+// The default model over 5 minutes, and a slow Whisper model (segments take
+// longer than the 2 s between arrivals) over 1 minute.
+let longCases: [(String, Double)] = [("parakeet-tdt-0.6b-v3", 300), ("whisper-medium", 60)]
+for (id, seconds) in longCases {
+    guard let entry = installed.first(where: { $0.id == id }) else { continue }
+    if let run = await longDictation(entry, seconds: seconds) {
+        longRuns.append(run)
+        log("  \(id) \(Int(seconds)) s: release work one-shot \(run["one_shot_release_ms"] ?? "?") ms, incremental \(run["incremental_release_ms"] ?? "?") ms, segments \(run["segments"] ?? "?")")
     }
-    engine.unload()
 }
+report["long_dictation"] = longRuns
 
 // MARK: 2. Text pipeline
 
@@ -326,7 +341,7 @@ do {
     }
     var insertion: [String: Any] = [
         "paste_to_sent_ms_p50": round1(percentile(pasteSent, 50) ?? -1),
-        "paste_note": "private pasteboard; snapshot + write + ⌘V handed over; restore happens after the target reads",
+        "paste_note": "private pasteboard: clipboard snapshot + write; the ⌘V keystroke is not posted (a closure reads the pasteboard in its place); real release → paste sent / target read is under dictation_from_app_log",
     ]
     if SystemState.screenLocked || SystemState.displayAsleep || !AXIsProcessTrusted() {
         insertion["accessibility"] = ["available": false,
@@ -362,12 +377,17 @@ if FileManager.default.isExecutableFile(atPath: appBinary.path) {
             pause( 0.005)
         }
         pause( 5) // settle, then sample idle cost
-        let ps = run("/bin/ps", ["-o", "rss=,%cpu=", "-p", "\(p.processIdentifier)"]).split(whereSeparator: \.isWhitespace)
+        let alive = p.isRunning
+        let ps = alive ? run("/bin/ps", ["-o", "rss=,%cpu=", "-p", "\(p.processIdentifier)"]).split(whereSeparator: \.isWhitespace) : []
+        if !alive { log("  launch: the app exited early (status \(p.terminationStatus))") }
         launches.append([
+            "exited_early": !alive,
+            "exit_status": alive ? 0 : Int(p.terminationStatus),
             "launch_to_shortcut_ready_ms": tapMs.map(round1) ?? -1,
             "launch_to_model_ready_ms": readyMs.map(round1) ?? -1,
             "idle_rss_mb": ps.count >= 1 ? round1((Double(ps[0]) ?? 0) / 1024) : -1,
-            "idle_cpu_percent": ps.count >= 2 ? (Double(ps[1]) ?? -1) : -1,
+            // ps %cpu is a decaying average: it still carries some launch work.
+            "cpu_percent_ps_average_5s_after_launch": ps.count >= 2 ? (Double(ps[1]) ?? -1) : -1,
         ])
         p.terminate()
         p.waitUntilExit()
@@ -382,7 +402,8 @@ if FileManager.default.isExecutableFile(atPath: appBinary.path) {
 // MARK: 6. Real dictations from the app log (key-down → capture, release → insert)
 
 let appLog = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Utter/utter.log")
-let lines = ((try? String(contentsOf: appLog, encoding: .utf8)) ?? "").split(separator: "\n").filter { $0.contains(" dictation ") }
+// Only the per-dictation summary lines ("INFO dictation model=…").
+let lines = ((try? String(contentsOf: appLog, encoding: .utf8)) ?? "").split(separator: "\n").filter { $0.contains(" INFO dictation model=") }
 func field(_ name: String) -> [Double] {
     lines.compactMap { line in
         guard let range = line.range(of: " \(name)=") else { return nil }
@@ -390,7 +411,8 @@ func field(_ name: String) -> [Double] {
     }
 }
 var dictation: [String: Any] = ["count": lines.count, "source": "~/Library/Logs/Utter/utter.log dictation lines"]
-for name in ["keydown_to_first_sample_ms", "keydown_to_overlay_ms", "event_to_callback_ms", "release_to_transcribed_ms", "release_to_insert_done_ms", "inference_ms"] {
+for name in ["keydown_to_first_sample_ms", "keydown_to_overlay_ms", "event_to_callback_ms", "release_to_transcribed_ms",
+             "release_to_paste_sent_ms", "release_to_target_read_ms", "release_to_insert_done_ms", "inference_ms"] {
     let values = field(name)
     if !values.isEmpty {
         dictation[name] = ["n": values.count, "p50": round1(percentile(values, 50)!), "p95": round1(percentile(values, 95)!)]
@@ -400,6 +422,10 @@ report["dictation_from_app_log"] = dictation
 
 // MARK: Output
 
+if failed {
+    log("A model failed: nothing written (see the errors above).")
+    exit(1)
+}
 let outDir = root.appendingPathComponent("bench/results")
 try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 let day = String(date.prefix(10))

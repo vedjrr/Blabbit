@@ -29,7 +29,11 @@ func benchAccessibility() -> [String: Any] {
     p.standardError = FileHandle.nullDevice
     guard (try? p.run()) != nil else { return ["available": false, "reason": "host did not start"] }
     defer { p.terminate() }
-    _ = out.fileHandleForReading.availableData // "READY <pid>"
+    // "READY <pid>", or give up after 10 s.
+    let ready = DispatchSemaphore(value: 0)
+    let handle = out.fileHandleForReading
+    DispatchQueue.global().async { _ = handle.availableData; ready.signal() }
+    if ready.wait(timeout: .now() + 10) == .timedOut { return ["available": false, "reason": "host did not start"] }
     let app = AXUIElementCreateApplication(p.processIdentifier)
     func find(_ e: AXUIElement, _ depth: Int = 0) -> AXUIElement? {
         guard depth < 8 else { return nil }
@@ -94,9 +98,9 @@ func writeMarkdown(_ r: [String: Any], to url: URL, json: String) throws {
     let app = r["app"] as? [String: Any] ?? [:]
     md += "\n## App\n\n"
     if let launches = app["launches"] as? [[String: Any]] {
-        md += "| Launch → shortcut ready ms | Launch → model ready ms | Idle RSS MB | Idle CPU % |\n|---|---|---|---|\n"
+        md += "| Launch → shortcut ready ms | Launch → model ready ms | RSS MB (5 s after launch) | CPU % (ps average, 5 s after launch) |\n|---|---|---|---|\n"
         for l in launches {
-            md += "| \(d(l["launch_to_shortcut_ready_ms"])) | \(d(l["launch_to_model_ready_ms"])) | \(d(l["idle_rss_mb"])) | \(d(l["idle_cpu_percent"])) |\n"
+            md += "| \(d(l["launch_to_shortcut_ready_ms"])) | \(d(l["launch_to_model_ready_ms"])) | \(d(l["idle_rss_mb"])) | \(d(l["cpu_percent_ps_average_5s_after_launch"])) |\n"
         }
     } else {
         md += "Not measured: \(d(app["reason"])).\n"
@@ -114,13 +118,16 @@ func writeMarkdown(_ r: [String: Any], to url: URL, json: String) throws {
             .map { "\($0.key): \(d($0.value)) ms" }.joined(separator: ", ")
         md += "\n## Short utterance after idle (\(d(wake["model"])), \(d(wake["audio_ms"])) ms of audio)\n\nBack to back p50 \(d(wake["back_to_back_ms_p50"])) ms; after idling \(after). Apple silicon lowers CPU/GPU clocks within ~100 ms of idle. A warm-up pass on key-down, a keep-alive pass every 150 ms while recording, and a thread QoS change did not help (each pass itself ran cold), and a 50 ms CPU spin saved ~19 ms at a cost of 50 ms, so none of these is used (PROGRESS.md, M6).\n"
     }
-    if let long = r["long_dictation"] as? [String: Any] {
-        md += "\n## Long dictation (\(d(long["audio_s"])) s, \(d(long["model"])))\n\nWork left after release: one-shot **\(d(long["one_shot_release_ms"])) ms**, incremental (segments transcribed at pauses while recording) **\(d(long["incremental_release_ms"])) ms** (\(d(long["segments"])) segments). WER one-shot \(d(long["wer_one_shot"])), incremental \(d(long["wer_incremental"])).\n"
+    if let runs = r["long_dictation"] as? [[String: Any]], !runs.isEmpty {
+        md += "\n## Long dictation: work left after release\n\nAudio arrives 2 s at a time, as when recording; segments are transcribed at pauses meanwhile (ADR-013).\n\n| Model | Audio s | One-shot ms | Incremental ms | Segments | WER one-shot | WER incremental |\n|---|---|---|---|---|---|---|\n"
+        for l in runs {
+            md += "| \(d(l["model"])) | \(d(l["audio_s"])) | \(d(l["one_shot_release_ms"])) | \(d(l["incremental_release_ms"])) | \(d(l["segments"])) | \(d(l["wer_one_shot"])) | \(d(l["wer_incremental"])) |\n"
+        }
     }
     let text = r["text_pipeline"] as? [String: Any] ?? [:]
     md += "\n## Text pipeline\n\nClean mode with 7 vocabulary terms: short utterance p50 \(d(text["clean_short_ms_p50"])) ms; ~900 words p50 \(d(text["clean_900_words_ms_p50"])) ms.\n"
     let insertion = r["insertion"] as? [String: Any] ?? [:]
-    md += "\n## Insertion\n\nPaste path to ⌘V handed over (private pasteboard): p50 \(d(insertion["paste_to_sent_ms_p50"])) ms.\n"
+    md += "\n## Insertion\n\nClipboard snapshot + write before the ⌘V keystroke (private pasteboard; the keystroke itself is not posted here): p50 \(d(insertion["paste_to_sent_ms_p50"])) ms. Real insertion timing is in the dictation table below (release → paste sent / target read).\n"
     if let ax = insertion["accessibility"] as? [String: Any] {
         md += ax["available"] as? Bool == true
             ? "Accessibility insert + read-back verification into a real NSTextView: p50 \(d(ax["insert_verified_ms_p50"])) ms.\n"
@@ -132,9 +139,11 @@ func writeMarkdown(_ r: [String: Any], to url: URL, json: String) throws {
         md += "No dictations logged yet: live dictation is a human check (PROGRESS.md → Blocked on human).\n"
     } else {
         md += "| Stage | n | p50 ms | p95 ms |\n|---|---|---|---|\n"
-        for name in ["event_to_callback_ms", "keydown_to_first_sample_ms", "keydown_to_overlay_ms", "inference_ms", "release_to_transcribed_ms", "release_to_insert_done_ms"] {
+        for name in ["event_to_callback_ms", "keydown_to_first_sample_ms", "keydown_to_overlay_ms", "inference_ms", "release_to_transcribed_ms",
+                     "release_to_paste_sent_ms", "release_to_target_read_ms", "release_to_insert_done_ms"] {
             if let s = dict[name] as? [String: Any] { md += "| \(name) | \(d(s["n"])) | \(d(s["p50"])) | \(d(s["p95"])) |\n" }
         }
+        md += "\n\"Insert done\" includes waiting to restore the clipboard; the text is in the app at \"target read\".\n"
     }
     try md.write(to: url, atomically: true, encoding: .utf8)
 }

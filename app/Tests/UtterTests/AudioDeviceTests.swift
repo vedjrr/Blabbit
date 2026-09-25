@@ -219,3 +219,30 @@ extension AudioHardwareTests { @Suite struct CaptureStartLatencyTests {
     }
 }
 }
+
+/// The incremental transcriber reads audio with `samplesSoFar(from:)` while
+/// recording; it must line up with the final `Recording.samples`, including
+/// Keep Microphone Ready's pre-roll and audio after a device change.
+extension AudioHardwareTests { @Suite struct IncrementalAlignmentTests {
+    @Test func samplesSoFarMatchTheRecording() throws {
+        let queue = DispatchQueue(label: "dev.utter.test.align")
+        let recorder = AudioRecorder(queue: queue)
+        try queue.sync { try recorder.setKeepReady(true) }
+        Thread.sleep(forTimeInterval: 0.4) // fill the pre-roll
+        try queue.sync { try recorder.start() }
+        var seen: [Float] = []
+        for step in 0..<6 {
+            Thread.sleep(forTimeInterval: 0.2)
+            queue.sync {
+                if step == 3 { recorder.simulateConfigurationChange() }
+                seen += recorder.samplesSoFar(from: seen.count)
+            }
+        }
+        let recording = queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }
+        try queue.sync { try recorder.setKeepReady(false) }
+        #expect(recording.preRollMs > 0)
+        #expect(seen.count <= recording.samples.count)
+        #expect(Array(recording.samples.prefix(seen.count)) == seen, "incremental reads are a prefix of the final recording")
+    }
+} }
+

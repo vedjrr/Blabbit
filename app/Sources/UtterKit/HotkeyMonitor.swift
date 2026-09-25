@@ -75,7 +75,9 @@ public final class HotkeyMonitor: @unchecked Sendable {
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .defaultTap,
+            // `make bench`'s second instance only listens, so it can't swallow
+            // the user's shortcut while it measures start-up.
+            options: ProcessInfo.processInfo.environment["UTTER_BENCH_SECOND_INSTANCE"] == nil ? .defaultTap : .listenOnly,
             eventsOfInterest: mask,
             callback: { _, type, event, refcon in
                 guard let refcon else { return Unmanaged.passUnretained(event) }

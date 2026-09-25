@@ -58,7 +58,12 @@ public final class DictationController {
         onStateChange?(state)
     }
 
+    /// `make bench` launches a second copy next to the user's: it measures
+    /// start-up only and must never act on the shortcut.
+    private static let benchInstance = ProcessInfo.processInfo.environment["UTTER_BENCH_SECOND_INSTANCE"] != nil
+
     private func hotkeyEvent(keyDown: Bool, _ timing: KeyTiming) {
+        guard !Self.benchInstance else { return }
         switch HotkeyPolicy.decide(keyDown: keyDown, mode: mode, recording: state == .recording) {
         case .start:
             var timing = timing
@@ -695,10 +700,12 @@ public final class DictationController {
             result = try await Task.detached(priority: .userInitiated) { () throws -> TranscriptionResult in
                 // A long dictation was already transcribed up to its last pause:
                 // only the tail is left (see IncrementalTranscriber).
-                if let incremental, incremental.segments > 0 {
-                    let r = try incremental.finish(complete: samples)
+                // Also when a segment is still running: a one-shot pass would wait
+                // for it and then redo its audio (up to 2× slower on big models).
+                if let incremental, incremental.hasStarted {
+                    let r = try await incremental.finish(complete: samples)
                     Log.info("incremental segments=\(r.segments) tail_inference_ms=\(Int(r.tailInferenceMs)) total_inference_ms=\(Int(r.totalInferenceMs))")
-                    return TranscriptionResult(text: r.text, skipped: r.skipped, language: nil,
+                    return TranscriptionResult(text: r.text, skipped: r.skipped, language: r.language,
                                                audioMs: UInt64(samples.count / 16), inferenceMs: r.tailInferenceMs)
                 }
                 return try engine.transcribe(pcm: samples, options: options)
