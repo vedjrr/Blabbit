@@ -195,7 +195,10 @@ pub fn download_with(spec: &DownloadSpec, control: &Control, mut progress: impl 
             .http_status_as_error(false)
             .timeout_connect(Some(timing.connect))
             .timeout_recv_response(Some(timing.response))
-            .timeout_recv_body(if ranges_ignored { None } else { Some(timing.segment) })
+            // Without Range support a segment can't resume, so allow one long
+            // budget instead of none: a stalled connection still ends, and
+            // Pause/Cancel (checked between reads) still take effect.
+            .timeout_recv_body(Some(if ranges_ignored { timing.segment * 60 } else { timing.segment }))
             .build()
             .into();
         let mut request = agent.get(&spec.url);

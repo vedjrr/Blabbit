@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Downloads the models the test suite and bench use, from pinned Hugging Face
 # revisions, and verifies SHA-256. Idempotent; resumes partial downloads.
-# (The in-app model manager arrives in M3; this is developer tooling.)
+# Developer tooling (the app has its own Model Manager). Covers every model
+# `make test` loads: Parakeet V3 / Whisper Small (fixtures), Whisper Large v3
+# Turbo + Moonshine (switch test), Moonshine (Model Manager download tests).
 set -euo pipefail
 dir="${UTTER_MODELS_DIR:-$HOME/Library/Application Support/Utter/Models}"
 
@@ -9,6 +11,8 @@ dir="${UTTER_MODELS_DIR:-$HOME/Library/Application Support/Utter/Models}"
 models=(
   "parakeet-tdt-0.6b-v3|handy-computer/parakeet-tdt-0.6b-v3-gguf|85ac09ea12fc4b1112fa76810059364bc6adc9de|parakeet-tdt-0.6b-v3-Q8_0.gguf|5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7"
   "whisper-small|handy-computer/whisper-small-gguf|c0214bd34be9296695486f838e0142f900803159|whisper-small-Q8_0.gguf|9b9c8811bbcc82a7766f0fb0925614bdacb0923b2cc630daeac17108b655b860"
+  "whisper-large-v3-turbo|handy-computer/whisper-large-v3-turbo-gguf|5eaf945c7978e564bae5b28a5b1639dd93c2bfb1|whisper-large-v3-turbo-Q8_0.gguf|b2e30cc286bc9f3aba4db9099fc7403543497c05ce7100d0d83091ddfd25a183"
+  "moonshine-base|handy-computer/moonshine-base-gguf|3ef112378a8cf46ac8b278d9bfa2d15c846704b8|moonshine-base-Q8_0.gguf|7f0027dfd857d310b63a85ef57cadf183da712cc374f85a648f8bc18aaa2efc8"
 )
 
 for entry in "${models[@]}"; do

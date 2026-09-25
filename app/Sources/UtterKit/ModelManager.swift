@@ -100,11 +100,20 @@ public final class ModelManager {
         defaults.set(verifiedStamps, forKey: Self.verifiedStampsKey)
     }
 
+    public enum VerifyResult: Equatable, Sendable {
+        case good
+        /// SHA-256 or size mismatch: marked damaged, Re-download offered.
+        case damaged
+        /// Not checked (already verifying, downloading, unknown id, or an I/O
+        /// error): says nothing about the file, so callers must not treat it as damaged.
+        case notChecked
+    }
+
     /// Full SHA-256 check off the main thread. A mismatch marks the model
-    /// damaged (error + Re-download in the UI). Returns true if the file is good.
+    /// damaged (error + Re-download in the UI).
     @discardableResult
-    public func verify(_ id: String) async -> Bool {
-        guard let entry = entry(id), downloads[id] == nil, !verifying.contains(id) else { return false }
+    public func verify(_ id: String) async -> VerifyResult {
+        guard let entry = entry(id), downloads[id] == nil, !verifying.contains(id) else { return .notChecked }
         verifying.insert(id)
         status[id] = .verifying
         let dir = modelsDir
@@ -120,15 +129,15 @@ public final class ModelManager {
             damaged[id] = nil
             status[id] = .installed
             Log.info("model verified model=\(id)")
-            return true
+            return .good
         case .ModelCorrupt(_, let detail)?, .ModelMissing(_, let detail)?:
             Log.error("model verification failed model=\(id): \(detail)")
             markDamaged(id, message: "\(entry.name) is damaged or incomplete. Choose Re-download to replace it.")
-            return false
+            return .damaged
         case let error?:
             Log.error("model verification error model=\(id): \(error.logDetail)")
             refresh()
-            return false
+            return .notChecked
         }
     }
 
@@ -234,6 +243,8 @@ public final class ModelManager {
 
     /// Deletes a damaged file and downloads it again (one-click repair, G3).
     public func redownload(_ id: String) {
+        // Never delete a file we then can't replace: the licence prompt comes first.
+        guard !needsLicenseAcceptance(id) else { return }
         downloads[id]?.cancel()
         downloads[id] = nil
         damaged[id] = nil

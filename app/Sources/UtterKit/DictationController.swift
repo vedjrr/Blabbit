@@ -144,16 +144,36 @@ public final class DictationController {
             return
         }
         pendingModelID = nil
+        // Switching back to the model already resident (e.g. B then A during a dictation).
+        if requested == loadedModelID, modelLoaded, models.status[requested] == .installed {
+            models.commitDefault(requested)
+            return
+        }
         guard let entry = models.entry(requested) ?? models.entry(models.committedDefaultID) ?? models.entries.first(where: \.recommended),
               let path = models.path(for: entry.id) else { return }
         let id = entry.id
         guard models.status[id] == .installed else {
-            modelLoaded = false
+            let problem: String
             if models.isDamaged(id) {
-                fail("\(entry.name) is damaged or incomplete. Open the Model Manager and choose Re-download.")
+                problem = "\(entry.name) is damaged or incomplete. Open the Model Manager and choose Re-download."
+            } else if FileManager.default.fileExists(atPath: path) {
+                problem = "\(entry.name)'s file is incomplete. Open the Model Manager and download it again."
             } else {
-                fail("No speech model is installed yet. Open the Model Manager to download \(entry.name).")
+                problem = "\(entry.name) isn't downloaded. Open the Model Manager to download it."
             }
+            // Keep dictation working with another installed model if there is one.
+            // Prefer the last model that loaded, else the first installed one.
+            let committed = models.committedDefaultID
+            let fallbackID = committed != id && models.status[committed] == .installed
+                ? committed : models.installedEntries.first(where: { $0.id != id })?.id
+            if let fallbackID, let fallback = models.entry(fallbackID) {
+                Log.info("model \(id) unavailable; falling back to \(fallbackID)")
+                models.setDefault(fallbackID) // loads it through onDefaultModelChange
+                lastMessage = "\(problem) Using \(fallback.name) for now."
+                return
+            }
+            modelLoaded = false
+            fail(installedNothingMessage(problem))
             onNeedsModel?()
             return
         }
@@ -167,9 +187,11 @@ public final class DictationController {
             // SHA-256 once per file before its first load; a damaged file is
             // caught here instead of failing (or mis-transcribing) later.
             if !models.isVerified(id) {
-                let good = await models.verify(id)
+                let result = await models.verify(id)
                 guard loadTicket.isCurrent(ticket) else { return }
-                if !good {
+                // `.notChecked` says nothing about the file: load it, and the
+                // loader reports a genuinely broken file itself.
+                if result == .damaged {
                     loadFailed(id: id, entry: entry, damaged: true, message: nil)
                     return
                 }
@@ -207,6 +229,10 @@ public final class DictationController {
                 loadFailed(id: id, entry: entry, damaged: false, message: "The speech model could not be loaded.")
             }
         }
+    }
+
+    private func installedNothingMessage(_ problem: String) -> String {
+        models.installedEntries.isEmpty ? "No speech model is installed yet. " + problem : problem
     }
 
     /// A load failed. Mark the file if it is damaged, go back to the last model
@@ -347,8 +373,15 @@ public final class DictationController {
                 // Re-check it; a mismatch shows as damaged with Re-download.
                 models.setVerifiedStale(id)
                 Task { @MainActor [weak self] in
-                    guard let self, await !self.models.verify(id), let entry = self.models.entry(id) else { return }
-                    self.fail("\(entry.name) is damaged. Open the Model Manager and choose Re-download.")
+                    guard let self, await self.models.verify(id) == .damaged, let entry = self.models.entry(id) else { return }
+                    let message = "\(entry.name) is damaged. Open the Model Manager and choose Re-download."
+                    // A new dictation may have started meanwhile: never change its
+                    // state (key-up and the watchdog only act on .recording).
+                    if self.isBusyDictating {
+                        self.lastMessage = message
+                        return
+                    }
+                    self.fail(message)
                     self.onNeedsModel?()
                 }
             }

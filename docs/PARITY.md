@@ -55,23 +55,23 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 | # | Feature | Handy source | How Handy does it | Utter plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
-| C1 | Curated catalog (69 GGUF models, pinned HF revision, SHA-256) | `H/src-tauri/src/catalog/catalog.json` | bundled JSON | Own `models.json`; only fixture-verified models marked Supported (ADR-007) | M3 | Missing | Verified-only badge + WER shown |
-| C2 | Download with progress, resume (HTTP Range), SHA-256 verify | `H/src-tauri/src/managers/model/download.rs` | reqwest + hf-hub | Rust `ureq` downloader, `.partial` + sidecar | M3 | Missing | — |
-| C3 | Cancel download | `cancel_download` command | — | Pause / cancel / retry | M3 | Missing | Pause (Handy has cancel only) |
-| C4 | Delete model | `delete_model` | — | Same | M3 | Missing | — |
-| C5 | Select / switch active model (also from tray) | `switch_active_model`, `H/src-tauri/src/tray.rs:539` | — | Same; unload old, RSS measured | M3 | Missing | — |
-| C6 | Quantisation choice per model | catalog `files[]`, `default_quant` | — | Default quant + "Advanced: quant" picker | M3 | Missing | — |
-| C7 | Discover local models (HF cache, custom dir) | `rescan_local_models`, `managers/model.rs:328` | scans HF cache + dir | "Add model file…" + rescan of models dir | M3 | Missing | — |
-| C8 | Speed / accuracy scores, recommended flag | catalog `speed_score`, `accuracy_score` | static scores | Show **our measured** RTF + WER on this Mac | M3 | Missing | **Better**: measured, not static |
-| C9 | Model unload after idle timeout | `S.model_unload_timeout` | never / immediately / 2 min … 1 h | Same | M3 | Missing | — |
-| C10 | Manual unload from tray | `H/src-tauri/src/tray.rs:549` | — | Same | M3 | Missing | — |
-| C11 | Accelerator / GPU device selection | `S.transcribe_accelerator`, `S.transcribe_gpu_device` | — | Auto / Metal / CPU | M3 | Missing | — |
-| C12 | Parakeet TDT 0.6B V3 | catalog | GGUF Q8_0 | Verify with fixtures | M1 | Missing | — |
-| C13 | Parakeet TDT 0.6B V2 | catalog | GGUF Q8_0 | Verify | M3 | Missing | — |
-| C14 | Whisper Small / Medium / Large-v3 / Large-v3-Turbo | catalog | GGUF | Verify each | M3 | Missing | — |
-| C15 | SenseVoice Small | catalog | GGUF Q8_0 | Verify | M3 | Missing | — |
-| C16 | Moonshine Base (+ tiny, streaming variants) | catalog | GGUF Q8_0 | Verify base; others listed with status. Non-English variants are under the Moonshine AI Community License upstream (Handy's catalog says MIT) → show licence before download | M3 | Missing | Correct licence display |
-| C17 | Other catalog families (Canary, Cohere, GigaAM, Granite, Qwen3-ASR, Voxtral, Fun-ASR, MedASR, MOSS, Nemotron) | catalog | GGUF | Same runtime; each verified or listed unsupported with reason | M3 | Missing | — |
+| C1 | Curated catalog (69 GGUF models, pinned HF revision, SHA-256) | `H/src-tauri/src/catalog/catalog.json` | bundled JSON | Own `models.json`; only fixture-verified models marked Supported (ADR-007) | M3 | Built (`core/utter-core/models.json`, 8 fixture-verified models with measured WER/p50) | Verified-only badge + WER shown |
+| C2 | Download with progress, resume (HTTP Range), SHA-256 verify | `H/src-tauri/src/managers/model/download.rs` | reqwest + hf-hub | Rust `ureq` downloader, `.partial` + sidecar | M3 | Built (segmented Range resume, SHA-256; `tests/download.rs`, `ModelManagerTests`) | — |
+| C3 | Cancel download | `cancel_download` command | — | Pause / cancel / retry | M3 | Built (pause / resume / cancel incl. paused rows / retry) | Pause (Handy has cancel only) |
+| C4 | Delete model | `delete_model` | — | Same | M3 | Built | — |
+| C5 | Select / switch active model (also from tray) | `switch_active_model`, `H/src-tauri/src/tray.rs:539` | — | Same; unload old, RSS measured | M3 | Built (Model Manager + menu submenu; unload old, RSS 1051 → 265 MB) | — |
+| C6 | Quantisation choice per model | catalog `files[]`, `default_quant` | — | Default quant + "Advanced: quant" picker | M5 | Missing (retargeted from M3: settings work) | — |
+| C7 | Discover local models (HF cache, custom dir) | `rescan_local_models`, `managers/model.rs:328` | scans HF cache + dir | "Add model file…" + rescan of models dir | M5 | Missing (retargeted from M3: settings work) | — |
+| C8 | Speed / accuracy scores, recommended flag | catalog `speed_score`, `accuracy_score` | static scores | Show **our measured** RTF + WER on this Mac | M3 | Built (measured WER + p50 on this Mac, Recommended badge) | **Better**: measured, not static |
+| C9 | Model unload after idle timeout | `S.model_unload_timeout` | never / immediately / 2 min … 1 h | Same | M5 | Missing (retargeted from M3: settings work) | — |
+| C10 | Manual unload from tray | `H/src-tauri/src/tray.rs:549` | — | Same | M5 | Missing (retargeted from M3: settings work) | — |
+| C11 | Accelerator / GPU device selection | `S.transcribe_accelerator`, `S.transcribe_gpu_device` | — | Auto / Metal / CPU | M5 | Missing (retargeted from M3: settings work) | — |
+| C12 | Parakeet TDT 0.6B V3 | catalog | GGUF Q8_0 | Verify with fixtures | M1 | Built (verified, `evidence/m3/model_verification.log`) | — |
+| C13 | Parakeet TDT 0.6B V2 | catalog | GGUF Q8_0 | Verify | M3 | Built (verified) | — |
+| C14 | Whisper Small / Medium / Large-v3 / Large-v3-Turbo | catalog | GGUF | Verify each | M3 | Built (all four verified) | — |
+| C15 | SenseVoice Small | catalog | GGUF Q8_0 | Verify | M3 | Built (verified) | — |
+| C16 | Moonshine Base (+ tiny, streaming variants) | catalog | GGUF Q8_0 | Verify base; others listed with status. Non-English variants are under the Moonshine AI Community License upstream (Handy's catalog says MIT) → show licence before download | M3 | Built (verified) | Correct licence display |
+| C17 | Other catalog families (Canary, Cohere, GigaAM, Granite, Qwen3-ASR, Voxtral, Fun-ASR, MedASR, MOSS, Nemotron) | catalog | GGUF | Same runtime; each verified or listed unsupported with reason | M7 | Missing (beyond the G3 list; same runtime, verify each after M6) | — |
 
 ## D. Post-processing
 

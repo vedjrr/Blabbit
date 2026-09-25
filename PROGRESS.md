@@ -2,8 +2,8 @@ STATUS: IN_PROGRESS
 
 # Progress (loop state — Claude owns this file)
 
-Current milestone: M3 — models (download, catalog, manager)
-Iteration: 6
+Current milestone: M4 — overlay, audio robustness, permissions
+Iteration: 7
 
 ## Environment (verified 2026-09-24)
 - Apple M4, 16 GB, macOS 27.0 (26A428), arm64.
@@ -12,7 +12,7 @@ Iteration: 6
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M3 gate: critic re-review #2 after fixing review #1 (4 BLOCKERs).
+- M4: start with the non-activating overlay `NSPanel` (G5 line 2: level meter, timer, processing state, shown within one frame of key-down, never steals focus), then move the insertion notices (blocked/unverified) into it (G2 carry-over), then permissions onboarding, then device selection/route changes and short/silent/long recordings.
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -21,6 +21,7 @@ Iteration: 6
 - [x] **M0 — Research & decisions.** Critic re-review: `VERDICT: PASS`, zero BLOCKERs (2026-09-24). Its 3 MAJOR and all minor findings fixed in 08f14b8 (bench fails loudly, `make models`, `make dmg` preflight, ONNX bench committed at `evidence/m0/onnxbench/`, CoreML EP measured, first-load cause marked unconfirmed).
 - [x] M1 — Vertical slice (automated). Critic re-review `VERDICT: PASS`; its 4 MAJORs fixed in 01a38e5. (H) TextEdit test deferred by the human to the end (see Decisions).
 - [x] M2 — Insertion reliability (automated). Critic re-review #3 `VERDICT: PASS`, zero BLOCKERs (2026-09-25); its MAJOR and MINORs fixed afterwards. Live per-app checklist (H) deferred with the other human checks. G2's overlay notice is carried to M4 (see Proposed goal changes).
+- [x] M3 — Model manager + all models. Critic re-review #2 `VERDICT: PASS`, zero BLOCKERs (2026-09-25); it also ran a real Hugging Face pause → segmented resume → verify of Moonshine through the shipped downloader. Its 3 MAJORs and most MINORs fixed afterwards (see Done).
 
 ## Done (with evidence)
 - [M0] Handy cloned read-only to `/tmp/handy-ref` (v0.9.7-6-g8f9cf53). Component map → `docs/ARCHITECTURE.md` §1.
@@ -111,6 +112,9 @@ Iteration: 6
   MINORs: separate plain-English download errors for network / server (HTTP status, bad Content-Range) / disk; `Content-Range` start checked; no `Instant` underflow; catalog parse failure logged; language names in a tooltip; retry after a failure resumes from the kept bytes; delete errors reported; an unknown saved model falls back to the recommended one; the WER tooltip explains strict scoring (numbers, product names); switch evidence now reports RSS, and a real-model test covers the app's `load_gguf` switch path: RSS 1051 → 265 MB, footprint 1064 → 279 MB (Turbo → Moonshine) → `evidence/m3/model_switch.log`.
   AX integration tests now also skip while the display is asleep (one run failed during the sleep → lock transition; pmset: "Display is turned off" 11:19:16).
 - [M3] `make test` after the fixes: Rust 16 + 10 + 4 real-model; Swift `Test run with 100 tests in 19 suites passed`.
+
+- [M3] Critic re-review #2 → **PASS**. Fixed afterwards: (MAJOR) the post-`InferenceFailed` re-check never changes state during a new dictation (the message is kept for the menu instead); (MAJOR) `make models` now fetches every model `make test` loads (Moonshine, Whisper Large v3 Turbo added; `bash scripts/fetch-models.sh` → 4× `ok`); (MAJOR) `verify` returns `.good / .damaged / .notChecked`, and only `.damaged` marks a model or blocks a load. MINORs: a stalled connection on a server without Range support now ends (long budget instead of none); a missing or incomplete default model falls back to the last good or another installed model with a message; Re-download goes through the licence prompt before deleting anything; switching back to the resident model doesn't reload it; tests log to `$TMPDIR/utter-tests.log` (`UTTER_LOG_FILE`), not the user's log; ADR-007 describes segments, integrity stamps and switching; PARITY C1–C5, C8, C12–C16 marked Built, C6/C7/C9–C11 retargeted to M5, C17 to M7. Not done: a controller-level record → switch → release test (needs an injectable recorder/engine; the deferral rule and the load ticket are unit-tested), and a "Stopping…" state after Pause/Cancel.
+- [M3] Final `make test`: Rust 16 + 10 + 4 real-model; Swift `Test run with 100 tests in 19 suites passed`.
 
 ## Blocked on human
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.

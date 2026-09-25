@@ -8,7 +8,14 @@ public enum Log {
     private static let queue = DispatchQueue(label: "dev.utter.log", qos: .utility)
     nonisolated(unsafe) private static var handle: FileHandle?
 
+    /// `UTTER_LOG_FILE` redirects the file (the test suite uses it so tests
+    /// never write into the user's real log).
     public static let fileURL: URL = {
+        if let custom = ProcessInfo.processInfo.environment["UTTER_LOG_FILE"], !custom.isEmpty {
+            let url = URL(fileURLWithPath: custom)
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            return url
+        }
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Utter", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("utter.log")

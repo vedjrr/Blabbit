@@ -83,7 +83,8 @@ public struct ModelManagerView: View {
         case .cancel: manager.cancel(entry.id)
         case .delete: manager.delete(entry.id)
         case .setDefault: manager.setDefault(entry.id)
-        case .redownload: manager.redownload(entry.id)
+        case .redownload:
+            if manager.needsLicenseAcceptance(entry.id) { viewState.licensePrompt = entry } else { manager.redownload(entry.id) }
         case .verify: Task { await manager.verify(entry.id) }
         case .license:
             if let url = URL(string: entry.licenseUrl) { NSWorkspace.shared.open(url) }

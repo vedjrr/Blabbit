@@ -104,13 +104,14 @@ import UtterCore
         defer { d.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: dir) }
         try install(try #require(m.entry("moonshine-base"))) // right size, all zeros
         #expect(!m.isVerified("moonshine-base"))
-        let good = await m.verify("moonshine-base")
-        #expect(!good)
+        #expect(await m.verify("moonshine-base") == .damaged)
         guard case .failed(let message) = m.status["moonshine-base"] else {
             Issue.record("expected a damaged status, got \(String(describing: m.status["moonshine-base"]))"); return
         }
         #expect(message.contains("Re-download"))
         #expect(m.isDamaged("moonshine-base") && !m.isVerified("moonshine-base"))
+        // "Couldn't check" is not "damaged".
+        #expect(await m.verify("not-a-model") == .notChecked)
     }
 
     @Test func realModelVerifiesOnceAndStaysVerified() async throws {
@@ -120,7 +121,7 @@ import UtterCore
         let m = ModelManager(modelsDirectory: real, defaults: d)
         try #require(m.status["moonshine-base"] == .installed, "run `make models` first")
         #expect(!m.isVerified("moonshine-base"))
-        #expect(await m.verify("moonshine-base"))
+        #expect(await m.verify("moonshine-base") == .good)
         #expect(m.isVerified("moonshine-base") && m.status["moonshine-base"] == .installed)
         let reopened = ModelManager(modelsDirectory: real, defaults: d)
         #expect(reopened.isVerified("moonshine-base"), "the stamp persists, so the check doesn't repeat every launch")

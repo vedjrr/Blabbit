@@ -61,7 +61,7 @@ test-rust: models
 	cd "$(CORE)" && cargo test --release --workspace
 
 test-swift: bindings
-	cd "$(APP)" && swift test $(SWIFT_FLAGS) $(SWIFT_TEST_FLAGS)
+	cd "$(APP)" && UTTER_LOG_FILE="$${TMPDIR:-/tmp}/utter-tests.log" swift test $(SWIFT_FLAGS) $(SWIFT_TEST_FLAGS)
 
 bench: core
 	cd "$(CORE)" && cargo build --release -p utter-core --example runtime_probe
