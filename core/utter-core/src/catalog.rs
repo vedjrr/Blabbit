@@ -43,10 +43,12 @@ struct CatalogFile {
 pub fn models() -> &'static [CatalogModel] {
     static MODELS: OnceLock<Vec<CatalogModel>> = OnceLock::new();
     MODELS.get_or_init(|| {
-        serde_json::from_str::<CatalogFile>(include_str!("../models.json"))
-            .map(|c| c.models)
-            // The catalog is a compile-time asset covered by tests; an empty list is the safe fallback.
-            .unwrap_or_default()
+        // The catalog is a compile-time asset covered by tests; if it ever fails
+        // to parse, say so loudly and fall back to an empty list.
+        serde_json::from_str::<CatalogFile>(include_str!("../models.json")).map(|c| c.models).unwrap_or_else(|e| {
+            eprintln!("utter: bundled model catalog failed to parse: {e}");
+            Vec::new()
+        })
     })
 }
 
@@ -92,7 +94,7 @@ impl CatalogModel {
     pub fn delete(&self, models_dir: &Path) -> Result<()> {
         let path = self.path(models_dir);
         if path.exists() {
-            std::fs::remove_file(&path).map_err(|e| UtterError::DownloadFailed { detail: format!("delete {}: {e}", path.display()) })?;
+            std::fs::remove_file(&path).map_err(|e| UtterError::DownloadFailed { kind: crate::error::DownloadIssue::Disk, detail: format!("delete {}: {e}", path.display()) })?;
         }
         download::discard_partial(&path);
         let _ = std::fs::remove_dir(models_dir.join(&self.id));

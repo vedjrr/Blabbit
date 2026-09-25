@@ -26,18 +26,33 @@ public final class ModelManager {
     private let modelsDir: String
     private let defaults: UserDefaults
     private var downloads: [String: ModelDownload] = [:]
+    /// Models found damaged, with the message to show. Survives `refresh()`
+    /// (a damaged file usually has the right size) until repaired.
+    private var damaged: [String: String] = [:]
+    /// Files whose SHA-256 was checked, keyed by id → "size:mtime" (persisted),
+    /// so the ~1 s/GB check runs once per file, not on every launch.
+    private var verifiedStamps: [String: String]
 
     public static let defaultModelKey = "model.default"
     public static let acceptedLicensesKey = "model.acceptedLicenses"
+    public static let verifiedStampsKey = "model.verifiedStamps"
 
-    public init(modelsDirectory: URL = ModelLocation.modelsDirectory, defaults: UserDefaults = .standard) {
+    /// Download mirror in place of huggingface.co (`HF_ENDPOINT`), if set.
+    private let hubEndpoint: String?
+
+    public init(modelsDirectory: URL = ModelLocation.modelsDirectory, defaults: UserDefaults = .standard,
+                hubEndpoint: String? = ProcessInfo.processInfo.environment["HF_ENDPOINT"]) {
         entries = catalogEntries()
+        self.hubEndpoint = hubEndpoint
         modelsDir = modelsDirectory.path
         self.defaults = defaults
         let recommended = entries.first(where: \.recommended)?.id ?? ModelLocation.defaultModelID
         defaultModelID = defaults.string(forKey: Self.defaultModelKey) ?? recommended
         acceptedLicenses = Set(defaults.stringArray(forKey: Self.acceptedLicensesKey) ?? [])
+        verifiedStamps = defaults.dictionary(forKey: Self.verifiedStampsKey) as? [String: String] ?? [:]
         refresh()
+        // A saved choice that is no longer in the catalog falls back to the recommended model.
+        if entry(defaultModelID) == nil { defaultModelID = recommended }
     }
 
     public func entry(_ id: String) -> ModelEntry? { entries.first { $0.id == id } }
@@ -50,13 +65,70 @@ public final class ModelManager {
 
     /// Re-reads install state from disk (cheap: size checks only).
     public func refresh() {
-        for entry in entries where downloads[entry.id] == nil {
+        for entry in entries where downloads[entry.id] == nil && !verifying.contains(entry.id) {
             switch try? modelState(modelsDir: modelsDir, id: entry.id) {
-            case .installed: status[entry.id] = .installed
+            case .installed:
+                status[entry.id] = damaged[entry.id].map { .failed($0) } ?? .installed
             case .partial(let bytes): status[entry.id] = .partial(bytes)
             default:
+                damaged[entry.id] = nil
                 if case .failed = status[entry.id] {} else { status[entry.id] = .notInstalled }
             }
+        }
+    }
+
+    // MARK: Verification
+
+    private var verifying: Set<String> = []
+
+    private func stamp(_ id: String) -> String? {
+        guard let path = path(for: id),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? UInt64,
+              let modified = attributes[.modificationDate] as? Date else { return nil }
+        return "\(size):\(modified.timeIntervalSince1970)"
+    }
+
+    /// True if this exact file (same size and modification time) passed a SHA-256 check.
+    public func isVerified(_ id: String) -> Bool {
+        guard let current = stamp(id) else { return false }
+        return verifiedStamps[id] == current
+    }
+
+    private func setVerified(_ id: String, _ value: String?) {
+        verifiedStamps[id] = value
+        defaults.set(verifiedStamps, forKey: Self.verifiedStampsKey)
+    }
+
+    /// Full SHA-256 check off the main thread. A mismatch marks the model
+    /// damaged (error + Re-download in the UI). Returns true if the file is good.
+    @discardableResult
+    public func verify(_ id: String) async -> Bool {
+        guard let entry = entry(id), downloads[id] == nil, !verifying.contains(id) else { return false }
+        verifying.insert(id)
+        status[id] = .verifying
+        let dir = modelsDir
+        let result: CoreError? = await Task.detached(priority: .userInitiated) {
+            do { try verifyModel(modelsDir: dir, id: id); return nil } catch let error as CoreError { return error } catch {
+                return .ModelCorrupt(userMessage: "The model file is damaged.", detail: "\(error)")
+            }
+        }.value
+        verifying.remove(id)
+        switch result {
+        case nil:
+            setVerified(id, stamp(id))
+            damaged[id] = nil
+            status[id] = .installed
+            Log.info("model verified model=\(id)")
+            return true
+        case .ModelCorrupt(_, let detail)?, .ModelMissing(_, let detail)?:
+            Log.error("model verification failed model=\(id): \(detail)")
+            markDamaged(id, message: "\(entry.name) is damaged or incomplete. Choose Re-download to replace it.")
+            return false
+        case let error?:
+            Log.error("model verification error model=\(id): \(error.logDetail)")
+            refresh()
+            return false
         }
     }
 
@@ -72,11 +144,12 @@ public final class ModelManager {
     /// Starts, resumes or retries a download.
     public func download(_ id: String) {
         guard downloads[id] == nil, !needsLicenseAcceptance(id), let entry = entry(id) else { return }
-        let resumeFrom: UInt64 = if case .partial(let b) = status[id] { b } else { 0 }
+        // Also right after a failure (status .failed) whose partial file was kept.
+        let resumeFrom: UInt64 = if case .partial(let b)? = try? modelState(modelsDir: modelsDir, id: id) { b } else { 0 }
         status[id] = .downloading(downloaded: resumeFrom, total: entry.sizeBytes)
         let listener = Listener(manager: self, id: id)
         do {
-            downloads[id] = try ModelDownload.start(modelsDir: modelsDir, id: id, listener: listener)
+            downloads[id] = try ModelDownload.start(modelsDir: modelsDir, id: id, hubEndpoint: hubEndpoint, listener: listener)
             Log.info("download started model=\(id) resume_from=\(resumeFrom)")
         } catch let error as CoreError {
             status[id] = .failed(error.userMessage)
@@ -86,7 +159,25 @@ public final class ModelManager {
     }
 
     public func pause(_ id: String) { downloads[id]?.pause() }
-    public func cancel(_ id: String) { downloads[id]?.cancel() }
+
+    /// Cancels a running download, or discards a paused/interrupted one.
+    public func cancel(_ id: String) {
+        if let running = downloads[id] {
+            running.cancel()
+            return
+        }
+        do {
+            try discardPartialDownload(modelsDir: modelsDir, id: id)
+            damaged[id] = nil
+            status[id] = .notInstalled
+            refresh()
+            Log.info("partial download discarded model=\(id)")
+        } catch let error as CoreError {
+            status[id] = .failed(error.userMessage)
+        } catch {
+            status[id] = .failed("The partial download could not be removed.")
+        }
+    }
 
     /// Deletes a model. The default model can't be deleted while it is the default.
     public func delete(_ id: String) {
@@ -94,29 +185,59 @@ public final class ModelManager {
         downloads[id]?.cancel()
         do {
             try deleteModel(modelsDir: modelsDir, id: id)
+            damaged[id] = nil
+            setVerified(id, nil)
             status[id] = .notInstalled
             Log.info("model deleted model=\(id)")
         } catch let error as CoreError {
             status[id] = .failed(error.userMessage)
-        } catch {}
+        } catch {
+            Log.error("model delete failed model=\(id): \(error)")
+            status[id] = .failed("The model could not be deleted.")
+        }
     }
 
+    /// Selects a model. The controller loads it and calls `commitDefault` once
+    /// it has loaded, so a model that fails to load is never saved as the choice.
     public func setDefault(_ id: String) {
         guard status[id] == .installed, id != defaultModelID else { return }
         defaultModelID = id
-        defaults.set(id, forKey: Self.defaultModelKey)
-        onDefaultModelChange?(id)
+        if let onDefaultModelChange { onDefaultModelChange(id) } else { commitDefault(id) }
     }
 
-    /// Marks a model damaged (e.g. its load failed) so the UI offers a re-download.
+    /// The last choice that loaded successfully (what the next launch loads).
+    public var committedDefaultID: String {
+        defaults.string(forKey: Self.defaultModelKey) ?? entries.first(where: \.recommended)?.id ?? ModelLocation.defaultModelID
+    }
+
+    public func commitDefault(_ id: String) {
+        defaults.set(id, forKey: Self.defaultModelKey)
+    }
+
+    /// A switch failed: go back to the last model that loaded.
+    public func revertDefault() {
+        defaultModelID = committedDefaultID
+    }
+
+    /// Marks a model damaged (failed verification or load) so the UI offers a
+    /// re-download. Kept across `refresh()` until repaired.
     public func markDamaged(_ id: String, message: String) {
+        damaged[id] = message
+        setVerified(id, nil)
         status[id] = .failed(message)
     }
+
+    public func isDamaged(_ id: String) -> Bool { damaged[id] != nil }
+
+    /// Forces the next `verify`/load to re-check the file (e.g. after an inference failure).
+    public func setVerifiedStale(_ id: String) { setVerified(id, nil) }
 
     /// Deletes a damaged file and downloads it again (one-click repair, G3).
     public func redownload(_ id: String) {
         downloads[id]?.cancel()
         downloads[id] = nil
+        damaged[id] = nil
+        setVerified(id, nil)
         try? deleteModel(modelsDir: modelsDir, id: id)
         status[id] = .notInstalled
         download(id)
@@ -131,6 +252,9 @@ public final class ModelManager {
         downloads[id] = nil
         switch outcome {
         case .completed:
+            // The downloader checked the SHA-256 before installing the file.
+            damaged[id] = nil
+            setVerified(id, stamp(id))
             status[id] = .installed
             Log.info("download completed and verified model=\(id)")
             if id == defaultModelID { onDefaultModelChange?(id) }

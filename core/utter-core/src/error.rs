@@ -20,8 +20,19 @@ pub enum UtterError {
     InputTooLong { detail: String },
     #[error("The audio file could not be read.")]
     AudioRead { detail: String },
+    #[error("{kind}")]
+    DownloadFailed { kind: DownloadIssue, detail: String },
+}
+
+/// What went wrong with a download, so the message tells the user what to do.
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadIssue {
     #[error("The model download failed. Check your internet connection and try again.")]
-    DownloadFailed { detail: String },
+    Network,
+    #[error("The download server refused the request. Try again later.")]
+    Server,
+    #[error("Utter couldn't save the model file. Check that your disk has enough free space.")]
+    Disk,
 }
 
 impl UtterError {
@@ -35,7 +46,7 @@ impl UtterError {
             | UtterError::InferenceFailed { detail }
             | UtterError::InputTooLong { detail }
             | UtterError::AudioRead { detail }
-            | UtterError::DownloadFailed { detail } => detail.clone(),
+            | UtterError::DownloadFailed { detail, .. } => detail.clone(),
             UtterError::ModelNotLoaded => String::new(),
         }
     }

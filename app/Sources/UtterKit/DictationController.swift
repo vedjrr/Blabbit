@@ -15,7 +15,13 @@ public final class DictationController {
     }
 
     public private(set) var state: State = .starting {
-        didSet { onStateChange?(state) }
+        didSet {
+            onStateChange?(state)
+            // Apply a model switch that was requested during the dictation.
+            if let pending = pendingModelID, !isBusyDictating, state != .loadingModel {
+                Task { @MainActor [weak self] in self?.loadModel(id: pending) }
+            }
+        }
     }
     public var onStateChange: ((State) -> Void)?
     /// Fired after a dictation that was blocked or couldn't be confirmed.
@@ -111,49 +117,115 @@ public final class DictationController {
         } catch {}
     }
 
+    /// Bumped by every load request; a load that is no longer the latest
+    /// neither starts (if still queued) nor touches the UI when it finishes.
+    private let loadTicket = LoadTicket()
+    /// Loads run one at a time in request order, so the last choice is the one resident.
+    private let loadQueue = DispatchQueue(label: "dev.utter.model-load", qos: .userInitiated)
+    /// A switch requested mid-dictation; applied once the controller is idle.
+    private var pendingModelID: String?
+    private var loadedModelID: String?
+
+    private var isBusyDictating: Bool { Self.defersModelSwitch(in: state) }
+
+    /// A model switch must never interrupt a dictation: loading would unload the
+    /// model mid-transcription and the state change would strand the microphone.
+    public nonisolated static func defersModelSwitch(in state: State) -> Bool {
+        state == .recording || state == .transcribing
+    }
+
     /// Loads (or switches to) a model in the background. The Rust engine unloads
-    /// the previous model first, so two are never resident at once.
-    public func loadModel(id: String) {
-        guard let entry = models.entry(id), let path = models.path(for: id) else { return }
+    /// the previous model first, so two are never resident at once. Never
+    /// interrupts a dictation: a switch during recording/transcription waits.
+    public func loadModel(id requested: String) {
+        if isBusyDictating {
+            pendingModelID = requested
+            Log.info("model switch to \(requested) queued until the current dictation finishes")
+            return
+        }
+        pendingModelID = nil
+        guard let entry = models.entry(requested) ?? models.entry(models.committedDefaultID) ?? models.entries.first(where: \.recommended),
+              let path = models.path(for: entry.id) else { return }
+        let id = entry.id
         guard models.status[id] == .installed else {
             modelLoaded = false
-            fail("No speech model is installed yet. Open the Model Manager to download \(entry.name).")
+            if models.isDamaged(id) {
+                fail("\(entry.name) is damaged or incomplete. Open the Model Manager and choose Re-download.")
+            } else {
+                fail("No speech model is installed yet. Open the Model Manager to download \(entry.name).")
+            }
             onNeedsModel?()
             return
         }
+        let ticket = loadTicket.next()
         modelLoaded = false
         state = .loadingModel
         let engine = self.engine
-        let before = processFootprintBytes()
-        Task.detached(priority: .userInitiated) {
+        let loadTicket = self.loadTicket
+        let loadQueue = self.loadQueue
+        Task {
+            // SHA-256 once per file before its first load; a damaged file is
+            // caught here instead of failing (or mis-transcribing) later.
+            if !models.isVerified(id) {
+                let good = await models.verify(id)
+                guard loadTicket.isCurrent(ticket) else { return }
+                if !good {
+                    loadFailed(id: id, entry: entry, damaged: true, message: nil)
+                    return
+                }
+            }
+            let before = processFootprintBytes()
             let started = MonoClock.nowNs()
-            do {
-                let info = try engine.loadModel(path: path)
+            let outcome: Result<LoadInfo, Error>? = await withCheckedContinuation { continuation in
+                loadQueue.async {
+                    // Superseded while queued: skip the load entirely.
+                    guard loadTicket.isCurrent(ticket) else { return continuation.resume(returning: nil) }
+                    continuation.resume(returning: Result { try engine.loadModel(path: path) })
+                }
+            }
+            guard let outcome else { return }
+            switch outcome {
+            case .success(let info):
                 Log.info(String(format: "model_load model=%@ load_ms=%.0f warmup_ms=%.0f footprint_before_mb=%.0f footprint_mb=%.0f total_ms=%.0f load_count=%llu",
                                 id, info.loadMs, info.warmupMs, Double(before) / 1_048_576,
                                 Double(info.footprintAfterBytes) / 1_048_576,
                                 MonoClock.ms(from: started, to: MonoClock.nowNs()), engine.loadCount()))
-                await MainActor.run {
-                    self.modelLoaded = true
-                    if let problem = self.micProblem { self.state = .failed(problem) } else { self.state = .ready }
-                }
-            } catch let error as CoreError {
+                loadedModelID = id
+                guard loadTicket.isCurrent(ticket) else { return }
+                models.commitDefault(id)
+                modelLoaded = true
+                if let problem = micProblem { state = .failed(problem) } else { state = .ready }
+            case .failure(let error as CoreError):
                 Log.error("model load failed model=\(id): \(error.logDetail)")
-                await MainActor.run {
-                    switch error {
-                    case .ModelCorrupt, .ModelMissing:
-                        let message = "\(entry.name) is damaged or incomplete. Open the Model Manager and choose Re-download."
-                        self.models.markDamaged(id, message: message)
-                        self.fail(message)
-                        self.onNeedsModel?()
-                    default:
-                        self.fail(error.userMessage)
-                    }
+                guard loadTicket.isCurrent(ticket) else { return }
+                switch error {
+                case .ModelCorrupt, .ModelMissing: loadFailed(id: id, entry: entry, damaged: true, message: nil)
+                default: loadFailed(id: id, entry: entry, damaged: false, message: error.userMessage)
                 }
-            } catch {
-                await MainActor.run { self.fail("The speech model could not be loaded.") }
+            case .failure:
+                guard loadTicket.isCurrent(ticket) else { return }
+                loadFailed(id: id, entry: entry, damaged: false, message: "The speech model could not be loaded.")
             }
         }
+    }
+
+    /// A load failed. Mark the file if it is damaged, go back to the last model
+    /// that worked (the engine already unloaded it), and tell the user.
+    private func loadFailed(id: String, entry: ModelEntry, damaged: Bool, message: String?) {
+        let text = damaged ? "\(entry.name) is damaged or incomplete. Open the Model Manager and choose Re-download." : (message ?? "")
+        if damaged { models.markDamaged(id, message: text) }
+        let previous = models.committedDefaultID
+        if previous != id, models.status[previous] == .installed {
+            models.revertDefault()
+            let name = models.entry(previous)?.name ?? previous
+            Log.info("model switch to \(id) failed; going back to \(previous)")
+            loadModel(id: previous)
+            lastMessage = "\(text) Utter went back to \(name)."
+            return
+        }
+        modelLoaded = false
+        fail(text)
+        if damaged { onNeedsModel?() }
     }
 
     // MARK: Recording lifecycle
@@ -270,6 +342,16 @@ public final class DictationController {
         } catch let error as CoreError {
             Log.error("transcribe failed: \(error.logDetail)")
             fail(error.userMessage)
+            if case .InferenceFailed = error, let id = loadedModelID {
+                // A damaged file can load and warm up yet fail every inference.
+                // Re-check it; a mismatch shows as damaged with Re-download.
+                models.setVerifiedStale(id)
+                Task { @MainActor [weak self] in
+                    guard let self, await !self.models.verify(id), let entry = self.models.entry(id) else { return }
+                    self.fail("\(entry.name) is damaged. Open the Model Manager and choose Re-download.")
+                    self.onNeedsModel?()
+                }
+            }
             return
         } catch {
             fail("Transcription failed. Please try again.")
@@ -367,4 +449,12 @@ extension CoreError {
             return d
         }
     }
+}
+
+/// Latest model-load request number, readable from the load queue.
+final class LoadTicket: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = 0
+    func next() -> Int { lock.lock(); defer { lock.unlock() }; current += 1; return current }
+    func isCurrent(_ ticket: Int) -> Bool { lock.lock(); defer { lock.unlock() }; return current == ticket }
 }

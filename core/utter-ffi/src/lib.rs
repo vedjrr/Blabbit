@@ -248,6 +248,14 @@ pub fn verify_model(models_dir: String, id: String) -> Result<(), CoreError> {
     Ok(catalog::find(&id)?.verify(Path::new(&models_dir))?)
 }
 
+/// Deletes a paused or interrupted download's partial file (Cancel on a paused row).
+#[uniffi::export]
+pub fn discard_partial_download(models_dir: String, id: String) -> Result<(), CoreError> {
+    let path = catalog::find(&id)?.path(Path::new(&models_dir));
+    utter_core::download::discard_partial(&path);
+    Ok(())
+}
+
 #[uniffi::export]
 pub fn delete_model(models_dir: String, id: String) -> Result<(), CoreError> {
     Ok(catalog::find(&id)?.delete(Path::new(&models_dir))?)
@@ -276,9 +284,21 @@ pub struct ModelDownload {
 #[uniffi::export]
 impl ModelDownload {
     /// Starts (or resumes) downloading `id` into `models_dir` on a background thread.
+    /// `hub_endpoint` replaces `https://huggingface.co` (a mirror, as with the
+    /// Hugging Face `HF_ENDPOINT` convention); the SHA-256 check is unchanged.
     #[uniffi::constructor]
-    pub fn start(models_dir: String, id: String, listener: Arc<dyn DownloadListener>) -> Result<Arc<Self>, CoreError> {
-        let spec = catalog::find(&id)?.download_spec(Path::new(&models_dir));
+    pub fn start(
+        models_dir: String,
+        id: String,
+        hub_endpoint: Option<String>,
+        listener: Arc<dyn DownloadListener>,
+    ) -> Result<Arc<Self>, CoreError> {
+        let mut spec = catalog::find(&id)?.download_spec(Path::new(&models_dir));
+        if let Some(endpoint) = hub_endpoint.filter(|e| !e.is_empty()) {
+            if let Some(rest) = spec.url.strip_prefix("https://huggingface.co") {
+                spec.url = format!("{}{rest}", endpoint.trim_end_matches('/'));
+            }
+        }
         let control = Control::default();
         let worker_control = control.clone();
         std::thread::Builder::new()

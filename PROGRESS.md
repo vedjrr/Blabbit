@@ -12,7 +12,7 @@ Iteration: 6
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M3 gate: critic review of the merged M3 work (G3).
+- M3 gate: critic re-review #2 after fixing review #1 (4 BLOCKERs).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -101,6 +101,16 @@ Iteration: 6
   - Swift `ModelManager` + SwiftUI Model Manager window (browse, download/pause/resume/cancel/retry, verify, delete, set default, licence acceptance, damaged file → error + one-click Re-download), a Model submenu in the menu bar. `ModelManagerTests` (catalog, install/switch/delete rules, licence persisted, damaged model).
 - [M3] After the merge: `make test` → Rust 16 + 7 + 3 ok; Swift `Test run with 95 tests in 18 suites passed`. The app launched through `open` (`--model-manager` opens the window at launch): `model_load model=parakeet-tdt-0.6b-v3 load_ms=204 warmup_ms=44 … load_count=1`, audio graph ready, window "Utter Models" 706×580 on screen (CGWindowList).
 - [M3] UI evidence without Screen Recording permission (`screencapture -l` → "could not create image from window"): `ModelManagerSnapshotTests` renders the real view offscreen with `ImageRenderer`. `evidence/m3/model_manager_view.png` shows the header and "Installed: 8 of 8" (the `List` can't be drawn offscreen). `evidence/m3/model_manager_rows.png` shows every row state: In use/Recommended, Use This Model, Downloading 180 MB of 640 MB + Pause/Cancel, Paused at 320 MB + Resume/Cancel, Verifying download…, damaged (checksum mismatch) + Retry/Re-download, Download. Yellow boxes are AppKit-backed controls (progress bars, menus), which offscreen rendering can't draw.
+
+- [M3] Critic review #1 → FAIL (4 BLOCKERs, 4 MAJORs, 11 MINORs). Fixed:
+  (BLOCKER) ureq's `timeout_recv_body` is a *total* budget, so every download over 30 s failed. The body is now read in 30 s segments. A segment that ends (budget used up or the connection dropped) after receiving data resumes automatically with a Range request; one that receives nothing fails with the partial file kept. Tests: `transfer_longer_than_the_body_budget_completes` (~1.2 s transfer against a 250 ms budget, ≥ 3 Range segments), `stalled_connection_fails…`, and a dropped connection now completes in one call.
+  (BLOCKER) The damaged state no longer disappears on `refresh()`: `damaged` is kept until repaired (Re-download, Delete, a good download or verify). The test now uses a file of catalog size.
+  (BLOCKER) SHA-256 is checked before a model's first load (off main, ~0.26 s for 739 MB). A per-file "size:mtime" stamp persists so it runs once, not every launch. It is checked again after an `InferenceFailed`, and there is a Verify button on each row. A mismatch → damaged + Re-download. Tests: `corruptFileOfTheRightSizeFailsVerification`, `realModelVerifiesOnceAndStaysVerified`. App log: first launch `model verified` then `model_load`; the relaunch skips verification → `evidence/m3/app_verify_then_load.log`.
+  (BLOCKER) A model switch during recording or transcription is queued and applied when the controller is idle (`defersModelSwitch`), so the mic is never stranded.
+  (MAJOR) Loads run in order on one serial queue with a `LoadTicket`: a superseded load doesn't start, and a stale finish doesn't touch the UI. (MAJOR) The default is saved only after a successful load (`commitDefault`); a failed switch reverts to the last model that loaded and reloads it, with a message. (MAJOR) Cancel on a paused row discards the partial file (new FFI `discard_partial_download`). (MAJOR) The whole Swift download path is tested against a local HTTP server (`LocalModelServer`) serving the real Moonshine file: download → pause → Cancel → download → verified install → Re-download. This uses a mirror setting (`HF_ENDPOINT`, the Hugging Face convention) passed to `ModelDownload.start`.
+  MINORs: separate plain-English download errors for network / server (HTTP status, bad Content-Range) / disk; `Content-Range` start checked; no `Instant` underflow; catalog parse failure logged; language names in a tooltip; retry after a failure resumes from the kept bytes; delete errors reported; an unknown saved model falls back to the recommended one; the WER tooltip explains strict scoring (numbers, product names); switch evidence now reports RSS, and a real-model test covers the app's `load_gguf` switch path: RSS 1051 → 265 MB, footprint 1064 → 279 MB (Turbo → Moonshine) → `evidence/m3/model_switch.log`.
+  AX integration tests now also skip while the display is asleep (one run failed during the sleep → lock transition; pmset: "Display is turned off" 11:19:16).
+- [M3] `make test` after the fixes: Rust 16 + 10 + 4 real-model; Swift `Test run with 100 tests in 19 suites passed`.
 
 ## Blocked on human
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.

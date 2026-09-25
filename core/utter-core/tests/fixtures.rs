@@ -160,3 +160,27 @@ fn status_queries_do_not_block_during_load_or_inference() {
     assert!(worst < Duration::from_millis(50), "a status query blocked for {worst:?}");
     assert!(worst * 10 < inference, "worst query {worst:?} is close to the inference time {inference:?}");
 }
+
+#[test]
+fn switching_models_releases_the_old_one() {
+    // The app's switch path: `load_gguf` on a loaded engine (no explicit unload).
+    let _serial = serial();
+    use utter_core::memory::process_memory;
+    let mb = |b: u64| b / 1_048_576;
+    let engine = Engine::new();
+    let before = process_memory();
+    engine.load_gguf(&require_model("whisper-large-v3-turbo/whisper-large-v3-turbo-Q8_0.gguf")).expect("load turbo");
+    let with_first = process_memory();
+    engine.load_gguf(&require_model("moonshine-base/moonshine-base-Q8_0.gguf")).expect("switch to moonshine");
+    let with_second = process_memory();
+    eprintln!(
+        "switch rss_mb: before={} with_turbo={} with_moonshine={} | footprint_mb: before={} with_turbo={} with_moonshine={} | load_count={}",
+        mb(before.resident_bytes), mb(with_first.resident_bytes), mb(with_second.resident_bytes),
+        mb(before.footprint_bytes), mb(with_first.footprint_bytes), mb(with_second.footprint_bytes),
+        engine.load_count()
+    );
+    assert_eq!(engine.metadata().map(|m| m.architecture).as_deref(), Some("moonshine"));
+    // Turbo is ~1 GB resident; Moonshine ~0.2 GB. Both measures must fall by at least 500 MB.
+    assert!(with_second.footprint_bytes + 500 * 1_048_576 < with_first.footprint_bytes, "footprint did not drop");
+    assert!(with_second.resident_bytes + 500 * 1_048_576 < with_first.resident_bytes, "RSS did not drop");
+}

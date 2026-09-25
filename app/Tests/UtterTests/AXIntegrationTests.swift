@@ -14,7 +14,9 @@ func screenIsLocked() -> Bool {
 /// Needs an unlocked screen and an Accessibility-trusted test runner; otherwise skipped (reported as skipped).
 @Suite(.serialized,
        .enabled(if: AXIsProcessTrusted(), "test runner is not trusted for Accessibility"),
-       .enabled(if: !screenIsLocked(), "screen is locked; the window server exposes no window contents"))
+       .enabled(if: !screenIsLocked(), "screen is locked; the window server exposes no window contents"),
+       // The lock follows display sleep after a delay; windows are already unavailable.
+       .enabled(if: CGDisplayIsAsleep(CGMainDisplayID()) == 0, "display is asleep"))
 struct AXIntegrationTests {
     static let hostURL = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

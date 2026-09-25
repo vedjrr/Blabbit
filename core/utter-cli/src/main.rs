@@ -140,7 +140,10 @@ fn main() -> ExitCode {
             Ok(_) => {
                 let with_second = process_memory();
                 println!(
-                    "switch footprint_mb: with_first={:.0} after_unload={:.0} (freed {:.0}) with_second={:.0} loaded={} load_count={}",
+                    "switch rss_mb: with_first={:.0} after_unload={:.0} with_second={:.0} | footprint_mb: with_first={:.0} after_unload={:.0} (freed {:.0}) with_second={:.0} loaded={} load_count={}",
+                    mb(with_first.resident_bytes),
+                    mb(after_unload.resident_bytes),
+                    mb(with_second.resident_bytes),
                     mb(with_first.footprint_bytes),
                     mb(after_unload.footprint_bytes),
                     mb(with_first.footprint_bytes.saturating_sub(after_unload.footprint_bytes)),

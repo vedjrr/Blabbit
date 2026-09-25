@@ -5,3 +5,10 @@ switch footprint_mb: with_first=1079 after_unload=189 (freed 890) with_second=27
 $ utter-cli --model $MODELS/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf --switch-to $MODELS/whisper-small/whisper-small-Q8_0.gguf fixtures/audio/tts_02.wav
 model /Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load=389ms warmup=37ms footprint+887MB
 switch footprint_mb: with_first=890 after_unload=135 (freed 755) with_second=518 loaded=whisper load_count=2
+
+# 2026-09-25T10:21:57Z after M3 review #1: RSS added; app switch path (load_gguf on a loaded engine) covered by test switching_models_releases_the_old_one
+$ cargo test --release -p utter-core --test fixtures switching -- --nocapture
+switch rss_mb: before=7 with_turbo=1051 with_moonshine=265 | footprint_mb: before=1 with_turbo=1064 with_moonshine=279 | load_count=2
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 1.67s
+$ utter-cli --model $MODELS/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf --switch-to $MODELS/whisper-small/whisper-small-Q8_0.gguf fixtures/audio/tts_02.wav
+switch rss_mb: with_first=877 after_unload=123 with_second=506 | footprint_mb: with_first=890 after_unload=135 (freed 755) with_second=518 loaded=whisper load_count=2

@@ -53,7 +53,15 @@ import UtterCore
         #expect(m.defaultModelID == parakeet.id)
         m.setDefault(moonshine.id)
         #expect(m.defaultModelID == moonshine.id && switched == [moonshine.id])
+        // Saved only once the controller reports a successful load.
+        #expect(d.string(forKey: ModelManager.defaultModelKey) == nil)
+        m.commitDefault(moonshine.id)
         #expect(d.string(forKey: ModelManager.defaultModelKey) == moonshine.id)
+        // A failed switch goes back to the last model that loaded.
+        m.setDefault(parakeet.id)
+        #expect(m.defaultModelID == parakeet.id)
+        m.revertDefault()
+        #expect(m.defaultModelID == moonshine.id)
 
         m.delete(moonshine.id) // the model in use can't be deleted
         #expect(m.status[moonshine.id] == .installed)
@@ -77,10 +85,105 @@ import UtterCore
 
     @Test func damagedModelShowsErrorAndRefreshKeepsIt() throws {
         let (m, d) = try makeManager()
-        defer { d.removePersistentDomain(forName: suite) }
-        m.markDamaged("moonshine-base", message: "Moonshine Base is damaged or incomplete.")
+        defer { d.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: dir) }
+        // A damaged file usually has the right size, so a size check alone says "installed".
+        try install(try #require(m.entry("moonshine-base")))
         m.refresh()
+        #expect(m.status["moonshine-base"] == .installed)
+        m.markDamaged("moonshine-base", message: "Moonshine Base is damaged or incomplete.")
+        m.refresh() // what opening the Model Manager does
         #expect(m.status["moonshine-base"] == .failed("Moonshine Base is damaged or incomplete."))
+        #expect(!m.installedEntries.contains { $0.id == "moonshine-base" })
+        let reopened = ModelManager(modelsDirectory: dir, defaults: d)
+        #expect(reopened.status["moonshine-base"] == .installed, "damage is re-detected by verification, not persisted")
+        #expect(!reopened.isVerified("moonshine-base"))
+    }
+
+    @Test func corruptFileOfTheRightSizeFailsVerification() async throws {
+        let (m, d) = try makeManager()
+        defer { d.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: dir) }
+        try install(try #require(m.entry("moonshine-base"))) // right size, all zeros
+        #expect(!m.isVerified("moonshine-base"))
+        let good = await m.verify("moonshine-base")
+        #expect(!good)
+        guard case .failed(let message) = m.status["moonshine-base"] else {
+            Issue.record("expected a damaged status, got \(String(describing: m.status["moonshine-base"]))"); return
+        }
+        #expect(message.contains("Re-download"))
+        #expect(m.isDamaged("moonshine-base") && !m.isVerified("moonshine-base"))
+    }
+
+    @Test func realModelVerifiesOnceAndStaysVerified() async throws {
+        let real = ModelLocation.modelsDirectory
+        let (_, d) = try makeManager()
+        defer { d.removePersistentDomain(forName: suite) }
+        let m = ModelManager(modelsDirectory: real, defaults: d)
+        try #require(m.status["moonshine-base"] == .installed, "run `make models` first")
+        #expect(!m.isVerified("moonshine-base"))
+        #expect(await m.verify("moonshine-base"))
+        #expect(m.isVerified("moonshine-base") && m.status["moonshine-base"] == .installed)
+        let reopened = ModelManager(modelsDirectory: real, defaults: d)
+        #expect(reopened.isVerified("moonshine-base"), "the stamp persists, so the check doesn't repeat every launch")
+    }
+
+    /// The whole Swift download path against a local server serving the real
+    /// Moonshine file: progress, pause, Cancel on a paused row, download,
+    /// verify-and-install, Re-download.
+    @Test(.timeLimit(.minutes(2)))
+    func downloadPauseCancelAndInstallThroughTheManager() async throws {
+        let probeDefaults = try #require(UserDefaults(suiteName: suite))
+        let source = try #require(ModelManager(modelsDirectory: ModelLocation.modelsDirectory, defaults: probeDefaults).path(for: "moonshine-base"))
+        try #require(FileManager.default.fileExists(atPath: source), "run `make models` first")
+        let server = try LocalModelServer(serving: URL(fileURLWithPath: source))
+        defer { server.stop() }
+        server.delayPerChunk = 0.01 // ~3 s for 77 MB: time to pause
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: dir) }
+        let m = ModelManager(modelsDirectory: dir, defaults: defaults, hubEndpoint: server.endpoint)
+        let id = "moonshine-base"
+
+        func waitFor(_ what: String, _ condition: () -> Bool) async throws {
+            for _ in 0..<600 where !condition() { try await Task.sleep(for: .milliseconds(50)) }
+            try #require(condition(), "timed out waiting for \(what); status \(String(describing: m.status[id]))")
+        }
+
+        m.download(id)
+        try await waitFor("progress") { if case .downloading(let got, _) = m.status[id] { got > 5_000_000 } else { false } }
+        m.pause(id)
+        try await waitFor("pause") { if case .partial = m.status[id] { true } else { false } }
+        m.cancel(id) // on the paused row: discards the partial file
+        #expect(m.status[id] == .notInstalled)
+        m.refresh()
+        #expect(m.status[id] == .notInstalled, "the partial file is gone")
+
+        server.delayPerChunk = 0
+        m.download(id)
+        try await waitFor("install") { m.status[id] == .installed }
+        #expect(m.isVerified(id), "the downloader checked the SHA-256")
+        #expect(server.ranges.first == .some(nil))
+
+        m.markDamaged(id, message: "damaged")
+        m.redownload(id)
+        try await waitFor("re-download") { m.status[id] == .installed }
+        #expect(!m.isDamaged(id))
+    }
+}
+
+@Suite struct ModelSwitchTests {
+    @Test func switchesWaitForTheDictationToFinish() {
+        #expect(DictationController.defersModelSwitch(in: .recording))
+        #expect(DictationController.defersModelSwitch(in: .transcribing))
+        for idle: DictationController.State in [.ready, .starting, .loadingModel, .failed("x")] {
+            #expect(!DictationController.defersModelSwitch(in: idle))
+        }
+    }
+
+    @Test func onlyTheLatestLoadRequestCounts() {
+        let ticket = LoadTicket()
+        let a = ticket.next()
+        let b = ticket.next()
+        #expect(!ticket.isCurrent(a), "a superseded load must not start or update the UI")
+        #expect(ticket.isCurrent(b))
     }
 }
 

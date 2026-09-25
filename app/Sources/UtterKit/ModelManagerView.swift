@@ -84,6 +84,7 @@ public struct ModelManagerView: View {
         case .delete: manager.delete(entry.id)
         case .setDefault: manager.setDefault(entry.id)
         case .redownload: manager.redownload(entry.id)
+        case .verify: Task { await manager.verify(entry.id) }
         case .license:
             if let url = URL(string: entry.licenseUrl) { NSWorkspace.shared.open(url) }
         }
@@ -93,7 +94,7 @@ public struct ModelManagerView: View {
 extension ModelEntry: Identifiable {}
 
 struct ModelRow: View {
-    enum Action { case download, pause, resume, cancel, retry, delete, setDefault, redownload, license }
+    enum Action { case download, pause, resume, cancel, retry, delete, setDefault, redownload, license, verify }
 
     let entry: ModelEntry
     let status: ModelManager.Status
@@ -112,7 +113,9 @@ struct ModelRow: View {
                 HStack(spacing: 12) {
                     Label(Self.size(entry.sizeBytes), systemImage: "internaldrive")
                     Label(entry.languages.count == 1 ? "English" : "\(entry.languages.count) languages", systemImage: "globe")
+                        .help(Self.languageNames(entry.languages))
                     Label(String(format: "%.0f%% word errors", entry.measuredWer * 100), systemImage: "checkmark.seal")
+                        .help("Word error rate on Utter's five spoken test clips. Strict scoring: \"123\" for \"one two three\" and misspelt product names count as errors.")
                     Label(String(format: "%.2fs per 5s of speech", Double(entry.measuredP50Ms) / 1000), systemImage: "bolt")
                     Button(entry.license) { action(.license) }.buttonStyle(.link)
                 }
@@ -168,15 +171,24 @@ struct ModelRow: View {
             case .installed:
                 if isDefault {
                     Text("Default model").font(.caption).foregroundStyle(.secondary)
+                    Button("Verify") { action(.verify) }.buttonStyle(.link).font(.caption)
                 } else {
                     Button("Use This Model") { action(.setDefault) }
-                    Button("Delete", role: .destructive) { action(.delete) }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(.red)
+                    HStack {
+                        Button("Verify") { action(.verify) }.buttonStyle(.link).font(.caption)
+                        Button("Delete", role: .destructive) { action(.delete) }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.red)
+                    }
                 }
             }
         }
         .controlSize(.regular)
+    }
+
+    /// Full language names for the tooltip (codes the system doesn't know are kept as is).
+    static func languageNames(_ codes: [String]) -> String {
+        codes.map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }.joined(separator: ", ")
     }
 
     static func size(_ bytes: UInt64) -> String {

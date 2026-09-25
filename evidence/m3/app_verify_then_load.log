@@ -1,0 +1,7 @@
+# App launch after M3 review fixes, 2026-09-25 11:16, git f35b5e4+wip
+## first launch (file not yet verified), then relaunch (stamp cached):
+2026-09-25T10:16:19.607Z INFO launch pid=54575 core=transcribe-cpp 0.2.3 (unknown) macos=Version 27.0 (Build 26A428)
+2026-09-25T10:16:19.998Z INFO model verified model=parakeet-tdt-0.6b-v3
+2026-09-25T10:16:20.352Z INFO model_load model=parakeet-tdt-0.6b-v3 load_ms=269 warmup_ms=85 footprint_before_mb=17 footprint_mb=900 total_ms=354 load_count=1
+2026-09-25T10:16:34.583Z INFO launch pid=54783 core=transcribe-cpp 0.2.3 (unknown) macos=Version 27.0 (Build 26A428)
+2026-09-25T10:16:34.951Z INFO model_load model=parakeet-tdt-0.6b-v3 load_ms=285 warmup_ms=63 footprint_before_mb=12 footprint_mb=901 total_ms=348 load_count=1

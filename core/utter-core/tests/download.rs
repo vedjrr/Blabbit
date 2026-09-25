@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use utter_core::download::{self, Control, DownloadSpec, Outcome, Stopped};
+use utter_core::download::{self, Control, DownloadSpec, Outcome, Stopped, Timing};
 use utter_core::UtterError;
 
 #[derive(Clone, Default)]
@@ -18,6 +18,8 @@ struct Behaviour {
     corrupt: bool,
     /// Delay per 64 KiB chunk.
     slow: Option<Duration>,
+    /// Send the headers, then nothing (a stalled connection).
+    hang: bool,
     status: Option<u16>,
 }
 
@@ -65,6 +67,10 @@ fn serve(body: Vec<u8>, behaviour: Behaviour) -> Server {
                 format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", slice.len())
             };
             let _ = stream.write_all(head.as_bytes());
+            if behaviour.hang {
+                std::thread::sleep(Duration::from_secs(3));
+                continue;
+            }
             let limit = if n == 0 { behaviour.drop_after.unwrap_or(usize::MAX) } else { usize::MAX };
             let mut sent = 0;
             for chunk in slice.chunks(64 * 1024) {
@@ -117,16 +123,65 @@ fn resumes_with_range_after_dropped_connection() {
     let (data, sha) = payload(2_000_000);
     let server = serve(data.clone(), Behaviour { drop_after: Some(700_000), ..Default::default() });
     let spec = DownloadSpec { url: server.url.clone(), dest: temp_dest("resume"), size_bytes: data.len() as u64, sha256: sha };
-    let first = download::download(&spec, &Control::default(), |_| {});
-    assert!(matches!(first, Err(UtterError::DownloadFailed { .. })), "{first:?}");
-    let kept = download::resumable_bytes(&spec);
-    assert!(kept >= 600_000 && kept <= 700_000, "kept {kept}");
+    // The connection drops after 700 kB; the downloader resumes on its own.
     assert_eq!(download::download(&spec, &Control::default(), |_| {}).unwrap(), Outcome::Completed);
     assert_eq!(std::fs::read(&spec.dest).unwrap(), data);
     let ranges = server.ranges.lock().unwrap().clone();
     assert_eq!(ranges[0], None);
-    assert_eq!(ranges[1].as_deref(), Some(kept.to_string().as_str()), "second request resumed with Range");
+    let resumed_at: u64 = ranges[1].as_deref().expect("second request used Range").parse().unwrap();
+    assert!((600_000..=700_000).contains(&resumed_at), "resumed at {resumed_at}");
     assert_eq!(server.requests.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn stopped_process_keeps_partial_for_a_later_resume() {
+    // A download interrupted by pause (or the app quitting) resumes with Range next time.
+    let (data, sha) = payload(2_000_000);
+    let server = serve(data.clone(), Behaviour { slow: Some(Duration::from_millis(20)), ..Default::default() });
+    let spec = DownloadSpec { url: server.url.clone(), dest: temp_dest("later"), size_bytes: data.len() as u64, sha256: sha };
+    let control = Control::default();
+    let c = control.clone();
+    let first = download::download(&spec, &control, move |p| {
+        if p.downloaded > 600_000 {
+            c.pause();
+        }
+    });
+    assert_eq!(first.unwrap(), Outcome::Stopped(Stopped::Paused));
+    let kept = download::resumable_bytes(&spec);
+    assert!(kept > 600_000, "kept {kept}");
+    assert_eq!(download::download(&spec, &Control::default(), |_| {}).unwrap(), Outcome::Completed);
+    assert_eq!(std::fs::read(&spec.dest).unwrap(), data);
+    assert_eq!(server.ranges.lock().unwrap()[1].as_deref(), Some(kept.to_string().as_str()));
+}
+
+#[test]
+fn transfer_longer_than_the_body_budget_completes() {
+    // ~1.2 s transfer against a 250 ms segment budget: the old total body
+    // timeout failed every download that took longer than the budget.
+    let (data, sha) = payload(4_000_000);
+    let server = serve(data.clone(), Behaviour { slow: Some(Duration::from_millis(20)), ..Default::default() });
+    let spec = DownloadSpec { url: server.url.clone(), dest: temp_dest("long"), size_bytes: data.len() as u64, sha256: sha };
+    let timing = Timing { segment: Duration::from_millis(250), ..Timing::default() };
+    let started = std::time::Instant::now();
+    let outcome = download::download_with(&spec, &Control::default(), |_| {}, timing).unwrap();
+    assert_eq!(outcome, Outcome::Completed);
+    assert!(started.elapsed() > Duration::from_millis(750), "transfer too fast to exercise the budget");
+    assert_eq!(std::fs::read(&spec.dest).unwrap(), data);
+    let requests = server.requests.load(Ordering::SeqCst);
+    assert!(requests >= 3, "expected several resumed segments, got {requests}");
+    assert!(server.ranges.lock().unwrap()[1..].iter().all(Option::is_some), "every later segment used Range");
+}
+
+#[test]
+fn stalled_connection_fails_and_keeps_nothing_lost() {
+    let (data, sha) = payload(500_000);
+    let server = serve(data, Behaviour { hang: true, ..Default::default() });
+    let spec = DownloadSpec { url: server.url, dest: temp_dest("stall"), size_bytes: 500_000, sha256: sha };
+    let timing = Timing { segment: Duration::from_millis(300), ..Timing::default() };
+    let started = std::time::Instant::now();
+    let err = download::download_with(&spec, &Control::default(), |_| {}, timing).unwrap_err();
+    assert!(matches!(err, UtterError::DownloadFailed { .. }), "{err:?}");
+    assert!(started.elapsed() < Duration::from_secs(2), "stall detected in {:?}", started.elapsed());
 }
 
 #[test]
@@ -186,10 +241,18 @@ fn http_errors_and_unreachable_hosts_are_plain_errors() {
     let spec = DownloadSpec { url: server.url, dest: temp_dest("404"), size_bytes: 1000, sha256: sha.clone() };
     let err = download::download(&spec, &Control::default(), |_| {}).unwrap_err();
     assert!(matches!(err, UtterError::DownloadFailed { .. }));
+    assert_eq!(err.to_string(), "The download server refused the request. Try again later.");
+
+    let spec = DownloadSpec { url: "http://127.0.0.1:1/model.gguf".into(), dest: temp_dest("refused"), size_bytes: 1000, sha256: sha.clone() };
+    let err = download::download(&spec, &Control::default(), |_| {}).unwrap_err();
     assert_eq!(err.to_string(), "The model download failed. Check your internet connection and try again.");
 
-    let spec = DownloadSpec { url: "http://127.0.0.1:1/model.gguf".into(), dest: temp_dest("refused"), size_bytes: 1000, sha256: sha };
-    assert!(matches!(download::download(&spec, &Control::default(), |_| {}), Err(UtterError::DownloadFailed { .. })));
+    // A destination that can't be created is a disk problem, not a network one.
+    let blocker = temp_dest("disk");
+    std::fs::write(&blocker, b"a file where a folder should be").unwrap();
+    let spec = DownloadSpec { url: "http://127.0.0.1:1/x".into(), dest: blocker.join("sub/model.gguf"), size_bytes: 1000, sha256: sha };
+    let err = download::download(&spec, &Control::default(), |_| {}).unwrap_err();
+    assert_eq!(err.to_string(), "Utter couldn't save the model file. Check that your disk has enough free space.");
 }
 
 #[test]
