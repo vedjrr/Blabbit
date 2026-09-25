@@ -1,6 +1,7 @@
 import AppKit
 import os
 import CoreGraphics
+import Carbon
 import Testing
 @testable import UtterKit
 
@@ -175,7 +176,8 @@ import Testing
 /// The bug a human found: holding the shortcut in Hold to Talk was cut after
 /// 0.5 s, because the watchdog read the session key state, which never sees a
 /// key the tap swallows. Real tap, real HID-level key events (F13, harmless).
-@Suite(.serialized, .enabled(if: AXIsProcessTrusted(), "test runner is not trusted for Accessibility"))
+@Suite(.serialized, .enabled(if: AXIsProcessTrusted(), "test runner is not trusted for Accessibility"),
+       .enabled(if: !IsSecureEventInputEnabled(), "secure input is on (a password field or Secure Keyboard Entry): event taps see no keys"))
 struct HeldShortcutTests {
     @Test func aHeldShortcutReadsAsDownWhileTheTapSwallowsIt() throws {
         let f13 = Shortcut(keyCode: 105, modifiers: 0)
