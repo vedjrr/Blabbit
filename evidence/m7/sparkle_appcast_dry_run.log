@@ -1,0 +1,24 @@
+# 2026-09-25T17:57:45Z Sparkle EdDSA dry run (dev-signed, not notarised): DMG of build/Utter.app → generate_appcast → sign_update --verify
+public key (Info.plist SUPublicEDKey): S3w7gf/+R83bFMQ4nl70jhd/2QPKo54vt/cU7xcE6XY=
+keychain key (generate_keys --account dev.utter.mac -p): S3w7gf/+R83bFMQ4nl70jhd/2QPKo54vt/cU7xcE6XY=
+result: signature verifies
+
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Utter</title>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Fri, 25 Sep 2026 18:57:31 +0100</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/vedjrr/Utter/releases/download/v0.1.0/Utter-0.1.0.dmg" length="7746835" type="application/octet-stream" sparkle:edSignature="REF2l1X7RqVetTsg4GgSeq8WPz6epDQAzIYRUQyDiAjvw9WIE/xAyoEVjCaplaZ/xaiE0LAMkhrqiPICIHL/CQ=="/>
+        </item>
+    </channel>
+</rss>
+$ make dmg   # without release credentials
+Cannot make a release DMG: set UTTER_DEVELOPER_ID to your 'Developer ID Application: …' signing identity.
+make: *** [dmg-preflight] Error 2
+exit=0

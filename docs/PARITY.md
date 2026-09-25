@@ -116,18 +116,18 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | F9 | Theme light / dark / system | `S.theme` | CSS | Follows system (native); explicit override | M5 | Built (Settings → General → Appearance) | — |
 | F10 | UI localisation (27 locales) and app-language picker | `H/src/i18n/locales/`, `S.app_language` | i18next | English at 1.0 using `String(localized:)` so locales can be added; other locales **N/A for 1.0** | M7 | Missing | — |
 | F11 | Onboarding (mic + accessibility permissions) | `H/src/components/onboarding/` | — | Native onboarding with deep links + live re-check | M4 | Built (setup window, deep links, 1 s / 2 s live re-check) | — |
-| F12 | Update checks + "What's new" | `S.update_checks_enabled`, `S.show_whats_new_on_update` | tauri-plugin-updater | Sparkle 2 (release notes shown by Sparkle) | M7 | Missing | — |
+| F12 | Update checks + "What's new" | `S.update_checks_enabled`, `S.show_whats_new_on_update` | tauri-plugin-updater | Sparkle 2 (release notes shown by Sparkle) | M7 | Built (Sparkle 2.10, EdDSA-signed appcast; Check for Updates in the menu and Settings; "What's new" via the release notes Sparkle shows) | — |
 | F13 | Debug mode (⌘⇧D), log level, keyboard diagnostic | `S.debug_mode`, `S.log_level`, `secure_input.rs` diagnostic | — | Debug pane: log level, open logs, latency breakdown of last dictation | M7 | Partly built (Open Log in the menu; no debug mode) | Per-stage latency view |
 | F14 | CLI remote control: `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--start-hidden`, `--no-tray`, `--debug` | README "CLI Parameters" | single-instance plugin | Same flags forwarded to running instance via `NSDistributedNotificationCenter`; also `utter://` URL scheme | M7 | Missing | URL scheme for Shortcuts/Raycast |
 | F15 | Single instance | tauri-plugin-single-instance | — | `NSRunningApplication` check | M5 | Built (second launch activates the running one and quits) | — |
 | F16 | Open app-data / log directory | `open_app_data_dir`, `open_log_dir` | — | Settings → Privacy / Debug buttons | M5 | Partly built (Open Log; models folder in Settings → Models) | — |
 | F17 | Clear local data | — | — | Settings → Privacy | M5 | Built (Settings → Privacy → Clear Local Data) | — |
-| F18 | Homebrew cask | README | community cask | Cask draft in repo | M7 | Missing | — |
+| F18 | Homebrew cask | README | community cask | Cask draft in repo | M7 | Draft (`packaging/homebrew/utter.rb`: livecheck via the Sparkle feed, zap paths); published after the first notarised release (H) | — |
 | F19 | Portable mode | `H/src-tauri/src/portable.rs` | Windows only | — | — | N/A | Windows only |
 | F20 | Keyboard implementation choice (Tauri vs handy-keys) | `S.keyboard_implementation` | two backends | One native backend with Carbon fallback | — | N/A | Implementation detail, no user-facing need |
 | F21 | Experimental toggle / lazy stream close | `S.experimental_enabled`, `S.lazy_stream_close` | — | Covered by always-on mic (A11) | M7 | Missing | — |
 | F22 | Windows / Linux builds | — | Tauri | — | — | N/A | Utter is Mac-only by design |
-| F23 | Update checks locked by admin/managed config | `is_update_checks_locked` in `H/src-tauri/src/commands/mod.rs:27` | managed setting disables the toggle | Honour a managed `UpdateChecksDisabled` default (`defaults write` / MDM profile) | M7 | Missing | — |
+| F23 | Update checks locked by admin/managed config | `is_update_checks_locked` in `H/src-tauri/src/commands/mod.rs:27` | managed setting disables the toggle | Honour a managed `UpdateChecksDisabled` default (`defaults write` / MDM profile) | M7 | Missing (no managed-config lock) | — |
 
 ## G. G8 check: what Handy already has (recorded in M0)
 

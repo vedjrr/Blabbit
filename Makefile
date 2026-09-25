@@ -71,12 +71,16 @@ test-rust: models
 	cd "$(CORE)" && cargo test --release --workspace
 
 test-swift: bindings
-	cd "$(APP)" && UTTER_LOG_FILE="$${TMPDIR:-/tmp}/utter-tests.log" swift test $(SWIFT_FLAGS) $(SWIFT_TEST_FLAGS)
+	@# Tests use throwaway UserDefaults suites; macOS leaves their empty .plist
+	@# files behind even after removePersistentDomain, so sweep them either way.
+	cd "$(APP)" && UTTER_LOG_FILE="$${TMPDIR:-/tmp}/utter-tests.log" swift test $(SWIFT_FLAGS) $(SWIFT_TEST_FLAGS); \
+		status=$$?; find "$$HOME/Library/Preferences" -maxdepth 1 -name 'dev.utter.test.*.plist' -delete; exit $$status
 
 bench: build
 	cd "$(APP)" && swift build $(SWIFT_FLAGS) --product utter-bench
 	cd "$(APP)" && swift build $(SWIFT_FLAGS) --product UtterAXHost
-	"$(APP)/.build/arm64-apple-macosx/release/utter-bench"
+	"$(APP)/.build/arm64-apple-macosx/release/utter-bench"; \
+		status=$$?; rm -f "$$HOME/Library/Preferences/dev.utter.bench.plist"; exit $$status
 
 models:
 	./scripts/fetch-models.sh
