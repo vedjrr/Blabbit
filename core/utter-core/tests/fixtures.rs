@@ -187,3 +187,56 @@ fn switching_models_releases_the_old_one() {
     assert!(with_second.footprint_bytes + 500 * 1_048_576 < with_first.footprint_bytes, "footprint did not drop");
     assert!(with_second.resident_bytes + 500 * 1_048_576 < with_first.resident_bytes, "RSS did not drop");
 }
+
+#[test]
+fn incremental_segments_match_one_shot_and_leave_little_for_release() {
+    use std::time::Instant;
+    use utter_core::segment::find_pause;
+    let _serial = serial();
+    let engine = Engine::new();
+    engine.load_gguf(&require_model(PARAKEET_V3)).expect("load");
+    // ~60 s: fixtures with 0.8 s pauses, like someone dictating sentence by sentence.
+    let clips: Vec<(Vec<f32>, String)> =
+        fixtures().into_iter().map(|(w, r)| (audio::load_wav_16k_mono(&w).unwrap(), r)).collect();
+    let (mut pcm, mut reference) = (Vec::new(), String::new());
+    while pcm.len() < 60 * 16_000 {
+        for (clip, text) in &clips {
+            pcm.extend_from_slice(clip);
+            pcm.extend(std::iter::repeat_n(0.0f32, 12_800));
+            reference.push_str(text.trim());
+            reference.push(' ');
+        }
+    }
+    let opts = TranscribeOptions::default();
+
+    let started = Instant::now();
+    let one_shot = engine.transcribe(&pcm, &opts).unwrap().text;
+    let one_shot_ms = started.elapsed().as_secs_f64() * 1e3;
+
+    // As the recording grows every 2 s, transcribe up to the latest pause ≥ 10 s in.
+    let (mut committed, mut texts, mut segments) = (0usize, Vec::<String>::new(), 0);
+    let mut end = 0;
+    while end < pcm.len() {
+        end = (end + 32_000).min(pcm.len());
+        if let Some(cut) = find_pause(&pcm[..end], committed, 10 * 16_000, 5_600) {
+            texts.push(engine.transcribe(&pcm[committed..cut], &opts).unwrap().text);
+            committed = cut;
+            segments += 1;
+        }
+    }
+    // Release: only the tail is left.
+    let started = Instant::now();
+    texts.push(engine.transcribe(&pcm[committed..], &opts).unwrap().text);
+    let tail_ms = started.elapsed().as_secs_f64() * 1e3;
+    let incremental = texts.iter().filter(|t| !t.is_empty()).cloned().collect::<Vec<_>>().join(" ");
+
+    let (w1, w2) = (wer::wer(&reference, &one_shot), wer::wer(&reference, &incremental));
+    eprintln!(
+        "incremental: audio_s={:.0} segments={segments} one_shot_ms={one_shot_ms:.0} tail_ms={tail_ms:.0} tail_s={:.1} wer_one_shot={w1:.3} wer_incremental={w2:.3}",
+        pcm.len() as f64 / 16_000.0,
+        (pcm.len() - committed) as f64 / 16_000.0
+    );
+    assert!(segments >= 3, "expected several segments, got {segments}");
+    assert!(w2 <= w1 + 0.02, "segmenting cost accuracy: {w2:.3} vs {w1:.3}");
+    assert!(tail_ms * 3.0 < one_shot_ms, "release work {tail_ms:.0} ms vs one-shot {one_shot_ms:.0} ms");
+}

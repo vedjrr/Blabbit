@@ -147,3 +147,9 @@ Toolchain: Swift 6.4 (Command Line Tools, **no Xcode.app installed**), rustc 1.9
 - **TIS/TSM.** It aborts the process on concurrent use and must run on main in a UI app. All calls go through one lock; off the main thread, only cached key names are used.
 - Sources: https://developer.apple.com/documentation/appkit/nspanel/stylemask-swift.struct/nonactivatingpanel , https://developer.apple.com/documentation/audiotoolbox/kaudiooutputunitproperty_currentdevice , https://developer.apple.com/documentation/avfaudio/avaudioengineconfigurationchange
 
+### ADR-013 — Incremental transcription of long dictations (M6)
+- **Problem (measured).** Release → text grows with length: a 5-minute dictation needed 15.8 s of Parakeet V3 inference after release (`make bench`).
+- **Decision.** While recording, the controller hands new audio to `IncrementalTranscriber` every 2 s. `utter-core::segment::find_pause` finds the last silence of ≥ 0.35 s at least 10 s past the transcribed point; its level threshold adapts to the recording (2.5× the 10th-percentile frame level, clamped to 0.0005–0.01). A pause still going at the end doesn't count. That segment is transcribed in the background (one at a time; the engine mutex serialises with everything else). On release only the tail is transcribed, and the texts are joined. Recordings under 10 s behave exactly as before (one shot).
+- **Result.** 5 min: 15.8 s → 0.22 s of work after release (20 segments). WER 0.323 → 0.284: segments cut in silences keep words whole, and long one-shot inputs degrade. 62 s (`incremental_segments_match_one_shot…`): 1281 → 180 ms, WER 0.329 → 0.264. Handy transcribes only after release.
+- **Why not streaming models.** They need streaming-capable weights and change the model set; pause-segmenting works with every offline model we ship.
+

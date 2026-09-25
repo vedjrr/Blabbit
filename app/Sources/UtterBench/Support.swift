@@ -114,6 +114,9 @@ func writeMarkdown(_ r: [String: Any], to url: URL, json: String) throws {
             .map { "\($0.key): \(d($0.value)) ms" }.joined(separator: ", ")
         md += "\n## Short utterance after idle (\(d(wake["model"])), \(d(wake["audio_ms"])) ms of audio)\n\nBack to back p50 \(d(wake["back_to_back_ms_p50"])) ms; after idling \(after). Apple silicon lowers CPU/GPU clocks within ~100 ms of idle. A warm-up pass on key-down, a keep-alive pass every 150 ms while recording, and a thread QoS change did not help (each pass itself ran cold), and a 50 ms CPU spin saved ~19 ms at a cost of 50 ms, so none of these is used (PROGRESS.md, M6).\n"
     }
+    if let long = r["long_dictation"] as? [String: Any] {
+        md += "\n## Long dictation (\(d(long["audio_s"])) s, \(d(long["model"])))\n\nWork left after release: one-shot **\(d(long["one_shot_release_ms"])) ms**, incremental (segments transcribed at pauses while recording) **\(d(long["incremental_release_ms"])) ms** (\(d(long["segments"])) segments). WER one-shot \(d(long["wer_one_shot"])), incremental \(d(long["wer_incremental"])).\n"
+    }
     let text = r["text_pipeline"] as? [String: Any] ?? [:]
     md += "\n## Text pipeline\n\nClean mode with 7 vocabulary terms: short utterance p50 \(d(text["clean_short_ms_p50"])) ms; ~900 words p50 \(d(text["clean_900_words_ms_p50"])) ms.\n"
     let insertion = r["insertion"] as? [String: Any] ?? [:]

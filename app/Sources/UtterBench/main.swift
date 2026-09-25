@@ -198,6 +198,52 @@ if let entry = installed.first(where: { $0.recommended }) ?? installed.first,
     engine.unload()
 }
 
+// MARK: 1c. Long dictation: work left at release, one-shot vs incremental
+
+log("long dictation…")
+if let entry = installed.first(where: { $0.recommended }) ?? installed.first,
+   let path = await MainActor.run(body: { manager.path(for: entry.id) }) {
+    let engine = UtterEngine()
+    if (try? engine.loadModel(path: path)) != nil {
+        var audio: [Float] = []
+        var reference = ""
+        while audio.count < 5 * 60 * 16_000 {
+            for (wav, text) in fixtures {
+                audio += (try? loadWav16kMono(path: wav.path)) ?? []
+                audio += [Float](repeating: 0, count: 12_800)
+                reference += text + " "
+            }
+        }
+        let options = DictationOptions(language: nil, translate: false, initialPrompt: nil)
+        let t0 = nowNs()
+        let oneShot = try? engine.transcribe(pcm: audio, options: options)
+        let oneShotMs = ms(t0, nowNs())
+        // Fed 2 s at a time; after each feed, the segment the live app would have
+        // had 2 s to finish is allowed to complete (inference is ~50× real time).
+        let inc = IncrementalTranscriber(engine: engine, options: options)
+        var fed = 0
+        while fed < audio.count {
+            let next = min(fed + 32_000, audio.count)
+            inc.append(Array(audio[fed..<next]))
+            fed = next
+            pause(0.02)
+            while inc.isBusy { pause(0.005) }
+        }
+        let t1 = nowNs()
+        let result = try? inc.finish(complete: audio)
+        let releaseMs = ms(t1, nowNs())
+        report["long_dictation"] = [
+            "model": entry.id, "audio_s": audio.count / 16_000,
+            "one_shot_release_ms": round1(oneShotMs), "incremental_release_ms": round1(releaseMs),
+            "segments": result?.segments ?? 0,
+            "wer_one_shot": ((wordErrorRate(reference: reference, hypothesis: oneShot?.text ?? "")) * 1000).rounded() / 1000,
+            "wer_incremental": ((wordErrorRate(reference: reference, hypothesis: result?.text ?? "")) * 1000).rounded() / 1000,
+        ]
+        log("  5 min: release work one-shot \(Int(oneShotMs)) ms, incremental \(Int(releaseMs)) ms, segments \(result?.segments ?? 0)")
+    }
+    engine.unload()
+}
+
 // MARK: 2. Text pipeline
 
 log("text pipeline…")

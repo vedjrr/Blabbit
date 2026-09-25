@@ -12,7 +12,7 @@ Iteration: 9
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M6: `make bench` JSON must cover launch time, model load, warm-up, key-down→capture, RTF per model, insert latency, peak RSS, CPU%; write `docs/BENCHMARKS.md` with the machine spec; profile the slowest stage and fix it; G8 "better than Handy" numbers.
+- M6 gate: critic review (G6 bench/BENCHMARKS, slowest-stage fix). Then G8 "better than Handy" numbers (M7).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -216,6 +216,13 @@ Iteration: 9
 - [M6] **The user's first real dictation** is in the log (13:22, into VS Code, 0.47 s): event → callback 0.2 ms, key-down → overlay 7.8 ms, key-down → first sample 52.8 ms (cold mic), release → transcribed 152 ms, release → text read by the app 182.8 ms, release → clipboard restored ("insert done") 615.8 ms. G1's < 700 ms holds for this sample.
 - [M6] Investigated the first-launch slowdown (7–8.5 s to model ready): ggml embeds its Metal shader *source* and compiles it at runtime. The system caches the result per executable **path** (tested: a copy at a new path took 6927 ms vs 113 ms; the same path survives replacing the file, changing its bytes and re-signing). So users pay it once per install location, and again after a ggml upgrade. Shipping a precompiled `default.metallib` removes it, but that needs Xcode's Metal compiler (the CLT has none): optional human item.
 - [M6] Investigated the cold-inference penalty: a 1 s utterance takes ~38 ms back to back but 66–79 ms after ≥ 200 ms idle (Apple silicon lowers clocks within ~100 ms). Tried and measured: a warm-up pass on key-down (no gain), a keep-alive pass every 150 ms while recording (no gain; each pass ran cold at ~71 ms), user-interactive QoS (no change), and a 50 ms CPU spin before inference (saves ~19 ms, costs 50 ms). None is worth shipping; the probe code was removed.
+
+- [M6] **Fixed the slowest stage for long dictations: incremental transcription** (ADR-013). Measured before: 5 minutes of audio needed 15.8 s of inference after release. Now `find_pause` (Rust, 4 unit tests: last pause after the minimum, breaths ignored, trailing silence not cut, quiet mics) cuts at natural pauses while recording, `IncrementalTranscriber` transcribes segments in the background, and at release only the tail remains. Results:
+  - 62 s real-model test: release work 1281 → 180 ms, WER 0.329 → 0.264.
+  - Swift real-model test: segments form while feeding, the tail is < ½ the one-shot work, and WER is no worse than one-shot.
+  - `make bench` 5-minute run: 15,772 → 221 ms, 20 segments, WER 0.323 → 0.284.
+  - Recordings under 10 s are unchanged.
+- [M6] `make test`: Rust 33 unit + 10 download + 5 real-model; Swift `Test run with 154 tests in 32 suites passed`.
 
 ## Blocked on human
 - **Decision needed (G1, M4): should "Keep Microphone Ready" be on by default?** When the microphone starts from cold it takes 40–65 ms (measured; the hardware start, the same with every capture API), which misses G1's "< 50 ms". With Keep Microphone Ready on, recording starts in 0.0–0.1 ms and even includes the 150 ms before your key press. The catch is that macOS shows the orange microphone indicator the whole time Utter runs, and a Bluetooth headset stays in call-quality mode. My recommendation: keep it **off** by default (privacy) and accept G1 as "< 50 ms with the option on; cold start logged". The details are under Proposed goal changes. Reply with "default off" or "default on".

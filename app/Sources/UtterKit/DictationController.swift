@@ -16,6 +16,7 @@ public final class DictationController {
 
     public private(set) var state: State = .starting {
         didSet {
+            if state != .recording { stopIncrementalFeed() }
             updateOverlay(from: oldValue)
             onStateChange?(state)
             // Apply a model switch that was requested during the dictation.
@@ -325,6 +326,49 @@ public final class DictationController {
     /// The model the language notice was last shown for (once per model).
     private var lastLanguageNotice: String?
 
+    /// Transcription options for the loaded model and current settings.
+    private func dictationOptions(noticeUnsupportedLanguage: Bool) -> DictationOptions {
+        let text = textSettings
+        let loadedEntry = loadedModelID.flatMap { models.entry($0) }
+        let family = loadedEntry?.family
+        // A language the loaded model lacks would fail every dictation: detect instead.
+        let language = text.effectiveLanguage(forModelLanguages: loadedEntry?.languages)
+        if noticeUnsupportedLanguage, text.language != nil, language == nil, lastLanguageNotice != loadedModelID {
+            lastLanguageNotice = loadedModelID
+            let name = Locale.current.localizedString(forLanguageCode: text.language ?? "") ?? text.language ?? ""
+            lastMessage = "\(loadedEntry?.name ?? "This model") doesn't support \(name), so the language is detected automatically."
+        }
+        return DictationOptions(language: language, translate: text.translateToEnglish && family == "whisper",
+                                initialPrompt: text.initialPrompt(forModelFamily: family, modelID: loadedModelID))
+    }
+
+    // MARK: Incremental transcription of long dictations
+
+    private var incremental: IncrementalTranscriber?
+    private var feedTimer: Timer?
+
+    /// Every 2 s while recording, hand new audio to the incremental transcriber.
+    private func startIncremental() {
+        stopIncrementalFeed()
+        let inc = IncrementalTranscriber(engine: engine, options: dictationOptions(noticeUnsupportedLanguage: false))
+        incremental = inc
+        let recorder = self.recorder
+        let queue = audioQueue
+        let timer = Timer(timeInterval: 2, repeats: true) { _ in
+            queue.async {
+                guard recorder.isRecording else { return }
+                inc.append(recorder.samplesSoFar(from: inc.fed))
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        feedTimer = timer
+    }
+
+    private func stopIncrementalFeed() {
+        feedTimer?.invalidate()
+        feedTimer = nil
+    }
+
     public nonisolated static let keepMicReadyKey = "audio.keepMicrophoneReady"
     public var keepMicrophoneReady: Bool { UserDefaults.standard.bool(forKey: Self.keepMicReadyKey) }
 
@@ -546,6 +590,7 @@ public final class DictationController {
             state = .recording
             recordingSource = timing.source
             startWatchdog()
+            startIncremental()
         }
         audioQueue.async {
             do {
@@ -613,6 +658,7 @@ public final class DictationController {
     private func released(_ timing: KeyTiming) {
         guard state == .recording, let press else { return }
         stopWatchdog()
+        stopIncrementalFeed()
         state = .transcribing
         let recorder = self.recorder
         audioQueue.async {
@@ -641,21 +687,21 @@ public final class DictationController {
         let engine = self.engine
         let samples = recording.samples
         let text = textSettings
-        let loadedEntry = loadedModelID.flatMap { models.entry($0) }
-        let family = loadedEntry?.family
-        // A language the loaded model lacks would fail every dictation: detect instead.
-        let language = text.effectiveLanguage(forModelLanguages: loadedEntry?.languages)
-        if text.language != nil, language == nil, lastLanguageNotice != loadedModelID {
-            lastLanguageNotice = loadedModelID
-            let name = Locale.current.localizedString(forLanguageCode: text.language ?? "") ?? text.language ?? ""
-            lastMessage = "\(loadedEntry?.name ?? "This model") doesn't support \(name), so the language is detected automatically."
-        }
-        let options = DictationOptions(language: language, translate: text.translateToEnglish && family == "whisper",
-                                       initialPrompt: text.initialPrompt(forModelFamily: family, modelID: loadedModelID))
+        let options = dictationOptions(noticeUnsupportedLanguage: true)
+        let incremental = self.incremental
+        self.incremental = nil
         let result: TranscriptionResult
         do {
-            result = try await Task.detached(priority: .userInitiated) {
-                try engine.transcribe(pcm: samples, options: options)
+            result = try await Task.detached(priority: .userInitiated) { () throws -> TranscriptionResult in
+                // A long dictation was already transcribed up to its last pause:
+                // only the tail is left (see IncrementalTranscriber).
+                if let incremental, incremental.segments > 0 {
+                    let r = try incremental.finish(complete: samples)
+                    Log.info("incremental segments=\(r.segments) tail_inference_ms=\(Int(r.tailInferenceMs)) total_inference_ms=\(Int(r.totalInferenceMs))")
+                    return TranscriptionResult(text: r.text, skipped: r.skipped, language: nil,
+                                               audioMs: UInt64(samples.count / 16), inferenceMs: r.tailInferenceMs)
+                }
+                return try engine.transcribe(pcm: samples, options: options)
             }.value
         } catch let error as CoreError {
             Log.error("transcribe failed: \(error.logDetail)")

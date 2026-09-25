@@ -447,3 +447,10 @@ pub fn process_memory() -> ProcessMemory {
     let m = utter_core::memory::process_memory();
     ProcessMemory { resident_bytes: m.resident_bytes, footprint_bytes: m.footprint_bytes }
 }
+
+/// Sample index of a natural pause to cut at (incremental transcription of
+/// long dictations), or None yet. See `utter_core::segment::find_pause`.
+#[uniffi::export]
+pub fn find_pause(pcm: Vec<f32>, from: u64, min_segment_samples: u64, min_silence_samples: u64) -> Option<u64> {
+    utter_core::segment::find_pause(&pcm, from as usize, min_segment_samples as usize, min_silence_samples as usize).map(|i| i as u64)
+}

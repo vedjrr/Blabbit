@@ -426,6 +426,15 @@ public final class AudioRecorder: @unchecked Sendable {
         startDrainTimer()
     }
 
+    /// The 16 kHz audio captured so far in this recording, from `index` on
+    /// (incremental transcription). Call on `queue`.
+    public func samplesSoFar(from index: Int) -> [Float] {
+        dispatchPrecondition(condition: .onQueue(queue))
+        drainAndConvert()
+        guard index < samples.count else { return [] }
+        return Array(samples[index...])
+    }
+
     /// Stops after the audio up to `releaseNs` has arrived (bounded wait), so the
     /// last word is not cut off.
     public func stop(releaseNs: UInt64) -> Recording {
