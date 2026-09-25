@@ -13,7 +13,9 @@ Iteration: 10
 
 ## Next task
 M7 is not done: the gate critic (review #1, 2026-09-25) returned **FAIL**. Work list, in order:
-1. PARITY rows still Missing (G0: zero at DONE). Done: A3 A4 A6 A7 A23 (2e29b72). Left: A9 A10 A13 A14 A15 A16 A17 A18 A22, C6 C7 C11 C17, D4 D5 D7 D8 D9, E3 E4 E6, F7 F10 F14 F21 F23.
+1. PARITY rows still Missing (G0: zero at DONE). Done 2026-09-25: A3 A4 A6 A7 A23 (2e29b72), A9 A10 A13 A14 A15 A17 A22 F21 (e66f4b0), A16 (802d269), A18 F7 (63cce42), E3 E4 E6 (7e31551). `make test` green at 7e31551 (Rust 38 + 10 + 8, Swift 197 tests in 38 suites). Left (12): D4 D5 D7 D8 D9, C6 C7 C11 C17, F10 F14 F23.
+   Paused here for a human test night (2026-09-25). Was starting D4: FoundationModels.framework is in the CLT SDK; availability on this Mac not yet probed. Plan for the rest of the processing group: D5 saved prompts replacing `customInstruction`, D9 model lists (Ollama `/api/tags`, Anthropic `/v1/models`, respecting local-only), D7/D8 in Rust.
+   On resume: read the human's test notes first and fix what they found before continuing the list.
 2. Critic BLOCKERs: `scripts/compare-handy.sh` must trigger Handy's lazy model load and sum helper-process footprints; G8 "lower idle RAM / faster launch" needs Handy installed → Proposed goal change (reclassify as H) or run it.
 3. Critic MAJORs: make-dmg identity must be an exact "Developer ID Application" match + notary profile checked first; Settings "check automatically" toggle must be observable; PARITY vocabulary "Better" and incremental "Better" rows must state their real baseline.
 4. Critic MINORs: re-record the dmg exit code, appcast deltas/URL prefix, compare-handy error handling, Cask stanza order, uninstall.sh (EOF, HTTPStorages, login item, wait for quit), unused `canCheck`, Sparkle checks deferred during dictation, no updater in dev builds, strip CLT rpath, Apple Events for external scripts, hdiutil deprecation, M7 entries misplaced under Proposed goal changes, stray `dev.utter.verify.tmp.plist`.
