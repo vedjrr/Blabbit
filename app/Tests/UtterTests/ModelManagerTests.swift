@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import SwiftUI
 import Testing
 import UtterCore
 @testable import UtterKit
@@ -80,5 +81,49 @@ import UtterCore
         m.markDamaged("moonshine-base", message: "Moonshine Base is damaged or incomplete.")
         m.refresh()
         #expect(m.status["moonshine-base"] == .failed("Moonshine Base is damaged or incomplete."))
+    }
+}
+
+/// Renders the real Model Manager view offscreen (no Screen Recording
+/// permission needed). With `UTTER_SNAPSHOT_DIR` set, the PNG is kept as evidence.
+@MainActor @Suite struct ModelManagerSnapshotTests {
+    @Test func rendersWithTheInstalledModels() throws {
+        let suite = "dev.utter.test.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let manager = ModelManager(modelsDirectory: ModelLocation.modelsDirectory, defaults: defaults)
+        let view = ModelManagerView(manager: manager).frame(width: 706, height: 580)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        let image = try #require(renderer.cgImage)
+        #expect(image.width == 1412 && image.height == 1160)
+        try save(image, "model_manager_view.png")
+
+        // `List` can't be drawn offscreen, so also render every row directly: the
+        // real status of each installed model, plus each other state a row can show.
+        let samples: [ModelManager.Status] = [
+            .downloading(downloaded: 180_000_000, total: 640_000_000), .partial(320_000_000), .verifying,
+            .failed("The downloaded file is damaged (checksum mismatch)."), .notInstalled,
+        ]
+        let rows = VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(manager.entries.enumerated()), id: \.offset) { index, entry in
+                let real = manager.status[entry.id] ?? .notInstalled
+                ModelRow(entry: entry, status: index < 3 ? real : samples[(index - 3) % samples.count],
+                         isDefault: entry.id == manager.defaultModelID, action: { _ in })
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                Divider()
+            }
+        }.frame(width: 706).background(Color.white)
+        let rowRenderer = ImageRenderer(content: rows)
+        rowRenderer.scale = 2
+        let rowImage = try #require(rowRenderer.cgImage)
+        #expect(rowImage.height > 400)
+        try save(rowImage, "model_manager_rows.png")
+    }
+
+    func save(_ image: CGImage, _ name: String) throws {
+        guard let dir = ProcessInfo.processInfo.environment["UTTER_SNAPSHOT_DIR"] else { return }
+        let png = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+        try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
     }
 }

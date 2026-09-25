@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onNeedsModel = { [weak menu] in menu?.showModelManager() }
         self.menu = menu
         controller.launch()
+        if CommandLine.arguments.contains("--model-manager") { menu.showModelManager() }
     }
 }
 
