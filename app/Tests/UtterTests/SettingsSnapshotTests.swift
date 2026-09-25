@@ -46,11 +46,11 @@ import Testing
     @Test func everySettingsTabRenders() throws {
         let controller = DictationController(models: ModelManager())
         let model = SettingsModel(controller: controller)
-        for tab in ["general", "dictation", "models", "audio", "insertion", "language", "processing", "privacy"] {
-            model.selectedTab = tab
-            let rep = try snapshot(SettingsView(model: model, openModelManager: {}, changeShortcut: { _ in }),
-                                   size: NSSize(width: 620, height: 520), name: "settings_\(tab)")
-            #expect(rep.pixelsWide >= 620 && rep.pixelsHigh >= 520)
+        for section in SettingsSection.allCases {
+            model.section = section
+            let rep = try snapshot(SettingsView(model: model, changeShortcut: { _ in }),
+                                   size: SettingsWindowController.minSize, name: "settings_\(section.rawValue)")
+            #expect(rep.pixelsWide >= 860 && rep.pixelsHigh >= 580)
         }
     }
 
@@ -85,5 +85,16 @@ import Testing
         model.selection = latest.id
         let rep = try snapshot(HistoryView(model: model), size: NSSize(width: 760, height: 480), name: "history")
         #expect(model.entries.count == 2 && rep.pixelsWide >= 760)
+    }
+
+    @Test func menuPanelRenders() throws {
+        let controller = DictationController(models: ModelManager())
+        let panel = MenuPanelModel(controller: controller)
+        panel.lastText = "We rewrote the settings screen in SwiftUI, and HoldMyCode uses PostgreSQL."
+        panel.modelLoaded = true
+        let rep = try snapshot(MenuPanelView(model: panel), size: NSSize(width: 320, height: 400), name: "menu_panel")
+        #expect(rep.pixelsWide == 640)
+        panel.state = .recording
+        _ = try snapshot(MenuPanelView(model: panel), size: NSSize(width: 320, height: 400), name: "menu_panel_recording")
     }
 }

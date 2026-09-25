@@ -39,9 +39,14 @@ let package = Package(
             path: "Sources/UtterCore",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // Catches AVAudioEngine's Objective-C exceptions, which Swift can't.
+        .target(
+            name: "UtterObjC",
+            path: "Sources/UtterObjC"
+        ),
         .target(
             name: "UtterKit",
-            dependencies: ["UtterCore", .product(name: "GRDB", package: "GRDB.swift"), .product(name: "Sparkle", package: "Sparkle")],
+            dependencies: ["UtterCore", "UtterObjC", .product(name: "GRDB", package: "GRDB.swift"), .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/UtterKit",
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
@@ -70,7 +75,7 @@ let package = Package(
         ),
         .testTarget(
             name: "UtterTests",
-            dependencies: ["UtterCore", "UtterKit"],
+            dependencies: ["UtterCore", "UtterKit", "UtterObjC"],
             path: "Tests/UtterTests"
         ),
     ]

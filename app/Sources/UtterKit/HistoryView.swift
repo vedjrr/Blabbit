@@ -227,28 +227,3 @@ struct HistoryView: View {
         }
     }
 }
-
-@MainActor
-public final class HistoryWindowController {
-    private let model: HistoryModel
-    private var window: NSWindow?
-
-    public init(controller: DictationController) {
-        model = HistoryModel(controller: controller)
-    }
-
-    public func show() {
-        if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480),
-                                  styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            window.title = "Utter History"
-            window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: HistoryView(model: model))
-            window.center()
-            self.window = window
-        }
-        model.reload()
-        NSApp.activate()
-        window?.makeKeyAndOrderFront(nil)
-    }
-}

@@ -10,15 +10,29 @@ import Testing
 /// Live input judged independently of the recorder under test (SystemState).
 enum LiveAudio {
     static var available: Bool { SystemState.liveInputUnavailableReason == nil }
+    /// A Bluetooth headset as the default input (AirPods) switches into call mode
+    /// when capture starts: silence at first and device changes mid-test, which
+    /// the timing tests below can't tell from a regression.
+    static var wiredDefault: Bool { AudioDevices.defaultInput()?.isBluetooth != true }
 }
 
-@Suite(.serialized,
-       .enabled(if: LiveAudio.available, "no live microphone: the lid is closed, the display is asleep or the screen is locked"))
-enum AudioHardwareTests {}
+/// Everything that drives the real audio hardware runs one test at a time: a
+/// test that switches the input device (say to 24 kHz AirPods) must not change
+/// it under another test's recording.
+@Suite(.serialized) enum AudioSystemTests {}
+
+extension AudioSystemTests {
+    @Suite(.serialized,
+           .enabled(if: LiveAudio.available, "no live microphone: the lid is closed, the display is asleep or the screen is locked"),
+           .enabled(if: LiveAudio.wiredDefault, "the default microphone is Bluetooth (AirPods); pick the built-in one in System Settings → Sound to run the capture timing tests"))
+    enum Hardware {}
+}
+
+typealias AudioHardwareTests = AudioSystemTests.Hardware
 
 /// Real CoreAudio devices on this Mac (no capture is started; runs even with
 /// the lid closed).
-@Suite(.serialized) struct AudioDeviceTests {
+extension AudioSystemTests { @Suite(.serialized) struct AudioDeviceTests {
     @Test func listsInputDevicesWithStableIDs() throws {
         let devices = AudioDevices.inputDevices()
         try #require(!devices.isEmpty, "no audio input device on this Mac")
@@ -48,7 +62,7 @@ enum AudioHardwareTests {}
             #expect(recorder.activeDevice?.uid == AudioDevices.defaultInput()?.uid)
         }
     }
-}
+} }
 
 
 /// A device change mid-recording (AirPods connecting, a USB mic unplugged)

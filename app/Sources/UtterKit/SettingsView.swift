@@ -26,7 +26,9 @@ public final class SettingsModel {
     var historyCount: Int?
     var connectionResult: String?
     var confirmClear = false
-    var selectedTab = "general"
+    var section = SettingsSection.general
+    /// History shown in its sidebar page (made on first use).
+    @ObservationIgnored lazy var history = HistoryModel(controller: controller)
     /// Mirrors of the controller's shortcut state (the controller isn't observable).
     var dictationMode = DictationMode.pushToTalk { didSet { if !reloading { controller.setMode(dictationMode) } } }
     var holdThresholdMs = DictationMode.defaultHoldThresholdMs { didSet { if !reloading { controller.setHoldThreshold(ms: holdThresholdMs) } } }
@@ -191,28 +193,44 @@ public final class SettingsModel {
 
 struct SettingsView: View {
     @Bindable var model: SettingsModel
-    let openModelManager: () -> Void
     let changeShortcut: (ShortcutBinding) -> Void
 
     var body: some View {
-        TabView(selection: $model.selectedTab) {
-            general.tabItem { Label("General", systemImage: "gearshape") }.tag("general")
-            dictation.tabItem { Label("Dictation", systemImage: "waveform") }.tag("dictation")
-            models.tabItem { Label("Models", systemImage: "cpu") }.tag("models")
-            audio.tabItem { Label("Audio", systemImage: "mic") }.tag("audio")
-            insertion.tabItem { Label("Text Insertion", systemImage: "text.cursor") }.tag("insertion")
-            language.tabItem { Label("Language", systemImage: "globe") }.tag("language")
-            processing.tabItem { Label("Processing", systemImage: "sparkles") }.tag("processing")
-            privacy.tabItem { Label("Privacy", systemImage: "hand.raised") }.tag("privacy")
+        HStack(spacing: 0) {
+            SettingsSidebar(model: model)
+            Divider()
+            VStack(alignment: .leading, spacing: 0) {
+                PageHeader(section: model.section)
+                page(model.section)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 620, height: 520)
+        .frame(minWidth: SettingsWindowController.minSize.width, minHeight: SettingsWindowController.minSize.height)
         .overlay(alignment: .bottom) {
             if let message = model.message {
-                Text(message).font(.callout).padding(8)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .padding(.bottom, 8)
+                Text(message).font(.callout).padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+                    .padding(.bottom, 14)
                     .onTapGesture { model.message = nil }
             }
+        }
+    }
+
+    @ViewBuilder private func page(_ section: SettingsSection) -> some View {
+        switch section {
+        case .general: general
+        case .dictation: dictation
+        case .models: ModelManagerView(manager: model.controller.models)
+        case .audio: audio
+        case .insertion: insertion
+        case .language: language
+        case .processing: processing
+        case .history: HistoryView(model: model.history).onAppear { model.history.reload() }
+        case .privacy: privacy
+        case .about: AboutPage(model: model)
         }
     }
 
@@ -220,42 +238,16 @@ struct SettingsView: View {
 
     private var general: some View {
         Form {
-            Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-            Picker("Appearance", selection: $model.general.appearance) {
-                ForEach(GeneralSettings.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            Toggle("Show the menu bar icon when idle", isOn: $model.general.showMenuBarIcon)
-            Picker("While dictating, show", selection: $model.overlayStyle) {
-                ForEach(OverlayStyle.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            Text(Self.overlayNote(model.overlayStyle, entry: model.controller.loadedModelEntry))
-                .font(.caption).foregroundStyle(.secondary)
-            Text("It always appears while you dictate. With the icon hidden, open Settings by launching Utter again.")
-                .font(.caption).foregroundStyle(.secondary)
-            Toggle("Open setup at launch when a permission is missing", isOn: $model.general.showSetupWhenNeeded)
-            if let updates = model.updates {
-                Toggle("Check for updates automatically", isOn: Binding(get: { updates.automaticallyChecks },
-                                                                        set: { updates.automaticallyChecks = $0 }))
-                LabeledContent("Updates") {
-                    Button("Check for Updates…") { updates.checkForUpdates() }
+            Section {
+                LabeledContent("Dictation shortcut") {
+                    HStack(spacing: 8) {
+                        KeyCap(text: model.shortcut.displayString)
+                        Button("Change…") { changeShortcut(.dictate) }
+                        Button("Reset") { model.controller.resetShortcut() }
+                            .disabled(model.shortcut == .optionSpace)
+                            .help("Go back to ⌥Space")
+                    }
                 }
-                Text("Updates come from Utter's GitHub releases and are verified with Utter's signing key before install.")
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                LabeledContent("Updates") {
-                    Button("Open Releases Page…") { NSWorkspace.shared.open(Self.releasesURL) }
-                }
-            }
-            LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development build")
-        }
-        .formStyle(.grouped)
-    }
-
-    // MARK: Dictation
-
-    private var dictation: some View {
-        Form {
-            Section("Shortcut") {
                 Picker("Shortcut mode", selection: $model.dictationMode) {
                     ForEach(DictationMode.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -264,18 +256,50 @@ struct SettingsView: View {
                         LabeledContent("A tap is shorter than", value: "\(model.holdThresholdMs) ms")
                     }
                 }
-                LabeledContent("Shortcut") {
-                    HStack {
-                        Text(model.shortcut.displayString).monospaced()
-                        Button("Change…") { changeShortcut(.dictate) }
-                        Button("Reset") { model.controller.resetShortcut() }
-                            .disabled(model.shortcut == .optionSpace)
-                            .help("Go back to ⌥Space")
-                    }
+                Picker("Model", selection: Binding(get: { model.controller.models.defaultModelID },
+                                                   set: { model.controller.models.setDefault($0) })) {
+                    ForEach(model.controller.models.installedEntries, id: \.id) { Text($0.name).tag($0.id) }
                 }
-                Text("Press Esc while dictating to cancel: nothing is typed.")
+                Picker("Microphone", selection: Binding(get: { model.controller.preferredMicrophoneUID ?? "" },
+                                                        set: { model.controller.selectMicrophone(uid: $0.isEmpty ? nil : $0) })) {
+                    Text("System Default").tag("")
+                    ForEach(AudioDeviceCache.shared.devices, id: \.uid) { Text($0.name).tag($0.uid) }
+                }
+            } header: {
+                Text("Dictation")
+            } footer: {
+                Text("\(model.dictationMode == .toggle ? "Press" : "Hold") \(model.shortcut.displayString) and speak; the text appears where your cursor is. Press Esc while dictating to cancel.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("While dictating") {
+                Picker("Show", selection: $model.overlayStyle) {
+                    ForEach(OverlayStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Text(Self.overlayNote(model.overlayStyle, entry: model.controller.loadedModelEntry))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Play a sound when recording starts and stops", isOn: $model.sounds.enabled)
+            }
+            Section {
+                Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
+                Picker("Appearance", selection: $model.general.appearance) {
+                    ForEach(GeneralSettings.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Toggle("Show the menu bar icon when idle", isOn: $model.general.showMenuBarIcon)
+                Toggle("Open setup at launch when a permission is missing", isOn: $model.general.showSetupWhenNeeded)
+            } header: {
+                Text("App")
+            } footer: {
+                Text("The icon always appears while you dictate. With it hidden, open Settings by launching Utter again.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    // MARK: Dictation
+
+    private var dictation: some View {
+        Form {
             Section("AI shortcut") {
                 Text("A second shortcut that dictates and then runs an AI mode, whatever your everyday mode is.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -322,37 +346,6 @@ struct SettingsView: View {
                     }
                 }
             }
-        }
-        .formStyle(.grouped)
-    }
-
-    // MARK: Models
-
-    private var models: some View {
-        Form {
-            Picker("Default model", selection: Binding(get: { model.controller.models.defaultModelID },
-                                                       set: { model.controller.models.setDefault($0) })) {
-                ForEach(model.controller.models.installedEntries, id: \.id) { Text($0.name).tag($0.id) }
-            }
-            Section("Available models") {
-                ForEach(model.controller.models.entries, id: \.id) { entry in
-                    HStack {
-                        Text(entry.name)
-                        Spacer()
-                        Text(Self.statusText(model.controller.models.status[entry.id])).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            LabeledContent("Storage") {
-                HStack {
-                    Text(ModelLocation.modelsDirectory.path).font(.caption).lineLimit(1).truncationMode(.middle)
-                    Button("Show in Finder") {
-                        try? FileManager.default.createDirectory(at: ModelLocation.modelsDirectory, withIntermediateDirectories: true)
-                        NSWorkspace.shared.open(ModelLocation.modelsDirectory)
-                    }
-                }
-            }
-            Button("Open Model Manager…", action: openModelManager)
         }
         .formStyle(.grouped)
     }
@@ -642,31 +635,38 @@ struct SettingsView: View {
     }
 }
 
-/// Hosts Settings in a normal window (⌘, from the menu).
+/// Hosts the Utter window: Settings, Models and History behind one sidebar.
 @MainActor
 public final class SettingsWindowController {
+    static let minSize = NSSize(width: 860, height: 580)
+
     public let model: SettingsModel
     private var window: NSWindow?
-    private let openModelManager: () -> Void
     private let changeShortcut: (ShortcutBinding) -> Void
 
-    public init(controller: DictationController, updates: Updates? = nil, openModelManager: @escaping () -> Void, changeShortcut: @escaping (ShortcutBinding) -> Void) {
+    public init(controller: DictationController, updates: Updates? = nil, changeShortcut: @escaping (ShortcutBinding) -> Void) {
         model = SettingsModel(controller: controller)
         model.updates = updates
-        self.openModelManager = openModelManager
         self.changeShortcut = changeShortcut
     }
 
-    public func show() {
+    public func show(_ section: SettingsSection? = nil) {
         model.reload()
+        if let section { model.section = section }
+        if section == .models { model.controller.models.refresh() }
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 520),
-                                  styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-            window.title = "Utter Settings"
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.minSize),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                                  backing: .buffered, defer: false)
+            window.title = "Utter"
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(model: model, openModelManager: openModelManager,
-                                                                      changeShortcut: changeShortcut))
-            window.center()
+            window.contentMinSize = Self.minSize
+            window.contentView = NSHostingView(rootView: SettingsView(model: model, changeShortcut: changeShortcut))
+            window.setFrameAutosaveName("UtterSettings")
+            if !window.setFrameUsingName("UtterSettings") { window.center() }
             self.window = window
         }
         NSApp.activate()

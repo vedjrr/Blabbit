@@ -1,4 +1,5 @@
 import AVFoundation
+import UtterObjC
 import os
 
 /// A finished recording: 16 kHz mono samples plus capture timing.
@@ -28,12 +29,16 @@ public enum AudioRecorderError: Error, Equatable {
     case noInputDevice
     case unsupportedFormat
     case engineStartFailed(String)
+    /// The device changed under the graph (hardware and node formats differ, or
+    /// AVAudioEngine raised an exception); rebuilding a moment later works.
+    case deviceChanging(String)
 
     public var userMessage: String {
         switch self {
         case .noInputDevice: "No microphone is available. Connect one or check System Settings → Sound → Input."
         case .unsupportedFormat: "The microphone's audio format is not supported."
         case .engineStartFailed: "The microphone could not be started. Check that Utter has microphone access."
+        case .deviceChanging: "The microphone is changing. Try again in a moment."
         }
     }
 }
@@ -174,7 +179,7 @@ enum ChannelMixer {
 /// All public methods must be called on `queue`.
 public final class AudioRecorder: @unchecked Sendable {
     public let queue: DispatchQueue
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private var sink: AVAudioSinkNode?
     private var ring: SampleRing?
     private var resampler: Resampler?
@@ -195,12 +200,26 @@ public final class AudioRecorder: @unchecked Sendable {
 
     public init(queue: DispatchQueue) {
         self.queue = queue
+        observeConfigurationChanges()
+    }
+
+    private func observeConfigurationChanges() {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
             guard let self else { return }
             self.queue.async { self.handleConfigurationChange() }
         }
+    }
+
+    /// A fresh engine, for when the old one is stuck on a device's old format.
+    private func replaceEngine() {
+        teardownGraph()
+        engine = AVAudioEngine()
+        deviceOverridden = false // the new engine starts on the system default
+        observeConfigurationChanges()
+        Log.info("audio engine replaced after a device change")
     }
 
     deinit {
@@ -421,7 +440,7 @@ public final class AudioRecorder: @unchecked Sendable {
         // Never tear down a live recording (e.g. a microphone chosen from the
         // menu mid-dictation): the change applies on the next start.
         guard !isRecording else { return }
-        try buildGraph()
+        try buildGraphRetrying()
         try runWarmIfIdle()
     }
 
@@ -430,8 +449,19 @@ public final class AudioRecorder: @unchecked Sendable {
         teardownGraph()
         try selectDevice()
         let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
+        // After switching devices (e.g. 24 kHz AirPods ↔ 48 kHz built-in) the node's
+        // output format can still describe the old device, and connecting with it
+        // raises "Input HW format and tap format not matching". The hardware side
+        // is current, so the connection uses its rate and channel count.
+        let node = input.outputFormat(forBus: 0)
+        let hardware = input.inputFormat(forBus: 0)
+        let format = hardware.sampleRate > 0 && hardware.channelCount > 0
+            ? AVAudioFormat(standardFormatWithSampleRate: hardware.sampleRate, channels: hardware.channelCount) ?? node
+            : node
         guard format.sampleRate > 0, format.channelCount > 0 else { throw AudioRecorderError.noInputDevice }
+        if node.sampleRate != format.sampleRate {
+            Log.info("audio input node format was stale node_rate=\(Int(node.sampleRate)) hardware_rate=\(Int(format.sampleRate))")
+        }
         guard let monoFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: 1, interleaved: false),
               let resampler = Resampler(inputFormat: monoFormat)
         else { throw AudioRecorderError.unsupportedFormat }
@@ -458,7 +488,13 @@ public final class AudioRecorder: @unchecked Sendable {
             return noErr
         }
         engine.attach(sink)
-        engine.connect(input, to: sink, format: format)
+        // Right after a device change the node can still report the old format, and
+        // connecting then raises "Input HW format and tap format not matching".
+        if let exception = UtterCatchException({ self.engine.connect(input, to: sink, format: format) }) {
+            engine.detach(sink)
+            replaceEngine()
+            throw AudioRecorderError.deviceChanging(exception)
+        }
         engine.prepare()
         self.sink = sink
         self.ring = ring
@@ -468,6 +504,17 @@ public final class AudioRecorder: @unchecked Sendable {
         needsRebuild = false
         onDeviceReady?(activeDevice?.name)
         Log.info("audio graph ready input_rate=\(Int(format.sampleRate)) channels=\(format.channelCount) channel=\(channel.map(String.init) ?? "mix") device=\"\(activeDevice?.name ?? "?")\" bluetooth=\(activeDevice?.isBluetooth ?? false)")
+    }
+
+    /// A device change can take a few hundred milliseconds to settle.
+    private func buildGraphRetrying(attempts: Int = 4) throws {
+        for attempt in 1... {
+            do { return try buildGraph() } catch AudioRecorderError.deviceChanging(let why) where attempt < attempts {
+                Log.info("audio graph rebuild waiting for the device (\(why)), attempt \(attempt)")
+                needsRebuild = true
+                Thread.sleep(forTimeInterval: 0.15)
+            }
+        }
     }
 
     private func teardownGraph() {
@@ -586,7 +633,7 @@ public final class AudioRecorder: @unchecked Sendable {
         levelState.withLock { $0 = 0 }
         // Apply a device chosen mid-recording now, not on the next key-down.
         if needsRebuild {
-            do { try buildGraph() } catch { Log.error("rebuild after recording failed: \(error)") }
+            do { try buildGraphRetrying() } catch { Log.error("rebuild after recording failed: \(error)") }
         }
         if linger { startLinger() } else { lingering = false; rewarm() }
         return recording
@@ -642,7 +689,7 @@ public final class AudioRecorder: @unchecked Sendable {
             let before = ring?.cursor.withLock { $0 }
             cursorBeforeChange = before
             do {
-                try buildGraph()
+                try buildGraphRetrying()
                 if let before, let ring {
                     ring.cursor.withLock { c in
                         c.firstSampleNs = before.firstSampleNs
@@ -662,7 +709,7 @@ public final class AudioRecorder: @unchecked Sendable {
                 Log.error("input device changed while recording and no device could take over; audio after the change is lost: \(error)")
             }
         } else {
-            do { try buildGraph() } catch { Log.error("rebuild after configuration change failed: \(error)") }
+            do { try buildGraphRetrying() } catch { Log.error("rebuild after configuration change failed: \(error)") }
             rewarm()
         }
     }

@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import UtterCore
 
 /// The menu bar item: icon reflects dictation state; menu is rebuilt on open.
@@ -6,18 +7,50 @@ import UtterCore
 public final class StatusMenuController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let controller: DictationController
-    private let modelWindow: ModelManagerWindowController
 
     public var updates: Updates?
 
+    /// Left click opens the panel; right click (or ⌃-click) the classic menu.
+    private let menu = NSMenu()
+    private let popover = NSPopover()
+    private let panel: MenuPanelModel
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            popover.performClose(nil)
+            statusItem.menu = menu
+            sender.performClick(nil) // shows the menu
+            statusItem.menu = nil
+        } else if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            panel.refresh()
+            panel.copied = false
+            // Utter isn't activated: the app you were typing in stays frontmost,
+            // so a dictation started from the panel lands there.
+            popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+        }
+    }
+
     public init(controller: DictationController) {
         self.controller = controller
-        self.modelWindow = ModelManagerWindowController(manager: controller.models)
+        panel = MenuPanelModel(controller: controller)
         super.init()
-        let menu = NSMenu()
         menu.delegate = self
-        statusItem.menu = menu
+        panel.open = { [weak self] section in self?.settingsWindow.show(section) }
+        panel.openPermissions = { [weak self] in self?.showPermissions() }
+        panel.close = { [weak self] in self?.popover.performClose(nil) }
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = NSHostingController(rootView: MenuPanelView(model: panel))
+        if let button = statusItem.button {
+            button.target = self
+            button.action = #selector(statusItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
         controller.onStateChange = { [weak self] state in
+            self?.panel.refresh()
             self?.cueReset?.cancel()
             self?.statusItem.button?.toolTip = nil
             self?.updateIcon(for: state)
@@ -209,12 +242,10 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func toggleDictation() { controller.toggleFromMenu() }
     @objc private func cancelDictation() { controller.cancelDictation(reason: "menu") }
-    @objc private func openModelManager() { modelWindow.show() }
+    @objc private func openModelManager() { settingsWindow.show(.models) }
 
-    private lazy var historyWindow = HistoryWindowController(controller: controller)
     private lazy var settingsWindow: SettingsWindowController = {
         let window = SettingsWindowController(controller: controller, updates: updates,
-                                              openModelManager: { [weak self] in self?.modelWindow.show() },
                                               changeShortcut: { [weak self] binding in self?.changeShortcut(binding) })
         window.model.onGeneralChange = { [weak self] general in
             self?.general = general
@@ -223,7 +254,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         return window
     }()
 
-    @objc private func openHistory() { historyWindow.show() }
+    @objc private func openHistory() { settingsWindow.show(.history) }
     @objc private func checkForUpdates() { updates?.checkForUpdates() }
 
     @objc private func copyLastDictation() {
@@ -252,7 +283,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     /// Opens the Model Manager (e.g. first launch with no model).
-    public func showModelManager() { modelWindow.show() }
+    public func showModelManager() { settingsWindow.show(.models) }
     private let shortcutWindow = ShortcutRecorderWindowController()
 
     @objc private func chooseMode(_ sender: NSMenuItem) {

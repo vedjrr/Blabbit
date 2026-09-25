@@ -21,22 +21,23 @@ public struct ModelManagerView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            List {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
                 ForEach(manager.entries, id: \.id) { entry in
                     ModelRow(entry: entry, status: manager.status[entry.id] ?? .notInstalled,
                              isDefault: entry.id == manager.defaultModelID,
                              action: { handle($0, entry) })
-                        .padding(.vertical, 6)
+                        .padding(14)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(entry.id == manager.defaultModelID ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.08),
+                                          lineWidth: entry.id == manager.defaultModelID ? 1.5 : 1))
                 }
+                footer
             }
-            .listStyle(.inset)
-            Divider()
-            footer
+            .padding(.horizontal, 28)
+            .padding(.vertical, 16)
         }
-        .frame(minWidth: 640, minHeight: 480)
         .onAppear { manager.refresh() }
         .alert(item: $viewState.licensePrompt) { entry in
             Alert(
@@ -51,28 +52,22 @@ public struct ModelManagerView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Models").font(.title2.weight(.semibold))
-            Text("Everything runs on this Mac. Accuracy and speed were measured on an Apple M4 with Utter's test clips; lower error is better.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .padding(16)
-    }
-
     private var footer: some View {
-        HStack {
-            Button("Show Models Folder") {
-                try? FileManager.default.createDirectory(at: ModelLocation.modelsDirectory, withIntermediateDirectories: true)
-                NSWorkspace.shared.open(ModelLocation.modelsDirectory)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Accuracy is the share of words right on Utter's spoken test clips; speed comes from the time to transcribe them. Both were measured on an Apple M4. Every model is faster on newer chips, but the order stays the same.")
+            HStack {
+                Text("Installed: \(manager.installedEntries.count) of \(manager.entries.count)")
+                Spacer()
+                Button("Show Models Folder") {
+                    try? FileManager.default.createDirectory(at: ModelLocation.modelsDirectory, withIntermediateDirectories: true)
+                    NSWorkspace.shared.open(ModelLocation.modelsDirectory)
+                }
+                .buttonStyle(.link)
             }
-            Spacer()
-            Text("Installed: \(manager.installedEntries.count) of \(manager.entries.count)")
-                .font(.callout)
-                .foregroundStyle(.secondary)
         }
-        .padding(12)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.top, 4)
     }
 
     private func handle(_ action: ModelRow.Action, _ entry: ModelEntry) {
@@ -103,8 +98,8 @@ struct ModelRow: View {
     let action: (Action) -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Text(entry.name).font(.headline)
                     if entry.recommended { Tag(text: "Recommended", tint: .accentColor) }
@@ -115,9 +110,6 @@ struct ModelRow: View {
                     Label(Self.size(entry.sizeBytes), systemImage: "internaldrive")
                     Label(entry.languages.count == 1 ? "English" : "\(entry.languages.count) languages", systemImage: "globe")
                         .help(Self.languageNames(entry.languages))
-                    Label(String(format: "%.0f%% word errors", entry.measuredWer * 100), systemImage: "checkmark.seal")
-                        .help("Word error rate on Utter's five spoken test clips. Strict scoring: \"123\" for \"one two three\" and misspelt product names count as errors.")
-                    Label(String(format: "%.2fs per 5s of speech", Double(entry.measuredP50Ms) / 1000), systemImage: "bolt")
                     Button(entry.license) { action(.license) }.buttonStyle(.link)
                 }
                 .font(.caption)
@@ -125,7 +117,20 @@ struct ModelRow: View {
                 statusLine
             }
             Spacer(minLength: 8)
-            controls
+            VStack(alignment: .trailing, spacing: 10) {
+                scores.frame(width: 210)
+                controls
+            }
+        }
+    }
+
+    private var scores: some View {
+        let score = ModelScores(entry)
+        return VStack(spacing: 6) {
+            ScoreBar(label: "Accuracy", value: score.accuracy, tint: .green)
+                .help(String(format: "%.0f%% of words wrong on Utter's spoken test clips. Strict scoring: \"123\" for \"one two three\" and misspelt product names count as errors.", entry.measuredWer * 100))
+            ScoreBar(label: "Speed", value: score.speed, tint: .blue)
+                .help(String(format: "About %.2f s to transcribe 5 s of speech on an Apple M4.", Double(entry.measuredP50Ms) / 1000))
         }
     }
 
@@ -207,32 +212,5 @@ private struct Tag: View {
             .padding(.vertical, 2)
             .background(tint.opacity(0.15), in: Capsule())
             .foregroundStyle(tint)
-    }
-}
-
-/// Hosts the Model Manager in a normal window (the app itself is menu-bar only).
-@MainActor
-public final class ModelManagerWindowController {
-    private var window: NSWindow?
-    private let manager: ModelManager
-
-    public init(manager: ModelManager) {
-        self.manager = manager
-    }
-
-    public func show() {
-        if window == nil {
-            let hosting = NSHostingController(rootView: ModelManagerView(manager: manager))
-            let window = NSWindow(contentViewController: hosting)
-            window.title = "Utter Models"
-            window.setContentSize(NSSize(width: 720, height: 560))
-            window.styleMask.insert([.resizable, .closable, .miniaturizable])
-            window.isReleasedWhenClosed = false
-            window.center()
-            self.window = window
-        }
-        manager.refresh()
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
     }
 }
