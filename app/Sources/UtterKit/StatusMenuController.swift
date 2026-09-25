@@ -165,6 +165,10 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let copyLast = NSMenuItem(title: "Copy Last Dictation", action: #selector(copyLastDictation), keyEquivalent: "")
+        copyLast.target = self
+        copyLast.isEnabled = controller.lastPipeline != nil
+        menu.addItem(copyLast)
         let history = NSMenuItem(title: "History…", action: #selector(openHistory), keyEquivalent: "y")
         history.target = self
         menu.addItem(history)
@@ -204,6 +208,12 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     }()
 
     @objc private func openHistory() { historyWindow.show() }
+
+    @objc private func copyLastDictation() {
+        guard let text = controller.lastPipeline?.final else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
     @objc private func openSettings() { settingsWindow.show() }
     public func showSettings() { settingsWindow.show() }
     public func updateVisibilityAtLaunch() { updateVisibility() }

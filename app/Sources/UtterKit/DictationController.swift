@@ -151,6 +151,10 @@ public final class DictationController {
         hotkey.onRelease = { [weak self] timing in
             Task { @MainActor in self?.hotkeyEvent(keyDown: false, timing) }
         }
+        hotkey.onShortcutConflict = { [weak self] error in
+            self?.lastMessage = error.userMessage
+            self?.onStateChange?(self?.state ?? .ready)
+        }
         hotkey.onSecureInputChange = { [weak self] sustained in
             self?.secureInputNotice = sustained
                 ? "Secure input is on (a password field, or Terminal's Secure Keyboard Entry), so Utter won't type until it's off. Dictation still works: text goes to the clipboard."
@@ -528,7 +532,7 @@ public final class DictationController {
         }
     }
 
-    private static let micDeniedMessage = "Utter needs microphone access. Allow it in System Settings → Privacy & Security → Microphone."
+    static let micDeniedMessage = UserMessages.microphoneDenied
     private static let micNotAskedMessage = "Utter needs microphone access. Choose Set Up Permissions… in the Utter menu."
 
     /// A denied permission looks like "no input device" to AVAudioEngine; say which it is.
@@ -598,7 +602,7 @@ public final class DictationController {
         }
         if recording.interruptedByDeviceChange {
             lastMessage = recording.continuedOnDevice.map { "The microphone changed while you were speaking; Utter kept listening on \($0)." }
-                ?? "The microphone was disconnected while you were speaking and no other was available; only the part before that was transcribed."
+                ?? UserMessages.microphoneDisconnected
             Log.info("dictation device change continued_on=\(recording.continuedOnDevice ?? "none") samples=\(recording.samples.count)")
         }
         let engine = self.engine
@@ -657,6 +661,18 @@ public final class DictationController {
             return
         }
         let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        guard NSWorkspace.shared.frontmostApplication != nil else {
+            // Nowhere to type (e.g. every window closed): keep the words.
+            Self.putOnClipboard(inserter.settings.finalText(processed.final))
+            logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs,
+                         report: InsertReport(result: .copiedToClipboard, bundleID: nil))
+            lastMessage = UserMessages.noFocusedApp
+            state = .ready
+            onAttention?(.unconfirmed)
+            overlay.show(.notice(UserMessages.noFocusedApp, .unconfirmed))
+            recordHistory(processed, recording: recording, app: nil)
+            return
+        }
         let report = await inserter.insert(processed.final, bundleID: bundleID)
         if let problem = processed.processorProblem, lastMessage == nil { lastMessage = problem }
         switch report.result {

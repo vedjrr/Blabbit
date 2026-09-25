@@ -387,3 +387,30 @@ pub fn vocabulary_prompt(vocabulary: Vec<String>) -> Option<String> {
 pub fn default_vocabulary_threshold() -> f64 {
     utter_core::text::DEFAULT_THRESHOLD
 }
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ErrorMessage {
+    pub kind: String,
+    pub message: String,
+}
+
+/// The user-facing text of every core error kind (for the error-mapping test and docs).
+#[uniffi::export]
+pub fn error_messages() -> Vec<ErrorMessage> {
+    use utter_core::error::{DownloadIssue, UtterError as E};
+    let d = String::new;
+    let all = [
+        ("ModelMissing", E::ModelMissing { detail: d() }),
+        ("ModelCorrupt", E::ModelCorrupt { detail: d() }),
+        ("ModelUnsupported", E::ModelUnsupported { detail: d() }),
+        ("InsufficientMemory", E::InsufficientMemory { detail: d() }),
+        ("ModelNotLoaded", E::ModelNotLoaded),
+        ("InferenceFailed", E::InferenceFailed { detail: d() }),
+        ("InputTooLong", E::InputTooLong { detail: d() }),
+        ("AudioRead", E::AudioRead { detail: d() }),
+        ("DownloadFailed", E::DownloadFailed { kind: DownloadIssue::Network, detail: d() }),
+        ("DownloadServer", E::DownloadFailed { kind: DownloadIssue::Server, detail: d() }),
+        ("DownloadDisk", E::DownloadFailed { kind: DownloadIssue::Disk, detail: d() }),
+    ];
+    all.into_iter().map(|(kind, e)| ErrorMessage { kind: kind.into(), message: e.to_string() }).collect()
+}

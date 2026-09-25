@@ -72,6 +72,16 @@ final class CarbonHotkey {
         if let handler { RemoveEventHandler(handler) }
     }
 
+    /// True if another app (or this one) already holds `shortcut` as a global
+    /// hotkey: registering it fails with `eventHotKeyExistsErr`. Main thread.
+    public static func isTakenElsewhere(_ shortcut: Shortcut) -> Bool {
+        var ref: EventHotKeyRef?
+        let status = RegisterEventHotKey(UInt32(shortcut.keyCode), carbonModifiers(shortcut.modifiers),
+                                         EventHotKeyID(signature: signature, id: 99), GetApplicationEventTarget(), 0, &ref)
+        if let ref { UnregisterEventHotKey(ref) }
+        return status == OSStatus(eventHotKeyExistsErr)
+    }
+
     static func carbonModifiers(_ cgFlags: UInt64) -> UInt32 {
         let flags = CGEventFlags(rawValue: cgFlags)
         var m: UInt32 = 0

@@ -5,9 +5,16 @@ import os
 public enum HotkeyError: Error, Equatable {
     /// CGEvent.tapCreate returned nil: Accessibility permission is missing.
     case tapCreationFailed
+    /// Another app registered the same global shortcut.
+    case shortcutInUse(String)
 
     public var userMessage: String {
-        "Utter can't listen for its shortcut. Allow Utter in System Settings → Privacy & Security → Accessibility."
+        switch self {
+        case .tapCreationFailed:
+            "Utter can't listen for its shortcut. Allow Utter in System Settings → Privacy & Security → Accessibility."
+        case .shortcutInUse(let shortcut):
+            "Another app already uses \(shortcut). Choose a different shortcut in Settings → Dictation."
+        }
     }
 }
 
@@ -32,6 +39,8 @@ public final class HotkeyMonitor: @unchecked Sendable {
     private var secureTimer: Timer?
     /// Called on main when sustained secure input starts/stops (for UI notices).
     public var onSecureInputChange: (@MainActor (Bool) -> Void)?
+    /// The Carbon fallback couldn't register the shortcut (another app has it).
+    public var onShortcutConflict: (@MainActor (HotkeyError) -> Void)?
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var runLoop: CFRunLoop?
@@ -131,7 +140,11 @@ public final class HotkeyMonitor: @unchecked Sendable {
         carbon = nil
         carbon = CarbonHotkey(shortcut: shortcut, onPress: { [weak self] in self?.carbonEvent(down: true) },
                               onRelease: { [weak self] in self?.carbonEvent(down: false) })
-        Log.info("secure input sustained; carbon fallback \(carbon == nil ? "could not be registered (modifier-only shortcuts can't use it)" : "registered") for \(shortcut.displayString)")
+        Log.info("secure input sustained; carbon fallback \(carbon == nil ? "could not be registered" : "registered") for \(shortcut.displayString)")
+        if carbon == nil {
+            let conflict = HotkeyError.shortcutInUse(shortcut.displayString)
+            Task { @MainActor [weak self] in self?.onShortcutConflict?(conflict) }
+        }
     }
 
     /// Carbon events go through the same matcher so tap + Carbon can't double-fire.

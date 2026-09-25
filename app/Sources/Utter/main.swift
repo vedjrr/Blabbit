@@ -30,6 +30,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+// One Utter at a time: a second launch hands over to the running one (which
+// opens Settings) and quits, so two event taps never fight over the shortcut.
+if let bundleID = Bundle.main.bundleIdentifier,
+   let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+       .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
+    running.activate()
+    exit(0)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

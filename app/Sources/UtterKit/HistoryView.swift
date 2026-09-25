@@ -10,6 +10,18 @@ final class HistoryModel {
     var selection: HistoryEntry.ID?
     var problem: String?
     var confirmDeleteAll = false
+    var playing: HistoryEntry.ID?
+    private var sound: NSSound?
+
+    func togglePlayback(_ entry: HistoryEntry, url: URL) {
+        sound?.stop()
+        if playing == entry.id {
+            playing = nil
+            return
+        }
+        sound = NSSound(contentsOf: url, byReference: true)
+        playing = sound?.play() == true ? entry.id : nil
+    }
 
     /// The store to show (the controller's, or a given one).
     private let explicitStore: HistoryStore?
@@ -120,7 +132,10 @@ struct HistoryView: View {
                     HStack {
                         Button("Copy") { model.copy(entry.final) }
                         if entry.raw != entry.final { Button("Copy Original") { model.copy(entry.raw) } }
-                        if let url = model.audioURL(entry) { Button("Show Audio in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
+                        if let url = model.audioURL(entry) {
+                            Button(model.playing == entry.id ? "Stop" : "Play") { model.togglePlayback(entry, url: url) }
+                            Button("Show Audio in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                        }
                         Spacer()
                         Button("Delete", role: .destructive) { model.delete(entry) }
                     }

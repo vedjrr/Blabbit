@@ -24,6 +24,9 @@ public final class ShortcutRecorderModel {
         let shortcut = Shortcut(keyCode: keyCode, modifiers: flags.rawValue)
         candidate = shortcut
         problem = shortcut.problem
+        if problem == nil, shortcut != current, CarbonHotkey.isTakenElsewhere(shortcut) {
+            problem = HotkeyError.shortcutInUse(shortcut.displayString).userMessage
+        }
         return true
     }
 

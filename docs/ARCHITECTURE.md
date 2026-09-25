@@ -98,14 +98,19 @@ Toolchain: Swift 6.4 (Command Line Tools, **no Xcode.app installed**), rustc 1.9
 
 ### ADR-009 — Persistence
 - Settings: `UserDefaults` via a Codable `Settings` struct with explicit keys, one migration version field.
-- History: SQLite via GRDB.swift 7 (MIT) in `~/Library/Application Support/Utter/history.sqlite`; FTS5 for search; audio stored only if the user enables it.
+- History: SQLite via GRDB.swift 7 (MIT; resolved 7.11.1) in `~/Library/Application Support/Utter/History/history.sqlite`. An FTS5 table is synchronised by triggers, and search is all-words prefix (`FTS5Pattern(matchingAllPrefixesIn:)`) over raw and final text. Audio (16 kHz 16-bit WAV) is kept only if the user enables it, and is deleted with its entry. Nothing is recorded when insertion was blocked (password field) or failed.
 - Secrets (cloud LLM keys): Keychain (`kSecClassGenericPassword`).
 - Sources: https://github.com/groue/GRDB.swift , https://www.sqlite.org/fts5.html , https://developer.apple.com/documentation/security/keychain_services , https://developer.apple.com/documentation/foundation/userdefaults
 
 ### ADR-010 — Text pipeline split: pure Rust stages + optional Swift LLM providers
 - `RawTranscript → [Processor] → FinalText`. Deterministic stages in Rust (`utter-core::text`): whitespace/punctuation normalisation, filler removal, vocabulary fuzzy correction (n-gram, Jaro-Winkler + Double Metaphone with threshold), code mode rules. Each is a pure function with unit tests.
 - LLM stages (Professional, Custom) behind a Swift `TextProcessor` protocol: Ollama (local HTTP, `localhost:11434`) and Anthropic (cloud, off by default, key in Keychain). Network only when the user enables a provider — never in Exact/Clean/Code.
-- Sources: `H/src-tauri/src/audio_toolkit/text.rs:151` (Handy's custom-word matcher, n-gram ≤ 3), https://github.com/ollama/ollama/blob/main/docs/api.md , https://docs.anthropic.com/en/api/messages
+- **Built (M5).** `utter-core::text` has these pure stages: spacing, fillers + short-word stutters, spoken "new line/new paragraph", vocabulary correction, capitalisation, final punctuation.
+  - Mode presets: Exact = spacing + vocabulary. Clean = all stages. Code = fillers + vocabulary + built-in developer terms, no added punctuation. Professional / Custom = Clean, then the optional processor.
+  - Vocabulary correction: 1–3 word phrases are scored with Jaro-Winkler (strsim, MIT); a Double Metaphone match (rphonetic, Apache-2.0) lowers the bar. A length-ratio guard, a stricter bar for phrases containing a function word, and a "real single word must sound alike" rule prevent false hits ("the script", "swiftly").
+  - Whisper models also get the vocabulary as the initial prompt.
+  - Processors: Ollama `POST /api/chat` and Anthropic `POST /v1/messages` (key in Keychain, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`). A 10 s timeout; any failure falls back to the local result with a message. Local-only mode (the default) blocks the cloud processor.
+- Sources: `H/src-tauri/src/audio_toolkit/text.rs:151` (Handy's custom-word matcher, n-gram ≤ 3), https://crates.io/crates/strsim , https://crates.io/crates/rphonetic, https://github.com/ollama/ollama/blob/main/docs/api.md , https://docs.anthropic.com/en/api/messages
 
 ### ADR-011 — Distribution
 - Hardened runtime; the only entitlement is `com.apple.security.device.audio-input` (needed for the mic under hardened runtime). Not sandboxed: CGEventTap posting and cross-app AX writes are not possible from the App Sandbox; we distribute outside the Mac App Store (same as Handy).

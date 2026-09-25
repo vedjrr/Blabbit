@@ -77,55 +77,55 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 | # | Feature | Handy source | How Handy does it | Utter plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
-| D1 | Custom words fuzzy correction with threshold | `H/src-tauri/src/audio_toolkit/text.rs:151`, `S.custom_words`, `S.word_correction_threshold` | n-grams ≤ 3, Soundex + string similarity | Own implementation (ADR-010) + Whisper initial prompt | M5 | Missing | Measure on the 7 GOAL words |
-| D2 | Filler-word removal + custom filler list | `S.filler_word_removal_enabled`, `S.custom_filler_words` | language-aware list | "Clean" mode | M5 | Missing | — |
-| D3 | LLM post-processing providers (OpenAI, Z.ai, OpenRouter, Anthropic, Groq, Cerebras, Bedrock, custom OpenAI-compatible) | `H/src-tauri/src/settings.rs:650-730`, `H/src-tauri/src/llm_client.rs` | HTTP clients, keys in settings store | `TextProcessor`: Ollama + Anthropic + custom OpenAI-compatible (covers OpenAI/OpenRouter/Groq/Cerebras/Z.ai endpoints); keys in Keychain | M5 | Missing | Keys in Keychain (Handy: settings file `S.post_process_api_keys`) |
-| D4 | Apple Intelligence provider | `H/src-tauri/src/apple_intelligence.rs` | FoundationModels via Swift shim | FoundationModels framework directly (on-device) | M5 | Missing | Native, no bridge |
-| D5 | Prompt library (multiple saved prompts, select one) | `S.post_process_prompts`, `S.post_process_selected_prompt_id` | — | Modes: Professional, Custom (user prompts) | M5 | Missing | — |
-| D6 | Modes Exact / Clean / Professional / Code / Custom | — (Handy: filler removal toggle + LLM prompts; **no Code mode, no named modes**) | — | Named modes; Exact/Clean/Code need no LLM | M5 | Missing | **Better**: Code mode + non-LLM modes |
-| D7 | Chinese script conversion (OpenCC) | `ferrous-opencc` in `H/src-tauri/Cargo.toml` | — | Same idea (simplified ↔ traditional) | M5 | Missing | — |
-| D8 | Output language detection | `detect_output_language` in `audio_toolkit` | whatlang | Same | M5 | Missing | — |
-| D9 | Per-provider LLM model selection (fetch model list from provider) | `S.post_process_models`, `fetch_post_process_models` in `H/src-tauri/src/shortcut/mod.rs:1194` | queries provider `/models` | Model picker per provider (Ollama `/api/tags`, Anthropic models list) | M5 | Missing | — |
+| D1 | Custom words fuzzy correction with threshold | `H/src-tauri/src/audio_toolkit/text.rs:151`, `S.custom_words`, `S.word_correction_threshold` | n-grams ≤ 3, Soundex + string similarity | Own implementation (ADR-010) + Whisper initial prompt | M5 | Built (Jaro-Winkler + Double Metaphone on 1–3 word n-grams, threshold, false-positive guards; `text.rs` tests; WER on all 8 models → evidence/m5/vocabulary_wer.log) | Measure on the 7 GOAL words |
+| D2 | Filler-word removal + custom filler list | `S.filler_word_removal_enabled`, `S.custom_filler_words` | language-aware list | "Clean" mode | M5 | Partly built (built-in filler list + stutter removal; a user-editable filler list is not built yet, M7) | — |
+| D3 | LLM post-processing providers (OpenAI, Z.ai, OpenRouter, Anthropic, Groq, Cerebras, Bedrock, custom OpenAI-compatible) | `H/src-tauri/src/settings.rs:650-730`, `H/src-tauri/src/llm_client.rs` | HTTP clients, keys in settings store | `TextProcessor`: Ollama + Anthropic + custom OpenAI-compatible (covers OpenAI/OpenRouter/Groq/Cerebras/Z.ai endpoints); keys in Keychain | M5 | Partly built (TextProcessor with Ollama (local) + Anthropic (cloud, Keychain); other providers M7) | Keys in Keychain (Handy: settings file `S.post_process_api_keys`) |
+| D4 | Apple Intelligence provider | `H/src-tauri/src/apple_intelligence.rs` | FoundationModels via Swift shim | FoundationModels framework directly (on-device) | M7 | Missing (Apple Intelligence Foundation Models; revisit in M7) | Native, no bridge |
+| D5 | Prompt library (multiple saved prompts, select one) | `S.post_process_prompts`, `S.post_process_selected_prompt_id` | — | Modes: Professional, Custom (user prompts) | M7 | Missing (one Custom instruction today) | — |
+| D6 | Modes Exact / Clean / Professional / Code / Custom | — (Handy: filler removal toggle + LLM prompts; **no Code mode, no named modes**) | — | Named modes; Exact/Clean/Code need no LLM | M5 | Built (Exact / Clean / Code local; Professional / Custom add an optional processor; `TextPipelineTests`) | **Better**: Code mode + non-LLM modes |
+| D7 | Chinese script conversion (OpenCC) | `ferrous-opencc` in `H/src-tauri/Cargo.toml` | — | Same idea (simplified ↔ traditional) | M7 | Missing | — |
+| D8 | Output language detection | `detect_output_language` in `audio_toolkit` | whatlang | Same | M7 | Missing | — |
+| D9 | Per-provider LLM model selection (fetch model list from provider) | `S.post_process_models`, `fetch_post_process_models` in `H/src-tauri/src/shortcut/mod.rs:1194` | queries provider `/models` | Model picker per provider (Ollama `/api/tags`, Anthropic models list) | M7 | Missing (model name typed in Settings) | — |
 
 ## E. History
 
 | # | Feature | Handy source | How Handy does it | Utter plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
-| E1 | History list with transcript + post-processed text | `H/src-tauri/src/managers/history.rs:22-34` | SQLite | GRDB SQLite: timestamp, duration, model, raw, final (ADR-009) | M5 | Missing | Raw vs final side by side + FTS search (Handy has no search) |
-| E2 | Play back recording audio | `get_audio_file_path` | WAV per entry, kept by default | Only if "Keep audio" enabled | M5 | Missing | Private by default |
-| E3 | Star / save entries | `toggle_history_entry_saved` | — | Same | M5 | Missing | — |
-| E4 | Retry transcription from history | `retry_history_entry_transcription` | — | Same (needs kept audio) | M5 | Missing | Retry with a different model |
-| E5 | Delete entry / delete all | `delete_history_entry` | — | Same + delete all | M5 | Missing | — |
-| E6 | History limit + retention period | `S.history_limit`, `S.recording_retention_period` | — | Same | M5 | Missing | — |
-| E7 | Copy last transcript (tray) | `H/src-tauri/src/tray.rs:505` | — | Menu item | M5 | Missing | — |
-| E8 | Open recordings folder | `open_recordings_folder` | — | Same | M5 | Missing | — |
-| E9 | Disable history | `S.history_limit` = 0 | — | Explicit toggle | M5 | Missing | — |
+| E1 | History list with transcript + post-processed text | `H/src-tauri/src/managers/history.rs:22-34` | SQLite | GRDB SQLite: timestamp, duration, model, raw, final (ADR-009) | M5 | Built (GRDB + FTS5; raw and final; `HistoryTests`) | Raw vs final side by side + FTS search (Handy has no search) |
+| E2 | Play back recording audio | `get_audio_file_path` | WAV per entry, kept by default | Only if "Keep audio" enabled | M5 | Built (Play/Stop for kept audio) | Private by default |
+| E3 | Star / save entries | `toggle_history_entry_saved` | — | Same | M7 | Missing | — |
+| E4 | Retry transcription from history | `retry_history_entry_transcription` | — | Same (needs kept audio) | M7 | Missing | Retry with a different model |
+| E5 | Delete entry / delete all | `delete_history_entry` | — | Same + delete all | M5 | Built | — |
+| E6 | History limit + retention period | `S.history_limit`, `S.recording_retention_period` | — | Same | M7 | Missing | — |
+| E7 | Copy last transcript (tray) | `H/src-tauri/src/tray.rs:505` | — | Menu item | M5 | Built (menu: Copy Last Dictation) | — |
+| E8 | Open recordings folder | `open_recordings_folder` | — | Same | M5 | Built (Show Audio in Finder) | — |
+| E9 | Disable history | `S.history_limit` = 0 | — | Explicit toggle | M5 | Built (Settings → Privacy) | — |
 
 ## F. App shell
 
 | # | Feature | Handy source | How Handy does it | Utter plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
 | F1 | Tray icon with idle / recording / transcribing states | `H/src-tauri/src/tray.rs`, `resources/*.png` | PNG icons | Own SF Symbol-style template icons | M1 | Built (status item with idle/recording/transcribing/error icons (M1)) | — |
-| F2 | Tray menu: model switcher, unload, cancel, settings, check updates, copy last, quit | `H/src-tauri/src/tray.rs:471-552` | — | Menu per GOAL G5 (+ mode, microphone, history, shortcut) | M1/M5 | Missing | — |
-| F3 | Show / hide tray icon | `S.show_tray_icon` | — | Same (app reachable by relaunch) | M5 | Missing | — |
-| F4 | Start hidden | `S.start_hidden` | — | Menu-bar app never opens a window on launch unless onboarding | M5 | Missing | — |
-| F5 | Launch at login | `S.autostart_enabled` | tauri-plugin-autostart | `SMAppService.mainApp` | M5 | Missing | — |
+| F2 | Tray menu: model switcher, unload, cancel, settings, check updates, copy last, quit | `H/src-tauri/src/tray.rs:471-552` | — | Menu per GOAL G5 (+ mode, microphone, history, shortcut) | M5 | Partly built (model switcher, mode, microphone, settings, history, copy last; unload/cancel/check-updates M7) | — |
+| F3 | Show / hide tray icon | `S.show_tray_icon` | — | Same (app reachable by relaunch) | M5 | Built (Settings → General; always visible while dictating; relaunch opens Settings) | — |
+| F4 | Start hidden | `S.start_hidden` | — | Menu-bar app never opens a window on launch unless onboarding | M5 | N/A (menu bar app: always starts without a window) | — |
+| F5 | Launch at login | `S.autostart_enabled` | tauri-plugin-autostart | `SMAppService.mainApp` | M5 | Built (SMAppService) | — |
 | F6 | Recording overlay, position top/bottom/none | `S.overlay_position`, `H/src-tauri/src/overlay.rs` | webview NSPanel | Native non-activating NSPanel | M4 | Partly built (native non-activating NSPanel, bottom centre; first show < 16.7 ms after prewarm. Position setting (top/bottom/none) retargeted to M5) | **Better**: native, measure time-to-visible |
-| F7 | Overlay style none / minimal / live | `S.overlay_style` | — | Same | M4 | Missing | — |
+| F7 | Overlay style none / minimal / live | `S.overlay_style` | — | Same | M7 | Missing | — |
 | F8 | Level meter in overlay | `emit_levels` in `overlay.rs:730` | web canvas | Core Animation bars | M4 | Built (16-bar log-scale meter, 30 Hz) | — |
-| F9 | Theme light / dark / system | `S.theme` | CSS | Follows system (native); explicit override | M5 | Missing | — |
-| F10 | UI localisation (27 locales) and app-language picker | `H/src/i18n/locales/`, `S.app_language` | i18next | English at 1.0 using `String(localized:)` so locales can be added; other locales **N/A for 1.0** | M5 | Missing | — |
+| F9 | Theme light / dark / system | `S.theme` | CSS | Follows system (native); explicit override | M5 | Built (Settings → General → Appearance) | — |
+| F10 | UI localisation (27 locales) and app-language picker | `H/src/i18n/locales/`, `S.app_language` | i18next | English at 1.0 using `String(localized:)` so locales can be added; other locales **N/A for 1.0** | M7 | Missing | — |
 | F11 | Onboarding (mic + accessibility permissions) | `H/src/components/onboarding/` | — | Native onboarding with deep links + live re-check | M4 | Built (setup window, deep links, 1 s / 2 s live re-check) | — |
 | F12 | Update checks + "What's new" | `S.update_checks_enabled`, `S.show_whats_new_on_update` | tauri-plugin-updater | Sparkle 2 (release notes shown by Sparkle) | M7 | Missing | — |
-| F13 | Debug mode (⌘⇧D), log level, keyboard diagnostic | `S.debug_mode`, `S.log_level`, `secure_input.rs` diagnostic | — | Debug pane: log level, open logs, latency breakdown of last dictation | M5 | Missing | Per-stage latency view |
-| F14 | CLI remote control: `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--start-hidden`, `--no-tray`, `--debug` | README "CLI Parameters" | single-instance plugin | Same flags forwarded to running instance via `NSDistributedNotificationCenter`; also `utter://` URL scheme | M5 | Missing | URL scheme for Shortcuts/Raycast |
-| F15 | Single instance | tauri-plugin-single-instance | — | `NSRunningApplication` check | M5 | Missing | — |
-| F16 | Open app-data / log directory | `open_app_data_dir`, `open_log_dir` | — | Settings → Privacy / Debug buttons | M5 | Missing | — |
-| F17 | Clear local data | — | — | Settings → Privacy | M5 | Missing | — |
+| F13 | Debug mode (⌘⇧D), log level, keyboard diagnostic | `S.debug_mode`, `S.log_level`, `secure_input.rs` diagnostic | — | Debug pane: log level, open logs, latency breakdown of last dictation | M7 | Partly built (Open Log in the menu; no debug mode) | Per-stage latency view |
+| F14 | CLI remote control: `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--start-hidden`, `--no-tray`, `--debug` | README "CLI Parameters" | single-instance plugin | Same flags forwarded to running instance via `NSDistributedNotificationCenter`; also `utter://` URL scheme | M7 | Missing | URL scheme for Shortcuts/Raycast |
+| F15 | Single instance | tauri-plugin-single-instance | — | `NSRunningApplication` check | M5 | Built (second launch activates the running one and quits) | — |
+| F16 | Open app-data / log directory | `open_app_data_dir`, `open_log_dir` | — | Settings → Privacy / Debug buttons | M5 | Partly built (Open Log; models folder in Settings → Models) | — |
+| F17 | Clear local data | — | — | Settings → Privacy | M5 | Built (Settings → Privacy → Clear Local Data) | — |
 | F18 | Homebrew cask | README | community cask | Cask draft in repo | M7 | Missing | — |
 | F19 | Portable mode | `H/src-tauri/src/portable.rs` | Windows only | — | — | N/A | Windows only |
 | F20 | Keyboard implementation choice (Tauri vs handy-keys) | `S.keyboard_implementation` | two backends | One native backend with Carbon fallback | — | N/A | Implementation detail, no user-facing need |
-| F21 | Experimental toggle / lazy stream close | `S.experimental_enabled`, `S.lazy_stream_close` | — | Covered by always-on mic (A11) | M4 | Missing | — |
+| F21 | Experimental toggle / lazy stream close | `S.experimental_enabled`, `S.lazy_stream_close` | — | Covered by always-on mic (A11) | M7 | Missing | — |
 | F22 | Windows / Linux builds | — | Tauri | — | — | N/A | Utter is Mac-only by design |
 | F23 | Update checks locked by admin/managed config | `is_update_checks_locked` in `H/src-tauri/src/commands/mod.rs:27` | managed setting disables the toggle | Honour a managed `UpdateChecksDisabled` default (`defaults write` / MDM profile) | M7 | Missing | — |
 
