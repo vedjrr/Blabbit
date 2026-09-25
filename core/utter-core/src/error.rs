@@ -20,6 +20,8 @@ pub enum UtterError {
     InputTooLong { detail: String },
     #[error("The audio file could not be read.")]
     AudioRead { detail: String },
+    #[error("The model download failed. Check your internet connection and try again.")]
+    DownloadFailed { detail: String },
 }
 
 impl UtterError {
@@ -32,7 +34,8 @@ impl UtterError {
             | UtterError::InsufficientMemory { detail }
             | UtterError::InferenceFailed { detail }
             | UtterError::InputTooLong { detail }
-            | UtterError::AudioRead { detail } => detail.clone(),
+            | UtterError::AudioRead { detail }
+            | UtterError::DownloadFailed { detail } => detail.clone(),
             UtterError::ModelNotLoaded => String::new(),
         }
     }

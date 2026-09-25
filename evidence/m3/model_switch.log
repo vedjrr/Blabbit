@@ -1,0 +1,7 @@
+# 2026-09-24T20:39:51Z Apple M4 macOS 27.0
+$ utter-cli --model $MODELS/whisper-large-v3-turbo/whisper-large-v3-turbo-Q8_0.gguf --switch-to $MODELS/moonshine-base/moonshine-base-Q8_0.gguf fixtures/audio/tts_02.wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-large-v3-turbo/whisper-large-v3-turbo-Q8_0.gguf arch=whisper backend=MTL0 load=262ms warmup=1291ms footprint+1061MB
+switch footprint_mb: with_first=1079 after_unload=189 (freed 890) with_second=279 loaded=moonshine load_count=2
+$ utter-cli --model $MODELS/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf --switch-to $MODELS/whisper-small/whisper-small-Q8_0.gguf fixtures/audio/tts_02.wav
+model /Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf arch=parakeet backend=MTL0 load=389ms warmup=37ms footprint+887MB
+switch footprint_mb: with_first=890 after_unload=135 (freed 755) with_second=518 loaded=whisper load_count=2

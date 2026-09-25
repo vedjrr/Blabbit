@@ -1,4 +1,6 @@
 pub mod audio;
+pub mod catalog;
+pub mod download;
 pub mod engine;
 pub mod error;
 pub mod memory;

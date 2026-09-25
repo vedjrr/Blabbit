@@ -6,9 +6,11 @@ import UtterCore
 public final class StatusMenuController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let controller: DictationController
+    private let modelWindow: ModelManagerWindowController
 
     public init(controller: DictationController) {
         self.controller = controller
+        self.modelWindow = ModelManagerWindowController(manager: controller.models)
         super.init()
         let menu = NSMenu()
         menu.delegate = self
@@ -82,8 +84,23 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         shortcut.isEnabled = false
         menu.addItem(shortcut)
         let model = NSMenuItem(title: "Model: \(controller.modelName)\(controller.modelLoaded ? "" : " (not loaded)")", action: nil, keyEquivalent: "")
-        model.isEnabled = false
+        let modelMenu = NSMenu()
+        for entry in controller.models.installedEntries {
+            let item = NSMenuItem(title: entry.name, action: #selector(chooseModel(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = entry.id
+            item.state = entry.id == controller.models.defaultModelID ? .on : .off
+            modelMenu.addItem(item)
+        }
+        if !controller.models.installedEntries.isEmpty { modelMenu.addItem(.separator()) }
+        let manage = NSMenuItem(title: "Model Manager…", action: #selector(openModelManager), keyEquivalent: "")
+        manage.target = self
+        modelMenu.addItem(manage)
+        model.submenu = modelMenu
         menu.addItem(model)
+        let managerItem = NSMenuItem(title: "Model Manager…", action: #selector(openModelManager), keyEquivalent: "m")
+        managerItem.target = self
+        menu.addItem(managerItem)
 
         if !Permissions.accessibilityGranted || !controller.hotkey.isRunning {
             menu.addItem(.separator())
@@ -114,6 +131,13 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleDictation() { controller.toggleFromMenu() }
+    @objc private func openModelManager() { modelWindow.show() }
+    @objc private func chooseModel(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String { controller.models.setDefault(id) }
+    }
+
+    /// Opens the Model Manager (e.g. first launch with no model).
+    public func showModelManager() { modelWindow.show() }
     @objc private func openAccessibility() { NSWorkspace.shared.open(Permissions.accessibilitySettingsURL) }
     @objc private func retryHotkey() { controller.startHotkey() }
     @objc private func openLog() { NSWorkspace.shared.open(Log.fileURL) }

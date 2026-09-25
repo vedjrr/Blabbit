@@ -20,7 +20,10 @@ public final class DictationController {
     public var onStateChange: ((State) -> Void)?
     /// Fired after a dictation that was blocked or couldn't be confirmed.
     public var onAttention: ((AttentionCue) -> Void)?
-    public private(set) var modelName = ModelLocation.defaultModelName
+    public let models: ModelManager
+    public var modelName: String { models.defaultEntry?.name ?? "No model" }
+    /// Called when no usable model is installed (e.g. first launch) so the UI can open the Model Manager.
+    public var onNeedsModel: (() -> Void)?
     public private(set) var lastMessage: String?
     /// Shown while secure input is sustained (kept apart from `lastMessage`).
     public private(set) var secureInputNotice: String?
@@ -44,7 +47,10 @@ public final class DictationController {
     /// Hard cap so a lost key-up can never leave the microphone on indefinitely.
     public static let maxRecordingSeconds: TimeInterval = 10 * 60
 
-    public init() {}
+    public init(models: ModelManager) {
+        self.models = models
+        models.onDefaultModelChange = { [weak self] id in self?.loadModel(id: id) }
+    }
 
     /// Only an idle controller accepts a new dictation; presses during
     /// transcription or insertion are ignored so dictations never overlap.
@@ -89,7 +95,7 @@ public final class DictationController {
                 fail(Self.micDeniedMessage)
             }
         }
-        loadModel()
+        loadModel(id: models.defaultModelID)
     }
 
     public func startHotkey() {
@@ -105,16 +111,26 @@ public final class DictationController {
         } catch {}
     }
 
-    private func loadModel() {
-        let url = ModelLocation.defaultModelURL
+    /// Loads (or switches to) a model in the background. The Rust engine unloads
+    /// the previous model first, so two are never resident at once.
+    public func loadModel(id: String) {
+        guard let entry = models.entry(id), let path = models.path(for: id) else { return }
+        guard models.status[id] == .installed else {
+            modelLoaded = false
+            fail("No speech model is installed yet. Open the Model Manager to download \(entry.name).")
+            onNeedsModel?()
+            return
+        }
+        modelLoaded = false
         state = .loadingModel
         let engine = self.engine
+        let before = processFootprintBytes()
         Task.detached(priority: .userInitiated) {
             let started = MonoClock.nowNs()
             do {
-                let info = try engine.loadModel(path: url.path)
-                Log.info(String(format: "model_load model=%@ load_ms=%.0f warmup_ms=%.0f footprint_mb=%.0f total_ms=%.0f load_count=%llu",
-                                url.lastPathComponent, info.loadMs, info.warmupMs,
+                let info = try engine.loadModel(path: path)
+                Log.info(String(format: "model_load model=%@ load_ms=%.0f warmup_ms=%.0f footprint_before_mb=%.0f footprint_mb=%.0f total_ms=%.0f load_count=%llu",
+                                id, info.loadMs, info.warmupMs, Double(before) / 1_048_576,
                                 Double(info.footprintAfterBytes) / 1_048_576,
                                 MonoClock.ms(from: started, to: MonoClock.nowNs()), engine.loadCount()))
                 await MainActor.run {
@@ -122,9 +138,18 @@ public final class DictationController {
                     if let problem = self.micProblem { self.state = .failed(problem) } else { self.state = .ready }
                 }
             } catch let error as CoreError {
-                Log.error("model load failed: \(error.logDetail)")
-                let message = error.userMessage + (FileManager.default.fileExists(atPath: url.path) ? "" : " (expected at \(url.path))")
-                await MainActor.run { self.fail(message) }
+                Log.error("model load failed model=\(id): \(error.logDetail)")
+                await MainActor.run {
+                    switch error {
+                    case .ModelCorrupt, .ModelMissing:
+                        let message = "\(entry.name) is damaged or incomplete. Open the Model Manager and choose Re-download."
+                        self.models.markDamaged(id, message: message)
+                        self.fail(message)
+                        self.onNeedsModel?()
+                    default:
+                        self.fail(error.userMessage)
+                    }
+                }
             } catch {
                 await MainActor.run { self.fail("The speech model could not be loaded.") }
             }
@@ -327,7 +352,8 @@ extension CoreError {
     public var userMessage: String {
         switch self {
         case .ModelMissing(let m, _), .ModelCorrupt(let m, _), .ModelUnsupported(let m, _), .InsufficientMemory(let m, _),
-             .ModelNotLoaded(let m, _), .InferenceFailed(let m, _), .InputTooLong(let m, _), .AudioRead(let m, _):
+             .ModelNotLoaded(let m, _), .InferenceFailed(let m, _), .InputTooLong(let m, _), .AudioRead(let m, _),
+             .DownloadFailed(let m, _):
             return m
         }
     }
@@ -336,7 +362,8 @@ extension CoreError {
     public var logDetail: String {
         switch self {
         case .ModelMissing(_, let d), .ModelCorrupt(_, let d), .ModelUnsupported(_, let d), .InsufficientMemory(_, let d),
-             .ModelNotLoaded(_, let d), .InferenceFailed(_, let d), .InputTooLong(_, let d), .AudioRead(_, let d):
+             .ModelNotLoaded(_, let d), .InferenceFailed(_, let d), .InputTooLong(_, let d), .AudioRead(_, let d),
+             .DownloadFailed(_, let d):
             return d
         }
     }
