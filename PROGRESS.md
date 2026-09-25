@@ -12,7 +12,7 @@ Iteration: 9
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M6 gate: critic re-review #2 after fixing review #1 (1 BLOCKER).
+- M6 gate: critic re-review #3 after fixing review #2 (Whisper window padding).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -220,7 +220,7 @@ Iteration: 9
 - [M6] **Fixed the slowest stage for long dictations: incremental transcription** (ADR-013). Measured before: 5 minutes of audio needed 15.8 s of inference after release. Now `find_pause` (Rust, 4 unit tests: last pause after the minimum, breaths ignored, trailing silence not cut, quiet mics) cuts at natural pauses while recording, `IncrementalTranscriber` transcribes segments in the background, and at release only the tail remains. Results:
   - 62 s real-model test: release work 1281 → 180 ms, WER 0.329 → 0.264.
   - Swift real-model test: segments form while feeding, the tail is < ½ the one-shot work, and WER is no worse than one-shot.
-  - `make bench` 5-minute run: 15,772 → 221 ms, 20 segments, WER 0.323 → 0.284.
+  - (First bench numbers, superseded by the re-review #2 entry below.)
   - Recordings under 10 s are unchanged.
 - [M6] `make test`: Rust 33 unit + 10 download + 5 real-model; Swift `Test run with 154 tests in 32 suites passed`.
 
@@ -229,6 +229,10 @@ Iteration: 9
   (MAJOR) Segment counters are read under the lock. (MAJOR) A failed segment is logged and stops segmenting; the release pass reports the error the normal way (tested with no model loaded: no retry storm; `finish` throws). (MAJOR) New tests: room noise in the pauses (-50 dBFS), release mid-segment, failure, short dictations (checked with `isBusy`), CJK joining, and `samplesSoFar` alignment with the final recording under pre-roll + device change (live-audio suite; skipped here with the lid closed). (MAJOR) PROGRESS numbers are quoted from the committed JSON, and the G1 claim was withdrawn. (MAJOR) The bench's insertion row now says the ⌘V keystroke isn't posted; real release → paste sent / target read come from the app log.
   MINORs: committed audio is dropped and pauses are searched in a 60 s window (no minutes-long copies); the language detected by the first segment is pinned; CJK segments join without spaces; `finish` awaits instead of blocking a pool thread; the bench tags a dirty tree, catches every error, writes nothing when a model fails, filters only the dictation summary lines, times out a stuck AX host, labels the ps CPU as an average, and records an early exit; the bench's second app instance ignores the shortcut and its tap is listen-only, so it can't swallow the user's ⌥Space. Not done: profiling with Instruments (needs Xcode; see Blocked on human).
 - [M6] `make test`: Rust 33 + 10 + 5 real-model; Swift `Test run with 158 tests in 33 suites passed` (AX and live-audio suites skipped: lid closed).
+
+- [M6] Critic re-review #2 → FAIL (1 BLOCKER): on Whisper, which pads every call to a 30 s window, releasing during a segment of a 10–30 s recording cost two encoder passes against one (critic: Large v3 17 s 4229 vs 2681 ms). Fixed with a per-family policy (ADR-013): Whisper segments only past 30 s, and only in 20–29.5 s pieces. Tests with the real Whisper Medium: under 30 s nothing segments; a release right after a segment starts at 45 s is ≤ 1.1× one-shot. The Parakeet mid-segment test uses 25 s (the fixture builder had always produced 31 s; fixed) and 1.1×. `make models` now also fetches Whisper Medium. A recording that ends in failure drops its transcriber, and the tail runs on the transcriber's own queue.
+- [M6] **Bench, clean tree** (`bench/results/2026-09-25.json`, git `db768fc`): long dictation Parakeet V3 302 s 14892.7 → 305 ms after release (19 segments, WER 0.306 → 0.281); Whisper Medium 62 s 4260.4 → 1094.1 ms (WER 0.179 → 0.171); Whisper Medium 21 s: no segments. Release right after a segment starts: Parakeet 27 s 437.5 vs 459.2 ms; Whisper Medium 27 s (no segment) 1641.3 vs 1684.2 ms; Whisper Medium 47 s 3062 vs 2982.6 ms.
+- [M6] `make test`: Rust 33 + 10 + 5; Swift `Test run with 160 tests in 33 suites passed`.
 
 ## Blocked on human
 - **When the lid is open and the screen unlocked (5 minutes):** run `cd "/Users/ved/Documents 2/utter-kit" && make bench`. This records the parts that need a live microphone and window server: capture start cold/warm, AX insert + verify into a real text view, and the live-audio tests (`make test`). Utter stays usable during the run; a second copy starts three times for ~5 s and only listens.
