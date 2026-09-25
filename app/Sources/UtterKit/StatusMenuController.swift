@@ -167,7 +167,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         let copyLast = NSMenuItem(title: "Copy Last Dictation", action: #selector(copyLastDictation), keyEquivalent: "")
         copyLast.target = self
-        copyLast.isEnabled = controller.lastPipeline != nil
+        copyLast.isEnabled = !(controller.lastPipeline?.final.isEmpty ?? true)
         menu.addItem(copyLast)
         let history = NSMenuItem(title: "History…", action: #selector(openHistory), keyEquivalent: "y")
         history.target = self

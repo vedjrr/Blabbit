@@ -21,3 +21,4 @@ make_clip tts_02 "Daniel" "The quick brown fox jumps over the lazy dog while the
 make_clip tts_03 "Karen" "Please schedule a meeting with the design team for next Tuesday afternoon at three."
 make_clip tts_04 "Moira (English (Ireland))" "I studied computer science at Maynooth before moving into product engineering."
 make_clip tts_05 "Reed (English (US))" "We rewrote the settings screen in SwiftUI and moved the backend to TypeScript."
+make_clip tts_06 "Samantha" "Decivra transcribes speech with WhisperKit on the device."

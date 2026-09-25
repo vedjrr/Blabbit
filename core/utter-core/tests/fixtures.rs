@@ -73,6 +73,7 @@ fn five_minute_recording_is_not_truncated() {
     let target = 5 * 60 * audio::SAMPLE_RATE as usize;
     let mut pcm = Vec::with_capacity(target + 200_000);
     let mut reference = String::new();
+    let mut last_text = String::new();
     'fill: loop {
         for (clip, text) in &clips {
             if pcm.len() + clip.len() > target {
@@ -82,6 +83,7 @@ fn five_minute_recording_is_not_truncated() {
             pcm.extend(std::iter::repeat_n(0.0f32, audio::SAMPLE_RATE as usize));
             reference.push_str(text.trim());
             reference.push(' ');
+            last_text = text.trim().to_string();
         }
     }
     pcm.resize(target, 0.0);
@@ -94,9 +96,10 @@ fn five_minute_recording_is_not_truncated() {
     // Truncation would drop whole trailing sentences; require ≥ 90 % of the words.
     assert!(hyp_words * 10 >= ref_words * 9, "possible truncation: {hyp_words}/{ref_words} words");
     assert!(w <= 0.35, "5-min WER {w:.3}");
-    // The last fixture sentence placed must appear near the end of the transcript.
-    let last_ref: Vec<String> = wer::normalize(&reference).into_iter().rev().take(4).collect();
-    let tail: Vec<String> = wer::normalize(&t.text).into_iter().rev().take(12).collect();
+    // The last sentence placed must appear near the end of the transcript. Its
+    // vocabulary words may be misheard, so only a few of its words must match.
+    let last_ref = wer::normalize(&last_text);
+    let tail: Vec<String> = wer::normalize(&t.text).into_iter().rev().take(last_ref.len() + 8).collect();
     assert!(last_ref.iter().filter(|w| tail.contains(w)).count() >= 2, "tail missing: {tail:?} vs {last_ref:?}");
 }
 

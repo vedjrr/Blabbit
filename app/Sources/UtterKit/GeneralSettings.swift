@@ -28,8 +28,6 @@ public struct GeneralSettings: Codable, Equatable, Sendable {
     public var showMenuBarIcon = true
     /// Open the setup window at launch when a permission is missing.
     public var showSetupWhenNeeded = true
-    /// Check for updates automatically (Sparkle, M7).
-    public var checkForUpdates = true
 
     public init() {}
 

@@ -23,6 +23,8 @@ pub enum CoreError {
     #[error("{user_message}")]
     InputTooLong { user_message: String, detail: String },
     #[error("{user_message}")]
+    LanguageUnsupported { user_message: String, detail: String },
+    #[error("{user_message}")]
     AudioRead { user_message: String, detail: String },
     #[error("{user_message}")]
     DownloadFailed { user_message: String, detail: String },
@@ -39,6 +41,7 @@ impl From<UtterError> for CoreError {
             UtterError::ModelNotLoaded => CoreError::ModelNotLoaded { user_message, detail },
             UtterError::InferenceFailed { .. } => CoreError::InferenceFailed { user_message, detail },
             UtterError::InputTooLong { .. } => CoreError::InputTooLong { user_message, detail },
+            UtterError::LanguageUnsupported { .. } => CoreError::LanguageUnsupported { user_message, detail },
             UtterError::AudioRead { .. } => CoreError::AudioRead { user_message, detail },
             UtterError::DownloadFailed { .. } => CoreError::DownloadFailed { user_message, detail },
         }
@@ -372,8 +375,16 @@ pub fn process_text(raw: String, settings: TextSettings) -> ProcessedText {
         auto_punctuation: settings.auto_punctuation,
         spoken_line_breaks: settings.spoken_line_breaks,
     };
-    let processed = text::process(&raw, &options);
-    ProcessedText { text: processed.text, changes: processed.changes }
+    // A bug in a stage must never crash dictation (a panic would cross the FFI
+    // boundary): fall back to the raw transcript and say so.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| text::process(&raw, &options))) {
+        Ok(processed) => ProcessedText { text: processed.text, changes: processed.changes },
+        Err(panic) => {
+            let why = panic.downcast_ref::<String>().cloned().or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()));
+            log::error!("text pipeline panicked; using the raw transcript: {}", why.unwrap_or_default());
+            ProcessedText { text: raw, changes: vec!["text pipeline error: raw transcript used".into()] }
+        }
+    }
 }
 
 /// Whisper initial prompt built from the user's vocabulary.
@@ -407,6 +418,7 @@ pub fn error_messages() -> Vec<ErrorMessage> {
         ("ModelNotLoaded", E::ModelNotLoaded),
         ("InferenceFailed", E::InferenceFailed { detail: d() }),
         ("InputTooLong", E::InputTooLong { detail: d() }),
+        ("LanguageUnsupported", E::LanguageUnsupported { detail: d() }),
         ("AudioRead", E::AudioRead { detail: d() }),
         ("DownloadFailed", E::DownloadFailed { kind: DownloadIssue::Network, detail: d() }),
         ("DownloadServer", E::DownloadFailed { kind: DownloadIssue::Server, detail: d() }),

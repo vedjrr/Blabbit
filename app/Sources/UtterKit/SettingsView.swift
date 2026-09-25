@@ -9,21 +9,46 @@ import UtterCore
 public final class SettingsModel {
     let controller: DictationController
 
-    var general: GeneralSettings { didSet { applyGeneral(oldValue) } }
-    var text: TextPipelineSettings { didSet { controller.textSettings = text } }
-    var insertion: InsertionSettings { didSet { controller.insertionSettings = insertion } }
-    var overrides: [String: [InsertionStrategy]] { didSet { controller.insertionOverrides = overrides } }
-    var processing: ProcessorSettings { didSet { controller.processorSettings = processing } }
-    var privacy: PrivacySettings { didSet { controller.privacySettings = privacy } }
+    var general: GeneralSettings { didSet { if !reloading { applyGeneral(oldValue) } } }
+    var text: TextPipelineSettings { didSet { if !reloading { controller.textSettings = text } } }
+    var insertion: InsertionSettings { didSet { if !reloading { controller.insertionSettings = insertion } } }
+    var overrides: [String: [InsertionStrategy]] { didSet { if !reloading { controller.insertionOverrides = overrides } } }
+    var processing: ProcessorSettings { didSet { if !reloading { controller.processorSettings = processing } } }
+    var privacy: PrivacySettings { didSet { if !reloading { controller.privacySettings = privacy } } }
     var launchAtLogin = LaunchAtLogin.isEnabled
     var message: String?
     var newTerm = ""
     var apiKeyDraft = ""
-    var hasAPIKey = KeychainStore.anthropic.read() != nil
+    var hasAPIKey = false
     var historyCount: Int?
     var connectionResult: String?
     var confirmClear = false
     var selectedTab = "general"
+
+    /// Set while copying the controller's values in, so nothing is written back.
+    private var reloading = false
+
+    /// Re-reads every setting from the controller: the menu (Mode, Model,
+    /// Microphone…) may have changed them since the window was last open.
+    func reload() {
+        reloading = true
+        defer { reloading = false }
+        general = GeneralSettings.load()
+        text = controller.textSettings
+        insertion = controller.insertionSettings
+        overrides = controller.insertionOverrides
+        processing = controller.processorSettings
+        privacy = controller.privacySettings
+        launchAtLogin = LaunchAtLogin.isEnabled
+        refreshAPIKeyState()
+    }
+
+    func refreshAPIKeyState() {
+        Task {
+            let has = await Task.detached { KeychainStore.anthropic.read() != nil }.value
+            hasAPIKey = has
+        }
+    }
 
     /// Called when General settings that the menu bar controls change.
     var onGeneralChange: ((GeneralSettings) -> Void)?
@@ -71,6 +96,10 @@ public final class SettingsModel {
 
     /// Sends one short request through the chosen processor (user-initiated).
     func testProcessor() {
+        if privacy.localOnly && !processing.isLocal {
+            connectionResult = "Local-only mode is on (Privacy), so Utter won't contact \(processing.provider == .anthropic ? "Anthropic" : "that address")."
+            return
+        }
         connectionResult = "Testing…"
         guard let processor = processing.makeProcessor() else {
             connectionResult = processing.provider == .anthropic ? "Add an API key first." : "Choose a processor first."
@@ -93,13 +122,12 @@ public final class SettingsModel {
     }
 
     func clearLocalData() {
-        do {
-            try controller.history?.deleteAll()
-            message = "History and kept audio were deleted."
-        } catch {
-            message = "Local data couldn't be deleted completely."
+        guard let history = controller.history else { return }
+        Task {
+            let ok = await Task.detached { (try? history.deleteAll()) != nil }.value
+            message = ok ? "History and kept audio were deleted." : "Local data couldn't be deleted completely."
+            refreshHistoryCount()
         }
-        refreshHistoryCount()
     }
 }
 
@@ -142,7 +170,6 @@ struct SettingsView: View {
             Text("It always appears while you dictate. With the icon hidden, open Settings by launching Utter again.")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Open setup at launch when a permission is missing", isOn: $model.general.showSetupWhenNeeded)
-            Toggle("Check for updates automatically", isOn: $model.general.checkForUpdates)
             LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development build")
         }
         .formStyle(.grouped)
@@ -205,7 +232,15 @@ struct SettingsView: View {
                                                        set: { model.controller.models.setDefault($0) })) {
                 ForEach(model.controller.models.installedEntries, id: \.id) { Text($0.name).tag($0.id) }
             }
-            LabeledContent("Installed", value: "\(model.controller.models.installedEntries.count) of \(model.controller.models.entries.count)")
+            Section("Available models") {
+                ForEach(model.controller.models.entries, id: \.id) { entry in
+                    HStack {
+                        Text(entry.name)
+                        Spacer()
+                        Text(Self.statusText(model.controller.models.status[entry.id])).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
             LabeledContent("Storage") {
                 HStack {
                     Text(ModelLocation.modelsDirectory.path).font(.caption).lineLimit(1).truncationMode(.middle)
@@ -326,6 +361,17 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
+    static func statusText(_ status: ModelManager.Status?) -> String {
+        switch status {
+        case .installed: "Installed"
+        case .downloading(let done, let total): "Downloading \(Int(Double(done) / Double(max(total, 1)) * 100)) %"
+        case .partial: "Paused"
+        case .verifying: "Verifying…"
+        case .failed: "Needs attention"
+        case .notInstalled, nil: "Not installed"
+        }
+    }
+
     static func languages(for entry: ModelEntry?) -> [String] {
         (entry?.languages ?? ["en"]).sorted {
             (Locale.current.localizedString(forLanguageCode: $0) ?? $0) < (Locale.current.localizedString(forLanguageCode: $1) ?? $1)
@@ -347,6 +393,10 @@ struct SettingsView: View {
             case .ollama:
                 TextField("Ollama address", text: $model.processing.ollamaURL)
                 TextField("Model", text: $model.processing.ollamaModel)
+                if model.privacy.localOnly && !model.processing.isLocal {
+                    Text("This address isn't on this Mac. Local-only mode is on (Privacy), so it won't be used.")
+                        .font(.callout).foregroundStyle(.orange)
+                }
             case .anthropic:
                 if model.privacy.localOnly {
                     Text("Local-only mode is on (Privacy), so the cloud processor won't be used.")
@@ -413,6 +463,7 @@ public final class SettingsWindowController {
     }
 
     public func show() {
+        model.reload()
         if window == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 520),
                                   styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)

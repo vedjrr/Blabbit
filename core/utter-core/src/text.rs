@@ -170,6 +170,8 @@ pub fn remove_stutters(text: &str) -> String {
 }
 
 /// "new paragraph" → blank line, "new line" → line break (spoken commands).
+/// Only at a clause boundary (after punctuation, at the start or end, or with
+/// punctuation of its own), so "a new line of products" stays ordinary speech.
 pub fn spoken_line_breaks(text: &str) -> String {
     let mut out = String::new();
     let words: Vec<&str> = text.split(' ').collect();
@@ -181,7 +183,11 @@ pub fn spoken_line_breaks(text: &str) -> String {
             (Some("new"), Some("line")) => Some("\n"),
             _ => None,
         };
-        if let Some(brk) = command {
+        let at_boundary = i == 0
+            || words.get(i - 1).is_some_and(|w| ends_clause(w))
+            || words.get(i + 1).is_some_and(|w| ends_clause(w))
+            || i + 2 == words.len();
+        if let (Some(brk), true) = (command, at_boundary) {
             // Punctuation said around the command belongs to the previous sentence.
             let trimmed = out.trim_end_matches([' ', ',']).to_string();
             out = trimmed + brk;
@@ -204,8 +210,12 @@ pub fn capitalize_sentences(text: &str) -> String {
     for word in text.split_inclusive([' ', '\n']) {
         let core = word.trim_end_matches([' ', '\n']);
         let mut w = word.to_string();
-        if bare(core) == "i" || core.starts_with("i'") {
-            w.replace_range(0..1, "I");
+        let lone_i = bare(core) == "i" || bare(core).starts_with("i'");
+        if lone_i {
+            // Replace the 'i' itself, wherever it sits ("(i", "“i", "😀i").
+            if let Some((pos, _)) = w.char_indices().find(|(_, c)| *c == 'i') {
+                w.replace_range(pos..pos + 1, "I");
+            }
         } else if start {
             if let Some((pos, c)) = w.char_indices().find(|(_, c)| c.is_alphabetic()) {
                 if c.is_lowercase() {
@@ -243,10 +253,12 @@ pub fn ensure_final_punctuation(text: &str) -> String {
 // MARK: Vocabulary
 
 /// Well-known developer terms used in Code mode (in addition to the user's).
+/// Words that are also ordinary English ("rust", "python") are left out: Code
+/// mode must not rewrite normal speech.
 pub const CODE_TERMS: &[&str] = &[
     "JavaScript", "TypeScript", "PostgreSQL", "MySQL", "SQLite", "GitHub", "GitLab", "JSON", "YAML", "HTTP", "HTTPS",
-    "API", "iOS", "macOS", "Xcode", "SwiftUI", "UIKit", "AppKit", "Kubernetes", "Docker", "Node.js", "npm", "OAuth",
-    "GraphQL", "WebSocket", "localhost", "README", "CLI", "SDK", "URL", "CSS", "HTML", "Rust", "Python",
+    "API", "iOS", "macOS", "Xcode", "SwiftUI", "UIKit", "AppKit", "Kubernetes", "Node.js", "npm", "OAuth",
+    "GraphQL", "WebSocket", "localhost", "README", "CLI", "SDK", "URL", "CSS", "HTML",
 ];
 
 /// Short function words: a phrase containing one is usually an ordinary
@@ -260,30 +272,70 @@ fn letters(s: &str) -> String {
     s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
 }
 
+/// Double Metaphone codes, only for plain ASCII letters: the encoder slices
+/// by byte and panics inside multi-byte characters ("café", "Ü"), and its
+/// rules are English anyway.
+fn phonetic(letters: &str) -> Option<(String, String)> {
+    if letters.is_empty() || !letters.is_ascii() {
+        return None;
+    }
+    let metaphone = DoubleMetaphone::new(None);
+    Some((metaphone.encode(letters), metaphone.encode_alternate(letters)))
+}
+
+/// A vocabulary term with its comparison keys computed once per call.
+struct TermKey<'a> {
+    term: &'a str,
+    letters: String,
+    codes: Option<(String, String)>,
+}
+
+impl<'a> TermKey<'a> {
+    fn new(term: &'a str) -> Self {
+        let letters = letters(term);
+        let codes = phonetic(&letters);
+        TermKey { term, letters, codes }
+    }
+
+    /// Short terms only fix casing ("json" → "JSON"); terms with symbols
+    /// ("C#", "C++") can't be matched by letters alone and are skipped.
+    fn usable(&self) -> bool {
+        !self.letters.is_empty() && (self.letters.len() >= 4 || self.term.chars().all(|c| c.is_alphanumeric() || c == '.'))
+    }
+}
+
 /// How well a spoken phrase matches a vocabulary term (0…1), or None if it
 /// shouldn't be considered at all.
 pub fn match_score(phrase: &str, term: &str) -> Option<f64> {
-    match_details(phrase, term).map(|(score, _)| score)
+    let key = TermKey::new(term);
+    let p = letters(phrase);
+    match_details(&p, &mut None, &key).map(|(score, _)| score)
 }
 
-/// Score plus whether the phrase sounds like the term (Double Metaphone).
-fn match_details(phrase: &str, term: &str) -> Option<(f64, bool)> {
-    let (p, t) = (letters(phrase), letters(term));
+/// Score plus whether the phrase sounds like the term. `phrase_codes` caches
+/// the phrase's phonetic codes across terms.
+fn match_details(p: &str, phrase_codes: &mut Option<Option<(String, String)>>, key: &TermKey) -> Option<(f64, bool)> {
+    let t = &key.letters;
+    if !key.usable() {
+        return None;
+    }
     if p.len() < 4 || t.len() < 4 {
-        return (p == t && !p.is_empty()).then_some((1.0, true));
+        return (p == t.as_str() && !p.is_empty()).then_some((1.0, true));
     }
     if p == t {
         return Some((1.0, true));
     }
     // Different lengths mean different words ("swift" vs "SwiftUI", "type" vs "TypeScript").
-    let ratio = p.len() as f64 / t.len() as f64;
+    let ratio = p.chars().count() as f64 / t.chars().count() as f64;
     if !(0.75..=1.34).contains(&ratio) {
         return None;
     }
-    let similarity = jaro_winkler(&p, &t);
-    let metaphone = DoubleMetaphone::new(None);
-    let sounds_alike = metaphone.encode(&p) == metaphone.encode(&t)
-        || metaphone.encode_alternate(&p) == metaphone.encode_alternate(&t);
+    let similarity = jaro_winkler(p, t);
+    let codes = phrase_codes.get_or_insert_with(|| phonetic(p));
+    let sounds_alike = match (codes.as_ref(), key.codes.as_ref()) {
+        (Some((pp, pa)), Some((tp, ta))) => pp == tp || pa == ta,
+        _ => false,
+    };
     // Sounding alike earns a lower bar ("Manuth" ~ "Maynooth").
     Some((if sounds_alike { similarity + 0.08 } else { similarity }, sounds_alike))
 }
@@ -297,9 +349,15 @@ fn looks_like_plain_word(word: &str) -> bool {
     first_ok && chars.all(|c| c.is_lowercase())
 }
 
+fn ends_clause(word: &str) -> bool {
+    word.ends_with(|c: char| matches!(c, ',' | '.' | '!' | '?' | ';' | ':'))
+}
+
 /// Replaces 1–3 word phrases that match a vocabulary term, best matches first,
 /// never across sentence punctuation. Returns the text and the changes made.
 pub fn apply_vocabulary(text: &str, vocabulary: &[String], threshold: f64) -> (String, Vec<String>) {
+    let keys: Vec<TermKey> = vocabulary.iter().map(|t| TermKey::new(t)).filter(TermKey::usable).collect();
+    let term_letters: Vec<&str> = keys.iter().map(|k| k.letters.as_str()).collect();
     let mut changes = Vec::new();
     let lines: Vec<String> = text
         .split('\n')
@@ -311,28 +369,28 @@ pub fn apply_vocabulary(text: &str, vocabulary: &[String], threshold: f64) -> (S
                 for len in 1..=3.min(words.len() - start) {
                     let span = &words[start..start + len];
                     // A phrase may end with punctuation but not contain it inside.
-                    if span[..len - 1].iter().any(|w| w.ends_with(|c: char| matches!(c, ',' | '.' | '!' | '?' | ';' | ':'))) {
+                    if span[..len - 1].iter().any(|w| ends_clause(w)) {
                         break;
                     }
-                    let phrase = span.join(" ");
                     let bares: Vec<String> = span.iter().map(|w| bare(w)).collect();
                     // A word already spelled as a term stays itself ("the TypeScript").
-                    if len > 1 && bares.iter().any(|b| vocabulary.iter().any(|t| letters(t) == *b)) {
+                    if len > 1 && bares.iter().any(|b| term_letters.contains(&letters(b).as_str())) {
                         continue;
                     }
                     let has_function_word = len > 1 && bares.iter().any(|b| FUNCTION_WORDS.contains(&b.as_str()));
                     let needed = if has_function_word { threshold.max(FUNCTION_WORD_THRESHOLD) } else { threshold };
-                    for term in vocabulary {
-                        if let Some((score, sounds_alike)) = match_details(&phrase, term) {
-                            // A real-looking single word must also sound like the term.
-                            if len == 1 && score < 1.0 && looks_like_plain_word(span[0]) && !sounds_alike {
-                                continue;
-                            }
-                            // Already written exactly as the term: nothing to do.
-                            let as_written = span.iter().map(|w| w.trim_matches(|c: char| !c.is_alphanumeric())).collect::<Vec<_>>().join(" ");
-                            if score >= needed && as_written != *term {
-                                candidates.push((score + len as f64 * 0.001, start, len, term.as_str()));
-                            }
+                    let phrase = letters(&span.join(" "));
+                    let mut phrase_codes = None;
+                    let as_written = span.iter().map(|w| w.trim_matches(|c: char| !c.is_alphanumeric())).collect::<Vec<_>>().join(" ");
+                    for key in &keys {
+                        let Some((score, sounds_alike)) = match_details(&phrase, &mut phrase_codes, key) else { continue };
+                        // A real-looking single word must also sound like the term.
+                        if len == 1 && score < 1.0 && looks_like_plain_word(span[0]) && !sounds_alike {
+                            continue;
+                        }
+                        // Already written exactly as the term: nothing to do.
+                        if score >= needed && as_written != key.term {
+                            candidates.push((score + len as f64 * 0.001, start, len, key.term));
                         }
                     }
                 }
@@ -368,11 +426,17 @@ pub fn apply_vocabulary(text: &str, vocabulary: &[String], threshold: f64) -> (S
     (lines.join("\n"), changes)
 }
 
-/// Whisper's initial prompt: a short list of the user's terms biases decoding
-/// towards their spelling (measured in M1: Whisper Small WER 0.161 → 0.032).
+/// Whisper's initial prompt: the user's terms in a plain sentence bias decoding
+/// towards their spelling. A sentence works better than a bare list, which
+/// Whisper tends to imitate by gluing words together (evidence/m5/vocabulary_wer.log:
+/// Whisper Small 0.057 with a list vs 0.029 as a sentence, over 6 clips).
 pub fn whisper_prompt(vocabulary: &[String]) -> Option<String> {
     let terms: Vec<&str> = vocabulary.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).take(40).collect();
-    (!terms.is_empty()).then(|| terms.join(", "))
+    match terms.as_slice() {
+        [] => None,
+        [one] => Some(format!("We talked about {one}.")),
+        [rest @ .., last] => Some(format!("We talked about {} and {last}.", rest.join(", "))),
+    }
 }
 
 #[cfg(test)]
@@ -418,8 +482,12 @@ mod tests {
 
     #[test]
     fn spoken_commands() {
-        assert_eq!(spoken_line_breaks("first point new line second point"), "first point\nsecond point");
+        assert_eq!(spoken_line_breaks("first point. New line. Second point"), "first point.\nSecond point");
         assert_eq!(spoken_line_breaks("intro, new paragraph, body"), "intro\n\nbody");
+        assert_eq!(spoken_line_breaks("thanks new line"), "thanks\n");
+        // Ordinary speech is left alone.
+        assert_eq!(spoken_line_breaks("we launched a new line of products"), "we launched a new line of products");
+        assert_eq!(spoken_line_breaks("start a new paragraph about cats"), "start a new paragraph about cats");
     }
 
     #[test]
@@ -470,10 +538,10 @@ mod tests {
 
     #[test]
     fn modes() {
-        let raw = "um so i think we should uh use post gur SQL and type script new paragraph thanks";
+        let raw = "um so i think we should uh use post gur SQL and type script, new paragraph, thanks";
         assert_eq!(
             process(raw, &opts(Mode::Exact)).text,
-            "um so i think we should uh use PostgreSQL and TypeScript new paragraph thanks"
+            "um so i think we should uh use PostgreSQL and TypeScript, new paragraph, thanks"
         );
         assert_eq!(
             process(raw, &opts(Mode::Clean)).text,
@@ -487,16 +555,64 @@ mod tests {
 
     #[test]
     fn options_switch_stages_off() {
-        let raw = "um hello there new line next";
+        let raw = "um hello there, new line, next";
         let mut o = TextOptions { remove_fillers: false, capitalize: false, auto_punctuation: false, spoken_line_breaks: false, ..TextOptions::default() };
         assert_eq!(process(raw, &o).text, raw);
         o.remove_fillers = true;
-        assert_eq!(process(raw, &o).text, "hello there new line next");
+        assert_eq!(process(raw, &o).text, "hello there, new line, next");
+    }
+
+    /// Every stage, every mode, on text that trips byte-slicing code: accents,
+    /// curly quotes, CJK, emoji, and a lone "i" behind punctuation.
+    #[test]
+    fn unicode_never_panics_in_any_mode() {
+        let inputs = [
+            "the café was nice", "je travaille à Décivra", "wir deployen in münchen", "le déploiement du système",
+            "la función devuelve", "münchen", "he said “i think so”", "«i» ok", "😀i did it", "(i agree) fine",
+            "日本語のテキスト new line 中文", "Ünïcödé ïs fûn, new paragraph, ok", "ß ẞ ﬁ ǅ", "i\u{301} accent", "",
+        ];
+        let modes = [Mode::Exact, Mode::Clean, Mode::Code, Mode::Professional, Mode::Custom];
+        for mode in modes {
+            for vocab in [vec![], vocab(), vec!["Café".to_string(), "Décivra".to_string(), "Zürich".to_string()]] {
+                for input in inputs {
+                    let o = TextOptions { mode, vocabulary: vocab.clone(), ..TextOptions::default() };
+                    let _ = process(input, &o);
+                }
+            }
+        }
+        assert_eq!(capitalize_sentences("he said “i think so”"), "He said “I think so”");
+        assert_eq!(capitalize_sentences("(i agree) fine"), "(I agree) fine");
+        assert_eq!(capitalize_sentences("😀i did it"), "😀I did it");
+        // Accented terms still correct by spelling (no phonetic code for them).
+        let (out, _) = apply_vocabulary("je travaille à décivra", &["Décivra".to_string()], DEFAULT_THRESHOLD);
+        assert_eq!(out, "je travaille à Décivra");
+    }
+
+    #[test]
+    fn short_and_symbol_terms_do_not_spread() {
+        let (out, _) = apply_vocabulary("a c b c", &["C#".to_string()], DEFAULT_THRESHOLD);
+        assert_eq!(out, "a c b c", "letters alone can't match C#");
+        let code = process("we use rust and python with json", &TextOptions { mode: Mode::Code, ..TextOptions::default() }).text;
+        assert_eq!(code, "we use rust and python with JSON");
+    }
+
+    #[test]
+    fn long_dictation_with_a_big_vocabulary_is_fast() {
+        let text = "we deployed the service and the team reviewed the dashboard numbers ".repeat(90); // ~1080 words
+        let vocabulary: Vec<String> = (0..200).map(|i| format!("Term{i}Name")).chain(vocab()).collect();
+        let started = std::time::Instant::now();
+        let _ = process(&text, &TextOptions { vocabulary, ..TextOptions::default() });
+        let ms = started.elapsed().as_millis();
+        assert!(ms < 400, "took {ms} ms");
     }
 
     #[test]
     fn whisper_prompt_lists_terms() {
-        assert_eq!(whisper_prompt(&vocab()).as_deref(), Some("HoldMyCode, Decivra, Maynooth, PostgreSQL, TypeScript, SwiftUI, WhisperKit"));
+        assert_eq!(
+            whisper_prompt(&vocab()).as_deref(),
+            Some("We talked about HoldMyCode, Decivra, Maynooth, PostgreSQL, TypeScript, SwiftUI and WhisperKit.")
+        );
+        assert_eq!(whisper_prompt(&["Utter".into()]).as_deref(), Some("We talked about Utter."));
         assert_eq!(whisper_prompt(&[]), None);
     }
 }

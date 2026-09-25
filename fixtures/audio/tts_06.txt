@@ -1,0 +1,1 @@
+Decivra transcribes speech with WhisperKit on the device.

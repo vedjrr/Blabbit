@@ -52,6 +52,23 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: store.audioDirectory.appendingPathComponent(second).path))
     }
 
+    @Test func whatIsKept() {
+        let on = PrivacySettings()
+        let off = PrivacySettings(historyEnabled: false)
+        let audioOn = PrivacySettings(keepAudio: true)
+        for kept in [InsertReport.Result.inserted(.paste), .unverified(.accessibility), .copiedToClipboard, .handledByScript] {
+            #expect(HistoryPolicy.shouldRecord(kept, privacy: on), "\(kept)")
+            #expect(!HistoryPolicy.shouldRecord(kept, privacy: off), "history off keeps nothing")
+        }
+        for dropped in [InsertReport.Result.blockedBySecureInput, .failed("x"), .skipped] {
+            #expect(!HistoryPolicy.shouldRecord(dropped, privacy: on), "\(dropped) leaves no trace")
+        }
+        let samples: [Float] = [0.1, 0.2]
+        #expect(HistoryPolicy.audioToKeep(samples, privacy: on) == nil, "no audio unless enabled")
+        #expect(HistoryPolicy.audioToKeep(samples, privacy: audioOn) == samples)
+        #expect(HistoryPolicy.audioToKeep(samples, privacy: PrivacySettings(historyEnabled: false, keepAudio: true)) == nil)
+    }
+
     @Test func privacyDefaults() throws {
         let suite = "dev.utter.test.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

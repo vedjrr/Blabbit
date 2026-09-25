@@ -29,7 +29,13 @@ final class HistoryModel {
     init(controller: DictationController, store: HistoryStore? = nil) {
         self.controller = controller
         explicitStore = store
+        // A new dictation shows up without reopening the window.
+        observer = NotificationCenter.default.addObserver(forName: .historyChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
+        }
     }
+
+    @ObservationIgnored private var observer: NSObjectProtocol?
 
     private var store: HistoryStore? { explicitStore ?? controller.history }
 
@@ -55,13 +61,18 @@ final class HistoryModel {
 
     func delete(_ entry: HistoryEntry) {
         guard let id = entry.id else { return }
-        try? store?.delete(id: id)
+        do { try store?.delete(id: id) } catch { problem = "That dictation couldn't be deleted." }
         reload()
     }
 
+    /// Deletes everything off the main thread (VACUUM can take a moment).
     func deleteAll() {
-        try? store?.deleteAll()
-        reload()
+        guard let store else { return }
+        Task {
+            let failed = await Task.detached { (try? store.deleteAll()) == nil }.value
+            if failed { problem = "History couldn't be deleted completely." }
+            reload()
+        }
     }
 
     func audioURL(_ entry: HistoryEntry) -> URL? {

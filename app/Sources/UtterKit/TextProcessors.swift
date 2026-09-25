@@ -64,6 +64,18 @@ public struct ProcessorSettings: Codable, Equatable, Sendable {
         defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey)
     }
 
+    /// True if the processor runs on this Mac: Ollama on a loopback address.
+    /// Local-only mode allows nothing else.
+    public var isLocal: Bool {
+        switch provider {
+        case .none: return true
+        case .anthropic: return false
+        case .ollama:
+            guard let host = URL(string: ollamaURL)?.host?.lowercased() else { return false }
+            return ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host)
+        }
+    }
+
     /// The configured processor, or nil (none chosen, or no key for the cloud).
     public func makeProcessor(keychain: KeychainStore = .anthropic, session: URLSession = .shared) -> (any TextProcessor)? {
         switch provider {

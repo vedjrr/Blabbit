@@ -166,7 +166,9 @@ public enum InsertionOutcome {
             plan.cue = .blocked
         case .failed(let why):
             plan.copyToClipboard = true
-            plan.failure = "\(SecureInputFallback.failedMessagePrefix) (\(why))"
+            // Two plain sentences: what happened to the words, then why.
+            let reason = why.hasSuffix(".") ? why : why + "."
+            plan.failure = "\(SecureInputFallback.failedMessagePrefix) \(reason)"
         }
         return plan
     }

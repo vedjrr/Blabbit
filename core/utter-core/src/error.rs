@@ -18,6 +18,8 @@ pub enum UtterError {
     InferenceFailed { detail: String },
     #[error("The recording is longer than this model can handle.")]
     InputTooLong { detail: String },
+    #[error("This speech model can't transcribe the chosen language. Choose another language or model in Settings.")]
+    LanguageUnsupported { detail: String },
     #[error("The audio file could not be read.")]
     AudioRead { detail: String },
     #[error("{kind}")]
@@ -45,6 +47,7 @@ impl UtterError {
             | UtterError::InsufficientMemory { detail }
             | UtterError::InferenceFailed { detail }
             | UtterError::InputTooLong { detail }
+            | UtterError::LanguageUnsupported { detail }
             | UtterError::AudioRead { detail }
             | UtterError::DownloadFailed { detail, .. } => detail.clone(),
             UtterError::ModelNotLoaded => String::new(),
@@ -61,6 +64,8 @@ impl From<transcribe_cpp::Error> for UtterError {
             E::ModelLoad(_) => UtterError::ModelCorrupt { detail },
             E::OutOfMemory(_) => UtterError::InsufficientMemory { detail },
             E::InputTooLong(_) => UtterError::InputTooLong { detail },
+            // The runtime reports a language the model lacks as "unsupported language".
+            E::NotImplemented(_) | E::Unsupported(_) if detail.contains("language") => UtterError::LanguageUnsupported { detail },
             E::NotImplemented(_) | E::Unsupported(_) => UtterError::ModelUnsupported { detail },
             _ => UtterError::InferenceFailed { detail },
         }

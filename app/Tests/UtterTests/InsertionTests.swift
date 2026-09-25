@@ -461,7 +461,7 @@ final class FakeElement: FocusedTextElement, @unchecked Sendable {
         let password = plan(.blockedBySecureInput, secureField: true)
         #expect(!password.copyToClipboard && password.cue == .blocked)
         let failed = plan(.failed("x"))
-        #expect(failed.copyToClipboard && failed.failure?.hasSuffix("(x)") == true)
+        #expect(failed.copyToClipboard && failed.failure?.hasSuffix(" x.") == true)
         #expect(plan(.copiedToClipboard) == InsertionOutcome.Plan())
         #expect(plan(.handledByScript) == InsertionOutcome.Plan())
     }

@@ -74,14 +74,14 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
 
     @Test func localStagesRunThroughTheRustCore() async {
         var s = settings
-        let raw = "um so i think we should uh use post gur SQL and type script new paragraph thanks"
+        let raw = "um so i think we should uh use post gur SQL and type script, new paragraph, thanks"
         s.mode = .clean
         let clean = await TextPipeline(settings: s).run(raw)
         #expect(clean.final == "So I think we should use PostgreSQL and TypeScript.\n\nThanks.")
         #expect(clean.raw == raw && clean.processor == nil)
         #expect(clean.changes.contains { $0.contains("PostgreSQL") })
         s.mode = .exact
-        #expect(await TextPipeline(settings: s).run(raw).final == "um so i think we should uh use PostgreSQL and TypeScript new paragraph thanks")
+        #expect(await TextPipeline(settings: s).run(raw).final == "um so i think we should uh use PostgreSQL and TypeScript, new paragraph, thanks")
         s.mode = .code
         #expect(await TextPipeline(settings: s).run("um call the javascript api").final == "call the JavaScript API")
     }
@@ -131,8 +131,19 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         #expect(old.mode == .exact && old.removeFillers && old.vocabulary.isEmpty)
     }
 
+    @Test func languageOnlyGoesToModelsThatSupportIt() {
+        var s = TextPipelineSettings()
+        #expect(s.effectiveLanguage(forModelLanguages: ["en", "de"]) == nil, "auto by default")
+        s.language = "de"
+        #expect(s.effectiveLanguage(forModelLanguages: ["en", "de", "fr"]) == "de")
+        #expect(s.effectiveLanguage(forModelLanguages: ["en"]) == nil, "Parakeet V2 / Moonshine: English only")
+        #expect(s.effectiveLanguage(forModelLanguages: nil) == nil)
+    }
+
     @Test func whisperGetsTheVocabularyAsPrompt() {
-        #expect(settings.initialPrompt(forModelFamily: "whisper") == "HoldMyCode, Decivra, Maynooth, PostgreSQL, TypeScript, SwiftUI, WhisperKit")
+        #expect(settings.initialPrompt(forModelFamily: "whisper", modelID: "whisper-small")
+            == "We talked about HoldMyCode, Decivra, Maynooth, PostgreSQL, TypeScript, SwiftUI and WhisperKit.")
+        #expect(settings.initialPrompt(forModelFamily: "whisper", modelID: "whisper-large-v3-turbo") == nil, "Turbo measured worse with a prompt")
         #expect(settings.initialPrompt(forModelFamily: "parakeet") == nil)
         #expect(TextPipelineSettings().initialPrompt(forModelFamily: "whisper") == nil)
     }
@@ -178,6 +189,22 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             #expect(error.userMessage.contains("rejected the API key"))
         }
         StubURLProtocol.handler = nil
+    }
+
+    @Test func localOnlyMeansThisMac() {
+        var p = ProcessorSettings()
+        #expect(p.isLocal)
+        p.provider = .ollama
+        for local in ["http://localhost:11434", "http://127.0.0.1:11434", "http://[::1]:11434"] {
+            p.ollamaURL = local
+            #expect(p.isLocal, "\(local)")
+        }
+        for remote in ["http://10.0.0.5:11434", "http://my-server.lan:11434", "https://ollama.example.com", "not a url"] {
+            p.ollamaURL = remote
+            #expect(!p.isLocal, "\(remote) is not on this Mac")
+        }
+        p.provider = .anthropic
+        #expect(!p.isLocal)
     }
 
     @Test func cloudNeedsAKeyInTheKeychain() {

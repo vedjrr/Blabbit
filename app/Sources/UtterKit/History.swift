@@ -44,7 +44,11 @@ public struct PrivacySettings: Codable, Equatable, Sendable {
     /// Local-only: never use a cloud processor, whatever else is set.
     public var localOnly = true
 
-    public init() {}
+    public init(historyEnabled: Bool = true, keepAudio: Bool = false, localOnly: Bool = true) {
+        self.historyEnabled = historyEnabled
+        self.keepAudio = keepAudio
+        self.localOnly = localOnly
+    }
 
     public static let defaultsKey = "privacy.settings"
 
@@ -57,6 +61,28 @@ public struct PrivacySettings: Codable, Equatable, Sendable {
     public func save(to defaults: UserDefaults = .standard) {
         defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey)
     }
+}
+
+/// When a dictation is kept, and with what (pure; tested).
+public enum HistoryPolicy {
+    /// Text that reached an app or the clipboard; never a password-field block.
+    public static func shouldRecord(_ result: InsertReport.Result, privacy: PrivacySettings) -> Bool {
+        guard privacy.historyEnabled else { return false }
+        switch result {
+        case .inserted, .unverified, .copiedToClipboard, .handledByScript: return true
+        case .blockedBySecureInput, .failed, .skipped: return false
+        }
+    }
+
+    /// Audio is stored only when the user turned on "keep audio".
+    public static func audioToKeep(_ samples: [Float], privacy: PrivacySettings) -> [Float]? {
+        privacy.historyEnabled && privacy.keepAudio ? samples : nil
+    }
+}
+
+extension Notification.Name {
+    /// Posted on the main thread after an entry is added or deleted.
+    public static let historyChanged = Notification.Name("dev.utter.historyChanged")
 }
 
 /// SQLite history with full-text search (GRDB + FTS5), ADR-009.
@@ -105,6 +131,7 @@ public final class HistoryStore: @unchecked Sendable {
     public func add(_ entry: HistoryEntry) throws -> HistoryEntry {
         var e = entry
         try db.write { db in try e.insert(db) }
+        DispatchQueue.main.async { NotificationCenter.default.post(name: .historyChanged, object: self) }
         return e
     }
 

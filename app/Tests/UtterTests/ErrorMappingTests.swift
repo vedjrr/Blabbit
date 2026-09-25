@@ -21,6 +21,17 @@ import UtterCore
         #expect(Self.isPlainEnglish(failure.message), "\(failure): \(failure.message)")
     }
 
+    /// The insertion failure message as actually shown: the prefix plus each reason the inserter gives.
+    @Test func composedInsertionFailuresArePlain() {
+        let reasons = ["No insertion method worked for this app.", "The insertion script is missing or not executable. Check Settings → Text Insertion.",
+                       "The insertion script took longer than 5 seconds and was stopped.", "The insertion script failed (exit code 2)."]
+        for why in reasons {
+            let shown = InsertionOutcome.plan(for: InsertReport(result: .failed(why), bundleID: nil)).failure ?? ""
+            #expect(shown.hasPrefix(SecureInputFallback.failedMessagePrefix))
+            #expect(Self.isPlainEnglish(shown), "\(shown)")
+        }
+    }
+
     @Test func coversEveryFailureTheBriefNames() {
         // BRIEF §16, in order.
         let brief: [Failure] = [.microphonePermissionDenied, .accessibilityPermissionDenied, .modelMissing, .modelDownloadFailure,
@@ -33,6 +44,22 @@ import UtterCore
         let messages = errorMessages()
         #expect(messages.count >= 11)
         for m in messages { #expect(Self.isPlainEnglish(m.message), "\(m.kind): \(m.message)") }
+    }
+
+    /// The runtime's "unsupported language" is its own plain message, not "model not supported".
+    @Test func unsupportedLanguageHasItsOwnMessage() throws {
+        let model = ModelLocation.modelsDirectory.appendingPathComponent("moonshine-base/moonshine-base-Q8_0.gguf").path
+        try #require(FileManager.default.fileExists(atPath: model), "run `make models` first")
+        let engine = UtterEngine()
+        _ = try engine.loadModel(path: model)
+        let speech = (0..<32_000).map { Float(sin(Double($0) * 0.05)) * 0.3 } // 2 s, not silent
+        do {
+            _ = try engine.transcribe(pcm: speech, options: DictationOptions(language: "de", translate: false, initialPrompt: nil))
+            Issue.record("Moonshine (English only) must refuse German")
+        } catch let error as CoreError {
+            guard case .LanguageUnsupported = error else { Issue.record("got \(error.logDetail)"); return }
+            #expect(Self.isPlainEnglish(error.userMessage) && error.userMessage.contains("language"))
+        }
     }
 
     /// Real failures from the Rust core carry exactly the catalogued text.

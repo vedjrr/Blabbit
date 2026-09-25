@@ -12,3 +12,4 @@ name = "utter_ffi"
 utter-core = { path = "../utter-core" }
 uniffi = "0.32"
 thiserror.workspace = true
+log.workspace = true

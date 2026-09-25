@@ -163,6 +163,8 @@ public final class DictationController {
         }
         // No system prompts at launch: the setup window explains each
         // permission and asks when the user clicks.
+        let store = historyStore
+        historyQueue.async { _ = store.value } // open + migrate off the main thread
         // Build and draw the overlay once now, so the first key-down doesn't pay for it.
         overlay.prewarm()
         recorder.onCaptureLost = { [weak self] in
@@ -261,26 +263,39 @@ public final class DictationController {
     public var privacySettings = PrivacySettings.load() {
         didSet { privacySettings.save() }
     }
-    /// Local history (nil if the database couldn't be opened; dictation still works).
-    public private(set) lazy var history: HistoryStore? = {
-        do { return try HistoryStore() } catch {
-            Log.error("history unavailable: \(error)")
-            return nil
-        }
-    }()
+    /// Local history, opened (with its migration) on a background queue.
+    private let historyStore = LazyStore()
     private let historyQueue = DispatchQueue(label: "dev.utter.history", qos: .utility)
+    /// nil while opening or if the database couldn't be opened; dictation still works.
+    public var history: HistoryStore? { historyStore.value }
+
+    /// Opens the history database once, on a background queue.
+    final class LazyStore: @unchecked Sendable {
+        private let lock = NSLock()
+        private var opened: HistoryStore?
+        private var tried = false
+        var value: HistoryStore? {
+            lock.lock(); defer { lock.unlock() }
+            if !tried {
+                tried = true
+                do { opened = try HistoryStore() } catch { Log.error("history unavailable: \(error)") }
+            }
+            return opened
+        }
+    }
 
     /// Saves a finished dictation off the main thread (text only unless audio retention is on).
     private func recordHistory(_ pipeline: PipelineResult, recording: Recording, app: String?) {
-        guard privacySettings.historyEnabled, let history else { return }
-        let keepAudio = privacySettings.keepAudio
+        guard privacySettings.historyEnabled else { return }
         let entry = HistoryEntry(durationMs: recording.durationMs, model: loadedModelID ?? "unknown",
                                  mode: textSettings.mode.rawValue, raw: pipeline.raw, final: pipeline.final, app: app)
-        let samples = keepAudio ? recording.samples : []
+        let audio = HistoryPolicy.audioToKeep(recording.samples, privacy: privacySettings)
+        let store = historyStore
         historyQueue.async {
             do {
+                guard let history = store.value else { return }
                 var e = entry
-                if keepAudio { e.audioFile = try history.saveAudio(samples) }
+                if let audio { e.audioFile = try history.saveAudio(audio) }
                 try history.add(e)
             } catch {
                 Log.error("history write failed: \(error)")
@@ -291,6 +306,10 @@ public final class DictationController {
     /// The last dictation's pipeline result (for history).
     public private(set) var lastPipeline: PipelineResult?
     private var processedNs: UInt64 = 0
+    /// "No processor" is said once per session, not on every dictation.
+    private var warnedNoProcessor = false
+    /// The model the language notice was last shown for (once per model).
+    private var lastLanguageNotice: String?
 
     public nonisolated static let keepMicReadyKey = "audio.keepMicrophoneReady"
     public var keepMicrophoneReady: Bool { UserDefaults.standard.bool(forKey: Self.keepMicReadyKey) }
@@ -608,9 +627,17 @@ public final class DictationController {
         let engine = self.engine
         let samples = recording.samples
         let text = textSettings
-        let family = loadedModelID.flatMap { models.entry($0)?.family }
-        let options = DictationOptions(language: text.language, translate: false,
-                                       initialPrompt: text.initialPrompt(forModelFamily: family))
+        let loadedEntry = loadedModelID.flatMap { models.entry($0) }
+        let family = loadedEntry?.family
+        // A language the loaded model lacks would fail every dictation: detect instead.
+        let language = text.effectiveLanguage(forModelLanguages: loadedEntry?.languages)
+        if text.language != nil, language == nil, lastLanguageNotice != loadedModelID {
+            lastLanguageNotice = loadedModelID
+            let name = Locale.current.localizedString(forLanguageCode: text.language ?? "") ?? text.language ?? ""
+            lastMessage = "\(loadedEntry?.name ?? "This model") doesn't support \(name), so the language is detected automatically."
+        }
+        let options = DictationOptions(language: language, translate: false,
+                                       initialPrompt: text.initialPrompt(forModelFamily: family, modelID: loadedModelID))
         let result: TranscriptionResult
         do {
             result = try await Task.detached(priority: .userInitiated) {
@@ -643,11 +670,20 @@ public final class DictationController {
         }
         let transcribedNs = MonoClock.nowNs()
         // Raw transcript → local stages → optional AI processor → final text.
-        // Local-only mode (the default) never uses a cloud processor.
-        let allowed = processorSettings.provider != .anthropic || !privacySettings.localOnly
-        let pipeline = TextPipeline(settings: text, processor: text.mode.usesProcessor && allowed ? processorSettings.makeProcessor() : nil)
+        // Local-only mode (the default) allows only processors on this Mac.
+        let allowed = processorSettings.isLocal || !privacySettings.localOnly
+        let settingsForKey = processorSettings
+        let processor: (any TextProcessor)? = text.mode.usesProcessor && allowed
+            ? await Task.detached { settingsForKey.makeProcessor() }.value // Keychain read off main
+            : nil
+        if text.mode.usesProcessor, processor == nil, !warnedNoProcessor {
+            warnedNoProcessor = true
+            lastMessage = allowed
+                ? "\(text.mode.title) mode has no AI processor set up, so the cleaned-up text is used. Set one up in Settings → Processing."
+                : "Local-only mode is on, so \(text.mode.title) mode uses the cleaned-up text. Change this in Settings → Privacy."
+        }
+        let pipeline = TextPipeline(settings: text, processor: processor)
         let processed = result.skipped == nil ? await pipeline.run(result.text) : PipelineResult(raw: result.text, final: "", changes: [])
-        lastPipeline = processed
         processedNs = MonoClock.nowNs()
         // A lone "um" cleans up to nothing: skip it like silence.
         let skipped = result.skipped.map { "\($0)" } ?? (TranscriptPolicy.isBlank(processed.final) ? "empty" : nil)
@@ -670,17 +706,20 @@ public final class DictationController {
             state = .ready
             onAttention?(.unconfirmed)
             overlay.show(.notice(UserMessages.noFocusedApp, .unconfirmed))
+            lastPipeline = processed
             recordHistory(processed, recording: recording, app: nil)
             return
         }
         let report = await inserter.insert(processed.final, bundleID: bundleID)
-        if let problem = processed.processorProblem, lastMessage == nil { lastMessage = problem }
-        switch report.result {
-        case .inserted, .unverified, .copiedToClipboard, .handledByScript:
+        if let problem = processed.processorProblem {
+            lastMessage = problem
+            overlay.show(.notice(problem, .unconfirmed))
+        }
+        // Only text that reached an app or the clipboard can be copied again or kept;
+        // a password-field block leaves no trace.
+        if HistoryPolicy.shouldRecord(report.result, privacy: PrivacySettings(historyEnabled: true)) {
+            lastPipeline = processed
             recordHistory(processed, recording: recording, app: report.bundleID ?? bundleID)
-        case .blockedBySecureInput, .failed, .skipped:
-            // Nothing reached an app (a password field must leave no trace either).
-            break
         }
         logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, report: report)
         let plan = InsertionOutcome.plan(for: report)
@@ -767,6 +806,7 @@ extension CoreError {
         switch self {
         case .ModelMissing(let m, _), .ModelCorrupt(let m, _), .ModelUnsupported(let m, _), .InsufficientMemory(let m, _),
              .ModelNotLoaded(let m, _), .InferenceFailed(let m, _), .InputTooLong(let m, _), .AudioRead(let m, _),
+             .LanguageUnsupported(let m, _),
              .DownloadFailed(let m, _):
             return m
         }
@@ -777,6 +817,7 @@ extension CoreError {
         switch self {
         case .ModelMissing(_, let d), .ModelCorrupt(_, let d), .ModelUnsupported(_, let d), .InsufficientMemory(_, let d),
              .ModelNotLoaded(_, let d), .InferenceFailed(_, let d), .InputTooLong(_, let d), .AudioRead(_, let d),
+             .LanguageUnsupported(_, let d),
              .DownloadFailed(_, let d):
             return d
         }

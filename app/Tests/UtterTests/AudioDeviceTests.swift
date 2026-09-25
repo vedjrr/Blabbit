@@ -5,7 +5,21 @@ import Testing
 /// Everything that touches the real audio hardware runs one test at a time
 /// (nested suites inherit `.serialized`): parallel captures keep the device
 /// running and would falsify the start-latency numbers.
-@Suite(.serialized) enum AudioHardwareTests {}
+/// A 0.6 s capture: does any audio arrive? (A MacBook's built-in mic is off
+/// with the lid closed, so the hardware tests can't run then.)
+enum LiveAudio {
+    static let available: Bool = {
+        let queue = DispatchQueue(label: "dev.utter.test.audio-probe")
+        let recorder = AudioRecorder(queue: queue)
+        guard (try? queue.sync { try recorder.start() }) != nil else { return false }
+        Thread.sleep(forTimeInterval: 0.6)
+        return !queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }.samples.isEmpty
+    }()
+}
+
+@Suite(.serialized,
+       .enabled(if: LiveAudio.available, "the microphone delivers no audio (lid closed or display asleep); these tests need live input"))
+enum AudioHardwareTests {}
 
 /// Real CoreAudio devices on this Mac (no capture is started).
 extension AudioHardwareTests { @Suite struct AudioDeviceTests {

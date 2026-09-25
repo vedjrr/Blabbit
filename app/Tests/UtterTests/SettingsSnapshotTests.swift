@@ -54,6 +54,21 @@ import Testing
         }
     }
 
+    /// A Mode chosen from the menu shows up in Settings, and opening Settings
+    /// doesn't write stale values back.
+    @Test func settingsReloadWhatTheMenuChanged() {
+        let controller = DictationController(models: ModelManager())
+        let saved = controller.textSettings
+        defer { controller.textSettings = saved } // restore the user's own setting
+        let model = SettingsModel(controller: controller)
+        let other: TextPipelineSettings.Mode = saved.mode == .code ? .exact : .code
+        controller.textSettings.mode = other // what Menu → Mode does
+        #expect(model.text.mode == saved.mode, "the window's copy is stale until reload")
+        model.reload()
+        #expect(model.text.mode == other)
+        #expect(controller.textSettings.mode == other, "reload didn't write the stale value back")
+    }
+
     @Test func historyRenders() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("utter-history-snap-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }

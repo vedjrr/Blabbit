@@ -83,9 +83,18 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
                             autoPunctuation: autoPunctuation, spokenLineBreaks: spokenLineBreaks)
     }
 
-    /// Whisper models take the vocabulary as an initial prompt (M1: WER 0.161 → 0.032).
-    public func initialPrompt(forModelFamily family: String?) -> String? {
-        family == "whisper" ? vocabularyPrompt(vocabulary: vocabulary) : nil
+    /// The chosen language if the model supports it, otherwise nil (auto-detect).
+    public func effectiveLanguage(forModelLanguages languages: [String]?) -> String? {
+        guard let language, let languages, languages.contains(language) else { return nil }
+        return language
+    }
+
+    /// Whisper models take the vocabulary as an initial prompt, except Large v3
+    /// Turbo, which measured worse with any prompt (0.043 → 0.129–0.157 WER over
+    /// 6 clips, evidence/m5/vocabulary_wer.log); post-correction still applies.
+    public func initialPrompt(forModelFamily family: String?, modelID: String? = nil) -> String? {
+        guard family == "whisper", !(modelID ?? "").contains("turbo") else { return nil }
+        return vocabularyPrompt(vocabulary: vocabulary)
     }
 }
 

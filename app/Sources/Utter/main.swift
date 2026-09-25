@@ -26,16 +26,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.menu = menu
         controller.launch()
         menu.updateVisibilityAtLaunch()
+        DistributedNotificationCenter.default().addObserver(forName: showSettingsNotification, object: nil, queue: .main) { [weak menu] _ in
+            MainActor.assumeIsolated { menu?.showSettings() }
+        }
         if CommandLine.arguments.contains("--model-manager") { menu.showModelManager() }
     }
 }
 
-// One Utter at a time: a second launch hands over to the running one (which
-// opens Settings) and quits, so two event taps never fight over the shortcut.
+/// Posted by a second launch; the running Utter opens Settings (the way back
+/// when the menu bar icon is hidden). An LSUIElement app gets no reopen event.
+let showSettingsNotification = Notification.Name("dev.utter.mac.showSettings")
+
+// One Utter at a time: a second launch hands over to the running one and
+// quits, so two event taps never fight over the shortcut.
 if let bundleID = Bundle.main.bundleIdentifier,
-   let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-       .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
-    running.activate()
+   NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+       .contains(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
+    DistributedNotificationCenter.default().postNotificationName(showSettingsNotification, object: nil, userInfo: nil,
+                                                                 deliverImmediately: true)
     exit(0)
 }
 

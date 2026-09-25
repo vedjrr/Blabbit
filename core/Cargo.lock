@@ -1357,6 +1357,7 @@ dependencies = [
 name = "utter-ffi"
 version = "0.1.0"
 dependencies = [
+ "log",
  "thiserror",
  "uniffi",
  "utter-core",

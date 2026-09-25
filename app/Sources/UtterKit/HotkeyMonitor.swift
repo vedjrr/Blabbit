@@ -141,7 +141,8 @@ public final class HotkeyMonitor: @unchecked Sendable {
         carbon = CarbonHotkey(shortcut: shortcut, onPress: { [weak self] in self?.carbonEvent(down: true) },
                               onRelease: { [weak self] in self?.carbonEvent(down: false) })
         Log.info("secure input sustained; carbon fallback \(carbon == nil ? "could not be registered" : "registered") for \(shortcut.displayString)")
-        if carbon == nil {
+        // Only a genuine conflict is reported as one; other failures are logged above.
+        if carbon == nil, CarbonHotkey.isTakenElsewhere(shortcut) {
             let conflict = HotkeyError.shortcutInUse(shortcut.displayString)
             Task { @MainActor [weak self] in self?.onShortcutConflict?(conflict) }
         }
