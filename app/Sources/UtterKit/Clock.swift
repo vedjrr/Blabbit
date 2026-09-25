@@ -14,6 +14,17 @@ public enum MonoClock {
         clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
     }
 
+    /// A `CGEvent.timestamp` on our clock. It is documented as nanoseconds but
+    /// has been mach ticks on some systems, so take whichever reading lies
+    /// just before `callbackNs` (within 1 s); nil if neither does (e.g. 0).
+    public static func eventNs(_ timestamp: UInt64, before callbackNs: UInt64) -> UInt64? {
+        guard timestamp > 0 else { return nil }
+        let window: UInt64 = 1_000_000_000
+        return [timestamp, ns(fromHostTime: timestamp)]
+            .filter { $0 <= callbackNs && callbackNs - $0 < window }
+            .max()
+    }
+
     /// Converts mach host-time ticks to nanoseconds.
     public static func ns(fromHostTime hostTime: UInt64) -> UInt64 {
         let (numer, denom) = timebase

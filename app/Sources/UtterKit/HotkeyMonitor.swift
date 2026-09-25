@@ -103,6 +103,9 @@ public final class HotkeyMonitor: @unchecked Sendable {
     /// stands in for the tap (which no longer sees key-downs).
     @MainActor
     private func startSecureInputWatch() {
+        // `stop()` may have run before this queued call: don't leave a timer
+        // (and a Carbon hotkey) behind a stopped monitor.
+        guard tap != nil else { return }
         secureTimer?.invalidate()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkSecureInput() }

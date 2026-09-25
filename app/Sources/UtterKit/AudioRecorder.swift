@@ -171,6 +171,12 @@ public final class AudioRecorder: @unchecked Sendable {
     public private(set) var activeDevice: AudioInputDevice?
     /// Set when the chosen device was missing and the default was used instead.
     public private(set) var missingPreferredDevice: String?
+    /// Device lookups (replaceable in tests to simulate a device that vanished).
+    var lookupDevice: (String) -> AudioInputDevice? = AudioDevices.device(uid:)
+    var defaultDevice: () -> AudioInputDevice? = AudioDevices.defaultInput
+    /// Capture timing from before a device change, if the rebuild failed.
+    private var cursorBeforeChange: SampleRing.Cursor?
+
     /// True while the input unit is pinned to a chosen device.
     private var deviceOverridden = false
     /// The chosen input device's UID; nil follows the system default. Set with `setPreferredDevice`.
@@ -188,9 +194,9 @@ public final class AudioRecorder: @unchecked Sendable {
 
     /// Points the engine's input unit at the chosen device (or the default).
     private func selectDevice() throws {
-        let preferred = preferredDeviceUID.flatMap(AudioDevices.device(uid:))
+        let preferred = preferredDeviceUID.flatMap(lookupDevice)
         missingPreferredDevice = (preferredDeviceUID != nil && preferred == nil) ? preferredDeviceUID : nil
-        guard let device = preferred ?? AudioDevices.defaultInput() else { throw AudioRecorderError.noInputDevice }
+        guard let device = preferred ?? defaultDevice() else { throw AudioRecorderError.noInputDevice }
         // Following the system default: leave AVAudioEngine's own device choice
         // alone (it may use a private aggregate device, and setting the device
         // fires a configuration change) unless a specific device was set before.
@@ -226,6 +232,13 @@ public final class AudioRecorder: @unchecked Sendable {
     /// Builds the capture graph for the current default input. Safe to call again.
     public func prepare() throws {
         dispatchPrecondition(condition: .onQueue(queue))
+        // Never tear down a live recording (e.g. a microphone chosen from the
+        // menu mid-dictation): the change applies on the next start.
+        guard !isRecording else { return }
+        try buildGraph()
+    }
+
+    private func buildGraph() throws {
         if sink != nil && !needsRebuild { return }
         teardownGraph()
         try selectDevice()
@@ -237,8 +250,8 @@ public final class AudioRecorder: @unchecked Sendable {
         else { throw AudioRecorderError.unsupportedFormat }
 
         let ring = SampleRing(capacity: Int(format.sampleRate) * 8)
-        if mixScratch == nil { mixScratch = .allocate(capacity: mixCapacity) }
-        let scratch = mixScratch!
+        let scratch = mixScratch ?? .allocate(capacity: mixCapacity)
+        mixScratch = scratch
         let mixCapacity = self.mixCapacity
         let rate = format.sampleRate
         let channels = Int(format.channelCount)
@@ -301,6 +314,9 @@ public final class AudioRecorder: @unchecked Sendable {
         resampler?.reset()
         samples.removeAll(keepingCapacity: true)
         samples.reserveCapacity(16_000 * 60)
+        interrupted = false
+        continuedOn = nil
+        cursorBeforeChange = nil
         levelState.withLock { $0 = 0 }
         do {
             try engine.start()
@@ -319,10 +335,10 @@ public final class AudioRecorder: @unchecked Sendable {
     /// last word is not cut off.
     public func stop(releaseNs: UInt64) -> Recording {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard let ring, isRecording || interrupted else {
+        guard isRecording || interrupted else {
             return Recording(samples: [], droppedFrames: 0, didRecord: false)
         }
-        if isRecording {
+        if isRecording, let ring {
             let alreadyThere = ring.cursor.withLock { c -> Bool in
                 if c.lastEndNs >= releaseNs { return true }
                 c.waitUntilNs = releaseNs
@@ -338,13 +354,16 @@ public final class AudioRecorder: @unchecked Sendable {
         drainTimer = nil
         drainAndConvert()
         samples.append(contentsOf: resampler?.flush() ?? [])
-        let c = ring.cursor.withLock { $0 }
+        // After a device change no device could take over, `ring` is gone: use
+        // the timing saved before the change and keep the samples captured.
+        let c = ring?.cursor.withLock { $0 } ?? cursorBeforeChange ?? SampleRing.Cursor()
         let recording = Recording(samples: samples, firstSampleNs: c.firstSampleNs, firstCallbackNs: c.firstCallbackNs,
                                   lastSampleEndNs: c.lastEndNs == 0 ? nil : c.lastEndNs, droppedFrames: c.dropped,
                                   interruptedByDeviceChange: interrupted, continuedOnDevice: continuedOn)
         samples = []
         interrupted = false
         continuedOn = nil
+        cursorBeforeChange = nil
         levelState.withLock { $0 = 0 }
         return recording
     }
@@ -365,8 +384,9 @@ public final class AudioRecorder: @unchecked Sendable {
               let buffer = AVAudioPCMBuffer(pcmFormat: resampler.inputFormat, frameCapacity: AVAudioFrameCount(raw.count))
         else { return }
         buffer.frameLength = AVAudioFrameCount(raw.count)
+        guard let channel = buffer.floatChannelData?[0] else { return }
         raw.withUnsafeBufferPointer { src in
-            buffer.floatChannelData![0].update(from: src.baseAddress!, count: raw.count)
+            if let base = src.baseAddress { channel.update(from: base, count: raw.count) }
         }
         let converted = resampler.convert(buffer)
         samples.append(contentsOf: converted)
@@ -391,8 +411,9 @@ public final class AudioRecorder: @unchecked Sendable {
             samples.append(contentsOf: resampler?.flush() ?? [])
             interrupted = true
             let before = ring?.cursor.withLock { $0 }
+            cursorBeforeChange = before
             do {
-                try prepare()
+                try buildGraph()
                 if let before, let ring {
                     ring.cursor.withLock { c in
                         c.firstSampleNs = before.firstSampleNs
@@ -410,7 +431,7 @@ public final class AudioRecorder: @unchecked Sendable {
                 Log.error("input device changed while recording and no device could take over; audio after the change is lost: \(error)")
             }
         } else {
-            try? prepare()
+            try? buildGraph()
         }
     }
 

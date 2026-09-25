@@ -12,7 +12,7 @@ Iteration: 7
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M4: check G1 items for the gate (toggle mode + configurable hotkey, short/silent → no insertion and no popup, 5-min recording in the app path), live overlay latency when unlocked, then run the M4 critic.
+- M4 gate: critic re-review #2 after fixing review #1 (2 BLOCKERs).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -133,6 +133,21 @@ Iteration: 7
   - Tests: `HotkeyModeTests` (6).
 - [M4] Crash found and fixed: TIS/TSM aborts the process when called from two threads at once (`~/Library/Logs/DiagnosticReports/swiftpm-testing-helper-2026-09-25-114852.ips`: "Text Input Sources … being called in two threads concurrently"). All TIS calls now go through one lock, and off the main thread only cached key names are used (tested from a detached task). The crash orphaned `UtterAXHost`, which kept the test runner's pipe open and hung `swift test` for 10 minutes. The helper now exits when its parent dies (verified: the host exits after its parent dies), no longer inherits stderr, and a failed start terminates it.
 - [M4] `make test`: Swift `Test run with 119 tests in 24 suites passed`; Rust 16 + 10 + 4.
+
+- [M4] Critic review #1 → FAIL (2 BLOCKERs, 2 MAJORs, 10 MINORs). Fixed:
+  (BLOCKER) The overlay was built on the first key-down (the critic measured 25–36 ms for build + first show), before the mic started. Now `launch()` pre-warms it: every phase is laid out and drawn once, invisible and off screen. `pressed()` dispatches `recorder.start()` before any state or overlay work. Test `firstShowAfterPrewarmIsWithinOneFrame`: the first show on a pre-warmed panel takes < 16.7 ms (worst of 5 fresh panels).
+  (BLOCKER) When no device could take over after a device change, the whole dictation was dropped silently, and the stale "device changed" flag leaked into the next dictation. Now `stop()` keeps the samples and timing from before the change even with no ring, `start()` resets the flags, and the message says audio after the disconnect was lost. Test `noDeviceToTakeOverKeepsTheAudioBeforeTheChange` (real capture, injected "no device"): `didRecord`, samples kept, the next recording is clean.
+  (MAJOR) Choosing a microphone mid-recording stopped the engine. `prepare()` is now a no-op during a recording; the choice applies on the next start. Test `choosingAMicrophoneMidRecordingWaitsForTheNextOne` (real capture).
+  (MAJOR) G1 status is recorded item by item below.
+  MINORs: the `dictation` log line gains `model=`, `mode=` and `event_to_callback_ms` (the HID timestamp mapped onto our clock, ns or mach ticks, tested); the checklist says `keydown_to_overlay_ms` is a lower bound; the setup window's close button stops polling, and while a permission is missing the controller re-checks every 2 s even after "Later"; reopening Change Shortcut focuses the open window instead of restarting the tap; a queued secure-input watch doesn't start after `stop()`; the Microphone menu enumerates CoreAudio once per open; failures use their own overlay/menu icon (`AttentionCue.failed`); the force unwraps in `AudioRecorder` are removed; Rust download tests reuse fixed temp folders (467 accumulated `utter-dl-<pid>-*` folders deleted; 12 remain and are reused). Processing mode (Exact/Clean…) in the menu is tracked under G4/M5.
+- [M4] **G1 item by item** (automated evidence / what only the human can do):
+  1. Key-down → recording < 50 ms: logging is complete (`event_to_callback_ms`, `keydown_to_record_started_ms`, `keydown_to_first_callback_ms`, `keydown_to_first_sample_ms`); the mic now starts before any UI work. **(H)** real key-press numbers.
+  2. Release → insert p50 < 700 ms (Parakeet V3, 5 s): parts measured in M1 (inference 80–86 ms per ~4.6 s clip; AX insert tested). **(H)** real `release_to_insert_done_ms` on 5 s utterances (lines now carry `model=`).
+  3. Model loads once, stays resident: ✅ every launch log shows `load_count=1`; switching is tested (M3).
+  4. Push-to-talk and toggle; hotkey configurable, no leaked keystrokes: ✅ `HotkeyPolicy`, validation, persistence, recorder model, matcher swallow tests (M1). **(H)** feel in real apps.
+  5. < 0.3 s or silence → no insertion, no popup: ✅ core skip (`short_and_silent_audio_is_skipped…`, Swift `tooShortAndSilentAreSkipped`); the controller logs `skipped_*`, sets `.ready`, hides the overlay, and shows no notice.
+  6. 5-minute recording: ✅ core (`five_minute_recording_is_not_truncated`: 300000 ms, tail present); the recorder has no size limit below the 10-minute cap. **(H)** a 5-minute dictation through the app.
+- [M4] `make test`: Swift `Test run with 123 tests in 24 suites passed`; Rust 16 + 10 + 4.
 
 ## Blocked on human
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.

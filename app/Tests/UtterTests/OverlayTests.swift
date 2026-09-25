@@ -49,6 +49,22 @@ import Testing
         #expect(worst < 16.7, "worst show took \(worst) ms")
     }
 
+    /// The first show of a session, after the pre-warm `launch()` does. This is
+    /// what the first key-down pays (building the panel lazily cost 25–36 ms).
+    @Test func firstShowAfterPrewarmIsWithinOneFrame() {
+        var worst = 0.0
+        for _ in 0..<5 {
+            let overlay = OverlayController(levelProvider: { 0 })
+            overlay.prewarm()
+            #expect(!overlay.isVisible && overlay.panel.alphaValue == 1)
+            let start = MonoClock.nowNs()
+            overlay.show(.recording(startedAt: Date()))
+            worst = max(worst, MonoClock.ms(from: start, to: MonoClock.nowNs()))
+            overlay.hide()
+        }
+        #expect(worst < 16.7, "first show after prewarm took \(worst) ms")
+    }
+
     @Test func noticeHidesItself() async throws {
         let overlay = OverlayController(levelProvider: { 0 })
         overlay.noticeDuration = .milliseconds(100)

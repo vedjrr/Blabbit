@@ -95,7 +95,7 @@ public final class DictationController {
             overlay.show(.transcribing)
         case .failed(let message) where old == .recording || old == .transcribing:
             // A dictation failed: say so where the user is looking.
-            overlay.show(.notice(message, .unconfirmed))
+            overlay.show(.notice(message, .failed))
         case .ready, .failed, .loadingModel, .starting:
             if old == .recording || old == .transcribing { overlay.hide() }
         }
@@ -141,11 +141,41 @@ public final class DictationController {
         }
         // No system prompts at launch: the setup window explains each
         // permission and asks when the user clicks.
+        // Build and draw the overlay once now, so the first key-down doesn't pay for it.
+        overlay.prewarm()
         let permissions = PermissionSnapshot.current()
         startHotkey()
         prepareMicrophone(permissions.microphone)
         loadModel(id: models.defaultModelID)
-        if !permissions.allGranted { onNeedsPermissions?() }
+        if !permissions.allGranted {
+            onNeedsPermissions?()
+            startPermissionWatch()
+        }
+    }
+
+    /// While a permission is missing, re-check every 2 s even with the setup
+    /// window closed ("Later"), so a grant in System Settings takes effect.
+    private var permissionWatch: Timer?
+    private var lastPermissions = PermissionSnapshot.current()
+
+    private func startPermissionWatch() {
+        permissionWatch?.invalidate()
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = PermissionSnapshot.current()
+                if now != self.lastPermissions {
+                    self.lastPermissions = now
+                    self.permissionsChanged(now)
+                }
+                if now.allGranted {
+                    self.permissionWatch?.invalidate()
+                    self.permissionWatch = nil
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        permissionWatch = timer
     }
 
     /// Called by the setup window when a permission changes, so a grant takes
@@ -370,10 +400,13 @@ public final class DictationController {
         recordStartedNs = 0
         // A notice belongs to the dictation that caused it.
         lastMessage = nil
-        state = .recording
-        recordingSource = timing.source
-        startWatchdog()
+        // Microphone first: nothing (overlay, menu) may delay key-down → first audio.
         let recorder = self.recorder
+        defer {
+            state = .recording
+            recordingSource = timing.source
+            startWatchdog()
+        }
         audioQueue.async {
             do {
                 try recorder.start()
@@ -462,7 +495,8 @@ public final class DictationController {
         }
         if recording.interruptedByDeviceChange {
             lastMessage = recording.continuedOnDevice.map { "The microphone changed while you were speaking; Utter kept listening on \($0)." }
-                ?? "The microphone changed while you were speaking; only the part before the change was transcribed."
+                ?? "The microphone was disconnected while you were speaking and no other was available; only the part before that was transcribed."
+            Log.info("dictation device change continued_on=\(recording.continuedOnDevice ?? "none") samples=\(recording.samples.count)")
         }
         let engine = self.engine
         let samples = recording.samples
@@ -536,7 +570,11 @@ public final class DictationController {
         }
         let t = report.paste ?? InsertTiming()
         let fields: [(String, String)] = [
+            ("model", loadedModelID ?? "n/a"),
+            ("mode", mode.rawValue),
             ("audio_ms", "\(result.audioMs)"),
+            // HID event → our tap callback (the part of key-down latency before Utter runs).
+            ("event_to_callback_ms", MonoClock.eventNs(press.eventTimestamp, before: press.callbackNs).map { ms($0, press.callbackNs) } ?? "n/a"),
             ("keydown_to_record_started_ms", recordStartedNs == 0 ? "n/a" : ms(press.callbackNs, recordStartedNs)),
             ("keydown_to_overlay_ms", overlayShownNs == 0 ? "n/a" : ms(press.callbackNs, overlayShownNs)),
             ("device_changed", "\(rec.interruptedByDeviceChange)"),

@@ -208,6 +208,10 @@ public final class PermissionsWindowController {
             window.contentView = NSHostingView(rootView: PermissionsView(model: model) { [weak self] in self?.close() })
             window.center()
             self.window = window
+            // The title-bar close button must stop the 1 s polling too.
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.model.stopPolling() }
+            }
         }
         model.recheck()
         model.startPolling()

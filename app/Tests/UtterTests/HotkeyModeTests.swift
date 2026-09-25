@@ -15,6 +15,13 @@ import Testing
         #expect(HotkeyPolicy.decide(keyDown: true, mode: .toggle, recording: true) == .stop)
     }
 
+    @Test func eventTimestampsMapOntoOurClock() {
+        let callback = MonoClock.nowNs()
+        #expect(MonoClock.eventNs(0, before: callback) == nil)                         // synthetic events
+        #expect(MonoClock.eventNs(callback - 2_000_000, before: callback) == callback - 2_000_000) // already ns
+        #expect(MonoClock.eventNs(callback + 5, before: callback) == nil)              // from the future
+    }
+
     @Test func toggleRecordingsAreNotCutByTheKeyWatchdog() {
         var checks = 0
         for _ in 0..<5 {

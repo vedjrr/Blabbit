@@ -85,6 +85,23 @@ public final class OverlayController {
 
     public var isVisible: Bool { panel.isVisible }
 
+    /// Lays out and draws every phase once, off screen and invisible, so the
+    /// first real show is as fast as later ones (G5: within one frame).
+    public func prewarm() {
+        let alpha = panel.alphaValue
+        panel.alphaValue = 0
+        panel.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        for phase in [OverlayPhase.recording(startedAt: Date()), .transcribing, .notice(" ", .blocked)] {
+            model.phase = phase
+            panel.contentView?.layoutSubtreeIfNeeded()
+            panel.orderFrontRegardless()
+            panel.display()
+        }
+        panel.orderOut(nil)
+        model.phase = .hidden
+        panel.alphaValue = alpha
+    }
+
     /// Bottom-centre of the visible frame, clear of the Dock.
     public nonisolated static func frame(for size: NSSize, in visibleFrame: NSRect) -> NSRect {
         NSRect(x: (visibleFrame.midX - size.width / 2).rounded(),
@@ -190,8 +207,8 @@ struct OverlayView: View {
             .accessibilityElement(children: .combine)
         case .notice(let text, let cue):
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: cue == .blocked ? "lock.fill" : "exclamationmark.bubble")
-                    .foregroundStyle(cue == .blocked ? .orange : .yellow)
+                Image(systemName: cue.symbolName)
+                    .foregroundStyle(cue == .failed ? .red : cue == .blocked ? .orange : .yellow)
                 Text(text).font(.callout).lineLimit(3).fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityElement(children: .combine)

@@ -60,4 +60,54 @@ import Testing
         #expect(recording.samples.count > 16_000 / 2, "got \(recording.samples.count) samples")
         #expect(recording.firstSampleNs != nil)
     }
+
+    @Test func noDeviceToTakeOverKeepsTheAudioBeforeTheChange() throws {
+        let queue = DispatchQueue(label: "dev.utter.test.audio-lost")
+        let recorder = AudioRecorder(queue: queue)
+        do { try queue.sync { try recorder.start() } } catch {
+            withKnownIssue("capture unavailable to the test runner: \(error)") { throw error }
+            return
+        }
+        Thread.sleep(forTimeInterval: 0.5)
+        queue.sync {
+            // The only microphone went away (USB mic unplugged, lid closed).
+            recorder.defaultDevice = { nil }
+            recorder.simulateConfigurationChange()
+        }
+        #expect(!recorder.isRecording)
+        let lost = queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }
+        #expect(lost.didRecord, "the dictation must not be dropped")
+        #expect(lost.interruptedByDeviceChange && lost.continuedOnDevice == nil)
+        #expect(lost.samples.count > 16_000 / 4, "kept \(lost.samples.count) samples from before the change")
+        #expect(lost.firstSampleNs != nil)
+
+        // The next recording starts clean (no stale "device changed" report).
+        queue.sync { recorder.defaultDevice = AudioDevices.defaultInput }
+        try queue.sync { try recorder.start() }
+        Thread.sleep(forTimeInterval: 0.2)
+        let next = queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }
+        #expect(!next.interruptedByDeviceChange && next.continuedOnDevice == nil && next.didRecord)
+    }
+
+    @Test func choosingAMicrophoneMidRecordingWaitsForTheNextOne() throws {
+        let queue = DispatchQueue(label: "dev.utter.test.audio-choose")
+        let recorder = AudioRecorder(queue: queue)
+        do { try queue.sync { try recorder.start() } } catch {
+            withKnownIssue("capture unavailable to the test runner: \(error)") { throw error }
+            return
+        }
+        Thread.sleep(forTimeInterval: 0.3)
+        let other = try #require(AudioDevices.inputDevices().last)
+        try queue.sync {
+            try recorder.setPreferredDevice(uid: other.uid)
+            try recorder.prepare() // what the menu handler calls: must not stop the capture
+        }
+        #expect(recorder.isRecording)
+        Thread.sleep(forTimeInterval: 0.3)
+        let recording = queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }
+        #expect(recording.samples.count > 16_000 / 2, "capture kept going: \(recording.samples.count) samples")
+        #expect(!recording.interruptedByDeviceChange)
+        try queue.sync { try recorder.prepare() } // applied now, between recordings
+        #expect(recorder.activeDevice?.uid == other.uid)
+    }
 }

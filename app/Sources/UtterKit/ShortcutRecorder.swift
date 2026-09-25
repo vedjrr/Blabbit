@@ -72,6 +72,13 @@ public final class ShortcutRecorderWindowController {
 
     public init() {}
 
+    public var isOpen: Bool { window != nil }
+
+    public func bringToFront() {
+        NSApp.activate()
+        window?.makeKeyAndOrderFront(nil)
+    }
+
     public func show(current: Shortcut, onSave: @escaping (Shortcut) -> Void, onClose: @escaping () -> Void) {
         close()
         self.onClose = onClose

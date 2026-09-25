@@ -110,6 +110,16 @@ public enum AttentionCue: Equatable, Sendable {
     case blocked
     /// Utter can't tell whether the text went in.
     case unconfirmed
+    /// The dictation failed (microphone, model, insertion).
+    case failed
+
+    public var symbolName: String {
+        switch self {
+        case .blocked: "lock.fill"
+        case .unconfirmed: "exclamationmark.bubble"
+        case .failed: "exclamationmark.triangle"
+        }
+    }
 }
 
 /// What the controller does after an insertion attempt (pure, so it is tested).

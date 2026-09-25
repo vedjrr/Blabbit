@@ -31,7 +31,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     /// Swaps the icon for a few seconds so a blocked or unconfirmed dictation
     /// is noticed without opening the menu; the tooltip carries the message.
     private func showCue(_ cue: AttentionCue) {
-        let symbol = cue == .blocked ? "lock.fill" : "exclamationmark.bubble"
+        let symbol = cue.symbolName
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: controller.lastMessage ?? "Utter")
         image?.isTemplate = true
         statusItem.button?.image = image
@@ -115,13 +115,15 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         let mic = NSMenuItem(title: "Microphone: \(controller.microphoneName ?? "System Default")", action: nil, keyEquivalent: "")
         let micMenu = NSMenu()
         let chosen = controller.preferredMicrophoneUID
-        let defaultName = AudioDevices.defaultInput()?.name
+        let devices = AudioDevices.inputDevices() // one CoreAudio enumeration per menu open
+        let defaultID = AudioDevices.defaultInputID()
+        let defaultName = devices.first { $0.id == defaultID }?.name
         let followDefault = NSMenuItem(title: "System Default" + (defaultName.map { " (\($0))" } ?? ""), action: #selector(chooseMicrophone(_:)), keyEquivalent: "")
         followDefault.target = self
         followDefault.state = chosen == nil ? .on : .off
         micMenu.addItem(followDefault)
         micMenu.addItem(.separator())
-        for device in AudioDevices.inputDevices() {
+        for device in devices {
             let item = NSMenuItem(title: device.name, action: #selector(chooseMicrophone(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = device.uid
@@ -177,6 +179,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func changeShortcut() {
+        if shortcutWindow.isOpen { shortcutWindow.bringToFront(); return }
         // The event tap would otherwise catch the current shortcut while recording a new one.
         controller.hotkey.stop()
         shortcutWindow.show(current: controller.hotkey.shortcut,
