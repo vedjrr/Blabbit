@@ -8,7 +8,7 @@ Local-first dictation for macOS. Hold a shortcut, speak, release: your words app
 - **Reliable insertion.** It types into the field through Accessibility where the app supports it. It falls back to paste (restoring your whole clipboard afterwards) or to typing, and you can choose per app. It never types into password fields.
 - **Your words, your way.** Personal vocabulary ("HoldMyCode", "PostgreSQL"…) corrects common mishearings. Modes: Exact, Clean, Code, and Professional/Custom with an optional AI processor (Ollama on your Mac, or Anthropic if you opt in).
 - **Native.** SwiftUI/AppKit menu bar app. A floating recording overlay that never steals focus. Searchable local history.
-- **Models.** Parakeet V3/V2, Whisper Small/Medium/Large v3/Large v3 Turbo, SenseVoice Small, Moonshine Base. Download, verify, switch and delete them in the Model Manager.
+- **Models.** 15 families and sizes: Parakeet V3/V2, Whisper Small/Medium/Large v3/Large v3 Turbo, SenseVoice Small, Moonshine Base, Cohere Transcribe, Canary 180M Flash, Qwen3-ASR, Nemotron Speech, Granite Speech, Fun-ASR, MOSS, most with a smaller 4-bit download too, or your own GGUF file. Each shows measured accuracy and speed. Download, verify, switch and delete them in Settings → Models.
 
 ## Install
 

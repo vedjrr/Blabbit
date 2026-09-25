@@ -75,7 +75,7 @@
   <div class="wrap stat-grid">
     <div><strong>83<small> ms</small></strong><span>to transcribe 5 s of speech with Parakeet V3 on an M4</span></div>
     <div><strong>0<small> bytes</small></strong><span>of audio sent anywhere. It works with Wi-Fi off.</span></div>
-    <div><strong>8</strong><span>speech models: Parakeet, Whisper, SenseVoice, Moonshine</span></div>
+    <div><strong>15</strong><span>speech models: Parakeet, Whisper, Cohere, Canary, Qwen3, Nemotron and more</span></div>
     <div><strong>100+</strong><span>languages, depending on the model you pick</span></div>
   </div>
 </section>
@@ -152,8 +152,15 @@
       <div class="model" role="row" data-acc="84" data-speed="63"><span role="cell"><b>Whisper Small</b><em>99 languages</em></span><span role="cell" class="bar acc">84</span><span role="cell" class="bar spd">63</span><span role="cell" class="hide-sm">270 MB</span></div>
       <div class="model" role="row" data-acc="69" data-speed="95"><span role="cell"><b>SenseVoice Small</b><em>Chinese, Cantonese, English, Japanese, Korean</em></span><span role="cell" class="bar acc">69</span><span role="cell" class="bar spd">95</span><span role="cell" class="hide-sm">253 MB</span></div>
       <div class="model" role="row" data-acc="66" data-speed="84"><span role="cell"><b>Moonshine Base</b><em>English · smallest</em></span><span role="cell" class="bar acc">66</span><span role="cell" class="bar spd">84</span><span role="cell" class="hide-sm">77 MB</span></div>
+      <div class="model" role="row" data-acc="81" data-speed="89"><span role="cell"><b>Canary 180M Flash</b><em>English, German, Spanish, French</em></span><span role="cell" class="bar acc">81</span><span role="cell" class="bar spd">89</span><span role="cell" class="hide-sm">218 MB</span></div>
+      <div class="model" role="row" data-acc="90" data-speed="72"><span role="cell"><b>Cohere Transcribe</b><em>14 languages</em></span><span role="cell" class="bar acc">90</span><span role="cell" class="bar spd">72</span><span role="cell" class="hide-sm">1.6 GB</span></div>
+      <div class="model" role="row" data-acc="87" data-speed="70"><span role="cell"><b>Qwen3-ASR 0.6B</b><em>30 languages</em></span><span role="cell" class="bar acc">87</span><span role="cell" class="bar spd">70</span><span role="cell" class="hide-sm">850 MB</span></div>
+      <div class="model" role="row" data-acc="79" data-speed="71"><span role="cell"><b>Fun-ASR MLT Nano</b><em>31 languages</em></span><span role="cell" class="bar acc">79</span><span role="cell" class="bar spd">71</span><span role="cell" class="hide-sm">891 MB</span></div>
+      <div class="model" role="row" data-acc="89" data-speed="46"><span role="cell"><b>MOSS Transcribe</b><em>English, Chinese</em></span><span role="cell" class="bar acc">89</span><span role="cell" class="bar spd">46</span><span role="cell" class="hide-sm">987 MB</span></div>
+      <div class="model" role="row" data-acc="89" data-speed="58"><span role="cell"><b>Granite Speech 1B</b><em>6 languages</em></span><span role="cell" class="bar acc">89</span><span role="cell" class="bar spd">58</span><span role="cell" class="hide-sm">1.6 GB</span></div>
+      <div class="model" role="row" data-acc="87" data-speed="90"><span role="cell"><b>Nemotron Speech (English)</b><em>English</em></span><span role="cell" class="bar acc">87</span><span role="cell" class="bar spd">90</span><span role="cell" class="hide-sm">730 MB</span></div>
     </div>
-    <p class="fine">Strict scoring: "123" for "one two three" and a misspelt product name both count as errors, so real-world accuracy is higher. Every model is faster on newer chips; the order stays the same.</p>
+    <p class="fine">Strict scoring: "123" for "one two three" and a misspelt product name both count as errors, so real-world accuracy is higher. Every model is faster on newer chips; the order stays the same. Most also come in a smaller 4-bit download that scored about the same.</p>
   </div>
 </section>
 
