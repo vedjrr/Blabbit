@@ -16,6 +16,7 @@ public final class DictationController {
 
     public private(set) var state: State = .starting {
         didSet {
+            updateOverlay(from: oldValue)
             onStateChange?(state)
             // Apply a model switch that was requested during the dictation.
             if let pending = pendingModelID, !isBusyDictating, state != .loadingModel {
@@ -45,6 +46,29 @@ public final class DictationController {
     private let inserter = TextInserter()
     private var press: KeyTiming?
     private var recordStartedNs: UInt64 = 0
+    /// When the overlay was put on screen for the current dictation.
+    private var overlayShownNs: UInt64 = 0
+
+    /// The non-activating overlay (level meter, timer, processing state, notices).
+    public private(set) lazy var overlay: OverlayController = {
+        let recorder = self.recorder
+        return OverlayController(levelProvider: { recorder.level })
+    }()
+
+    private func updateOverlay(from old: State) {
+        switch state {
+        case .recording:
+            overlay.show(.recording(startedAt: Date()))
+            overlayShownNs = MonoClock.nowNs()
+        case .transcribing:
+            overlay.show(.transcribing)
+        case .failed(let message) where old == .recording || old == .transcribing:
+            // A dictation failed: say so where the user is looking.
+            overlay.show(.notice(message, .unconfirmed))
+        case .ready, .failed, .loadingModel, .starting:
+            if old == .recording || old == .transcribing { overlay.hide() }
+        }
+    }
     /// Set when the mic can't be used; shown instead of "Ready" once the model loads.
     private var micProblem: String?
     /// Watches a hotkey-driven recording for a missed key-up (see `startWatchdog`).
@@ -410,7 +434,10 @@ public final class DictationController {
         }
         if let message = plan.message { lastMessage = message }
         state = .ready
-        if let cue = plan.cue { onAttention?(cue) }
+        if let cue = plan.cue {
+            onAttention?(cue)
+            if let message = plan.message { overlay.show(.notice(message, cue)) }
+        }
     }
 
     private static func putOnClipboard(_ text: String) {
@@ -429,6 +456,7 @@ public final class DictationController {
         let fields: [(String, String)] = [
             ("audio_ms", "\(result.audioMs)"),
             ("keydown_to_record_started_ms", recordStartedNs == 0 ? "n/a" : ms(press.callbackNs, recordStartedNs)),
+            ("keydown_to_overlay_ms", overlayShownNs == 0 ? "n/a" : ms(press.callbackNs, overlayShownNs)),
             ("device_changed", "\(rec.interruptedByDeviceChange)"),
             ("keydown_to_first_sample_ms", ms(press.callbackNs, rec.firstSampleNs)),
             ("keydown_to_first_callback_ms", ms(press.callbackNs, rec.firstCallbackNs)),
