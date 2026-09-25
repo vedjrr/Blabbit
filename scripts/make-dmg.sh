@@ -16,17 +16,28 @@ dmg="$updates/Utter-$ver.dmg"
 sparkle_bin=app/.build/artifacts/sparkle/Sparkle/bin
 
 if [[ -z "${UTTER_DEVELOPER_ID:-}" ]]; then
-  echo "Cannot make a release DMG: set UTTER_DEVELOPER_ID to your 'Developer ID Application: …' signing identity." >&2
-  echo "Available identities:" >&2
-  security find-identity -v -p codesigning >&2 || true
+  echo "Cannot make a notarised DMG: set UTTER_DEVELOPER_ID to your 'Developer ID Application: …' signing identity." >&2
+  echo "Without an Apple Developer Program membership, use 'make release' instead (docs/RELEASING.md)." >&2
   exit 2
 fi
-if ! security find-identity -v -p codesigning | grep -qF "$UTTER_DEVELOPER_ID"; then
-  echo "Cannot make a release DMG: identity '$UTTER_DEVELOPER_ID' is not in your keychain." >&2
+# Only a Developer ID certificate can be notarised; an Apple Development one would
+# sign fine and then fail at Apple after the upload.
+if [[ "$UTTER_DEVELOPER_ID" != "Developer ID Application: "* ]]; then
+  echo "Cannot make a notarised DMG: '$UTTER_DEVELOPER_ID' is not a 'Developer ID Application: …' identity." >&2
+  exit 2
+fi
+# Exact match, quotes included, so a prefix of another identity doesn't pass.
+if ! security find-identity -v -p codesigning | grep -qF "\"$UTTER_DEVELOPER_ID\""; then
+  echo "Cannot make a notarised DMG: identity '$UTTER_DEVELOPER_ID' is not in your keychain." >&2
   exit 2
 fi
 if [[ -z "${UTTER_NOTARY_PROFILE:-}" ]]; then
   echo "Cannot notarise: set UTTER_NOTARY_PROFILE to a profile created with 'xcrun notarytool store-credentials'." >&2
+  exit 2
+fi
+# Check the credentials before signing and uploading anything.
+if ! xcrun notarytool history --keychain-profile "$UTTER_NOTARY_PROFILE" >/dev/null 2>&1; then
+  echo "Cannot notarise: the notarytool profile '$UTTER_NOTARY_PROFILE' doesn't work (xcrun notarytool history failed)." >&2
   exit 2
 fi
 if ! "$sparkle_bin/generate_keys" --account dev.utter.mac -p >/dev/null 2>&1; then
