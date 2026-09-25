@@ -12,7 +12,7 @@ Iteration: 6
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- Merge branch `m3` (clean: `git merge-tree` exit 0) (downloader + catalog + all 8 G3 models verified, already built in isolation) and continue M3 (FFI + Model Manager window).
+- M3 gate: critic review of the merged M3 work (G3).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -92,6 +92,15 @@ Iteration: 6
   MINORs: the tooltip is cleared when a cue is cancelled; `lastMessage` is cleared at each new dictation; a blank transcript is `.skipped` (a no-op plan, not a failure); partial typing under secure input gets its own message (`partiallyTyped`); script kill pins each PID by its start time (`proc_pidinfo`), re-collects the tree before SIGKILL, and closes stdin in one place only; a stuck clipboard capture makes later snapshots unreadable at once (tested: second insert < 0.15 s); an owner-chain test was added; the checklist explains every `result` value; the G2 overlay deferral is recorded under Proposed goal changes.
 - [M2] Final: `make test` 3 consecutive runs, all exit 0: Rust 14 + 3; Swift `Test run with 90 tests in 16 suites passed`, `AXIntegrationTests passed` → `evidence/m2/make_test_unlocked.log` (holds all 3 runs).
 - [M2] `docs/TEST_CHECKLIST.md`: an expected strategy per app, how to read the `dictation` log line, a secure-keyboard-entry check, and a verified `defaults write` override recipe. PARITY: 15 rows now **Built**.
+
+- [M3] Branch `m3` merged into main (212f9e9; one conflict in `DictationController.swift` resolved: attention cue + ModelManager). Built in isolation earlier (ccea7db, 951434c, 185ce1a):
+  - Resumable downloader in Rust (HTTP Range resume, streaming SHA-256, pause/cancel/retry, plain-English errors), 7 local-server tests in `core/utter-core/tests/download.rs`: resume after a dropped connection, server ignoring Range, checksum mismatch deletes the partial, pause keeps / cancel deletes, HTTP errors and unreachable hosts, truncation/bit-flip detection.
+  - Bundled catalog `core/utter-core/models.json`: 8 models with pinned URLs, SHA-256, licence, measured WER/p50/memory.
+  - **All 8 G3 models verified** on the 5 fixtures (`utter-cli --repeat 3`, Metal, `model_loads=1` each) → `evidence/m3/model_verification.log`. Aggregate WER / p50 per ~4.6 s clip: Parakeet V3 0.258 / 80–86 ms; Parakeet V2 0.210 / 71–79 ms; Whisper Small 0.161 / 379–404 ms; Whisper Medium 0.129 / 979–1087 ms; Whisper Large v3 (Q5_K_M) 0.129 / 2025–2134 ms; Whisper Large v3 Turbo 0.081 / 1347–1381 ms; SenseVoice Small 0.306 / 56–63 ms; Moonshine Base 0.339 / 97–135 ms. None unsupported.
+  - Switching unloads the old model; footprint measured → `evidence/m3/model_switch.log`: Whisper Large v3 Turbo → Moonshine 1079 → 189 MB after unload (freed 890) → 279 MB; Parakeet V3 → Whisper Small 890 → 135 (freed 755) → 518 MB; `load_count=2`.
+  - Swift `ModelManager` + SwiftUI Model Manager window (browse, download/pause/resume/cancel/retry, verify, delete, set default, licence acceptance, damaged file → error + one-click Re-download), a Model submenu in the menu bar. `ModelManagerTests` (catalog, install/switch/delete rules, licence persisted, damaged model).
+- [M3] After the merge: `make test` → Rust 16 + 7 + 3 ok; Swift `Test run with 95 tests in 18 suites passed`. The app launched through `open` (`--model-manager` opens the window at launch): `model_load model=parakeet-tdt-0.6b-v3 load_ms=204 warmup_ms=44 … load_count=1`, audio graph ready, window "Utter Models" 706×580 on screen (CGWindowList).
+- [M3] UI evidence without Screen Recording permission (`screencapture -l` → "could not create image from window"): `ModelManagerSnapshotTests` renders the real view offscreen with `ImageRenderer`. `evidence/m3/model_manager_view.png` shows the header and "Installed: 8 of 8" (the `List` can't be drawn offscreen). `evidence/m3/model_manager_rows.png` shows every row state: In use/Recommended, Use This Model, Downloading 180 MB of 640 MB + Pause/Cancel, Paused at 320 MB + Resume/Cancel, Verifying download…, damaged (checksum mismatch) + Retry/Re-download, Download. Yellow boxes are AppKit-backed controls (progress bars, menus), which offscreen rendering can't draw.
 
 ## Blocked on human
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.
