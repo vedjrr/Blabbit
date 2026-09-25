@@ -14,3 +14,5 @@ libc = "0.2"
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
 sha2 = "0.11"
 transcribe-cpp = { version = "0.2.3", default-features = false, features = ["metal"] }
+strsim = "0.11"
+rphonetic = "4"

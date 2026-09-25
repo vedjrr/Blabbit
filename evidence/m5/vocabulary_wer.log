@@ -1,0 +1,128 @@
+# 2026-09-25T11:41:56Z text pipeline on real model output: mode=clean, vocabulary=Utter,HoldMyCode,Decivra,Maynooth,PostgreSQL,TypeScript,SwiftUI,WhisperKit. Post-correction only (UTTER_NO_VOCAB_PROMPT=1), git 3d55dce+wip
+
+$ UTTER_NO_VOCAB_PROMPT=1 utter-cli --model $MODELS/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf --mode clean --vocab "$V" fixtures/audio/*.wav
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=83ms rtf=0.018 wer=1.000	Testing udder, 123, hold my code uses post gur SQL.
+  processed wer=0.500	Testing udder, 123, HoldMyCode uses PostgreSQL.	["vocabulary: \"post gur SQL.\" → \"PostgreSQL\"", "vocabulary: \"hold my code\" → \"HoldMyCode\""]
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=78ms rtf=0.018 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+  processed wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.	[]
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=82ms rtf=0.019 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+  processed wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.	[]
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=79ms rtf=0.016 wer=0.091	I studied computer science at Minute before moving into product engineering.
+  processed wer=0.091	I studied computer science at Minute before moving into product engineering.	[]
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=88ms rtf=0.017 wer=0.538	We rewrote the settings screen and swiftly lie and move the backend the type script.
+  processed wer=0.385	We rewrote the settings screen and swiftly lie and move the backend the TypeScript.	["vocabulary: \"type script.\" → \"TypeScript\""]
+aggregate wer=0.258 (16/62 words) model_loads=1
+aggregate processed wer=0.161 (10/62 words)
+
+$ UTTER_NO_VOCAB_PROMPT=1 utter-cli --model $MODELS/parakeet-tdt-0.6b-v2/parakeet-tdt-0.6b-v2-Q8_0.gguf --mode clean --vocab "$V" fixtures/audio/*.wav
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=72ms rtf=0.016 wer=0.750	Testing Udder, 123, hold my code uses postGirSQL.
+  processed wer=0.500	Testing Udder, 123, HoldMyCode uses PostgreSQL.	["vocabulary: \"postGirSQL.\" → \"PostgreSQL\"", "vocabulary: \"hold my code\" → \"HoldMyCode\""]
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=71ms rtf=0.016 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+  processed wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.	[]
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=73ms rtf=0.017 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+  processed wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.	[]
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=72ms rtf=0.015 wer=0.091	I studied computer science at Manooth before moving into product engineering.
+  processed wer=0.000	I studied computer science at Maynooth before moving into product engineering.	["vocabulary: \"Manooth\" → \"Maynooth\""]
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=73ms rtf=0.014 wer=0.462	We rewrote the settings screen and Swiftly lie and moved the back end the TypeScript.
+  processed wer=0.462	We rewrote the settings screen and Swiftly lie and moved the back end the TypeScript.	[]
+aggregate wer=0.210 (13/62 words) model_loads=1
+aggregate processed wer=0.161 (10/62 words)
+
+$ UTTER_NO_VOCAB_PROMPT=1 utter-cli --model $MODELS/whisper-small/whisper-small-Q8_0.gguf --mode clean --vocab "$V" fixtures/audio/*.wav
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=393ms rtf=0.085 wer=1.000	TestingUtter, 1, 2, 3, hold my code uses post-gur SQL.
+  processed wer=0.250	TestingUtter, 1, 2, 3, HoldMyCode uses PostgreSQL.	["vocabulary: \"post-gur SQL.\" → \"PostgreSQL\"", "vocabulary: \"hold my code\" → \"HoldMyCode\""]
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=396ms rtf=0.090 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+  processed wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.	[]
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=393ms rtf=0.092 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+  processed wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.	[]
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=378ms rtf=0.078 wer=0.091	I studied computer science at Mnuth before moving into product engineering.
+  processed wer=0.091	I studied computer science at Mnuth before moving into product engineering.	[]
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=368ms rtf=0.073 wer=0.077	We rewrote the settings screen and SwiftUI and moved the backend to TypeScript.
+  processed wer=0.077	We rewrote the settings screen and SwiftUI and moved the backend to TypeScript.	[]
+aggregate wer=0.161 (10/62 words) model_loads=1
+aggregate processed wer=0.065 (4/62 words)
+
+$ UTTER_NO_VOCAB_PROMPT=1 utter-cli --model $MODELS/whisper-medium/whisper-medium-Q8_0.gguf --mode clean --vocab "$V" fixtures/audio/*.wav
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=991ms rtf=0.213 wer=0.875	Testing utter 123 hold my code uses post-ger SQL
+  processed wer=0.375	Testing Utter 123 HoldMyCode uses PostgreSQL.	["vocabulary: \"post-ger SQL\" → \"PostgreSQL\"", "vocabulary: \"hold my code\" → \"HoldMyCode\"", "vocabulary: \"utter\" → \"Utter\""]
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=1031ms rtf=0.233 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+  processed wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.	[]
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=1030ms rtf=0.241 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+  processed wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.	[]
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=1021ms rtf=0.212 wer=0.091	I studied computer science at Manuth before moving into product engineering.
+  processed wer=0.000	I studied computer science at Maynooth before moving into product engineering.	["vocabulary: \"Manuth\" → \"Maynooth\""]
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=1080ms rtf=0.214 wer=0.000	We rewrote the settings screen in SwiftUI and moved the backend to TypeScript.
+  processed wer=0.000	We rewrote the settings screen in SwiftUI and moved the backend to TypeScript.	[]
+aggregate wer=0.129 (8/62 words) model_loads=1
+aggregate processed wer=0.048 (3/62 words)
+
+$ UTTER_NO_VOCAB_PROMPT=1 utter-cli --model $MODELS/whisper-large-v3/whisper-large-v3-Q5_K_M.gguf --mode clean --vocab "$V" fixtures/audio/*.wav
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=2077ms rtf=0.447 wer=0.750	Testing utter, 1, 2, 3, hold my code uses post-ger SQL.
+  processed wer=0.000	Testing Utter, 1, 2, 3, HoldMyCode uses PostgreSQL.	["vocabulary: \"post-ger SQL.\" → \"PostgreSQL\"", "vocabulary: \"hold my code\" → \"HoldMyCode\"", "vocabulary: \"utter,\" → \"Utter\""]
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=2064ms rtf=0.467 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+  processed wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.	[]
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=2055ms rtf=0.482 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+  processed wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.	[]
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=2017ms rtf=0.418 wer=0.000	I studied computer science at Maynooth before moving into product engineering.
+  processed wer=0.000	I studied computer science at Maynooth before moving into product engineering.	[]
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=2127ms rtf=0.421 wer=0.154	we rewrote the settings screen in SwiftUI and moved the back end to TypeScript.
+  processed wer=0.154	We rewrote the settings screen in SwiftUI and moved the back end to TypeScript.	[]
+aggregate wer=0.129 (8/62 words) model_loads=1
+aggregate processed wer=0.032 (2/62 words)
+
+$ UTTER_NO_VOCAB_PROMPT=1 utter-cli --model $MODELS/whisper-large-v3-turbo/whisper-large-v3-turbo-Q8_0.gguf --mode clean --vocab "$V" fixtures/audio/*.wav
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=1313ms rtf=0.283 wer=0.375	Testing utter, 1, 2, 3, hold my code uses postgreSQL.
+  processed wer=0.000	Testing Utter, 1, 2, 3, HoldMyCode uses PostgreSQL.	["vocabulary: \"hold my code\" → \"HoldMyCode\"", "vocabulary: \"utter,\" → \"Utter\"", "vocabulary: \"postgreSQL.\" → \"PostgreSQL\""]
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=1342ms rtf=0.304 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+  processed wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.	[]
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=1341ms rtf=0.314 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+  processed wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.	[]
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=1336ms rtf=0.277 wer=0.000	I studied computer science at Maynooth before moving into product engineering.
+  processed wer=0.000	I studied computer science at Maynooth before moving into product engineering.	[]
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=1352ms rtf=0.268 wer=0.154	We rewrote the settings screen in SwiftUI and moved the back end to TypeScript.
+  processed wer=0.154	We rewrote the settings screen in SwiftUI and moved the back end to TypeScript.	[]
+aggregate wer=0.081 (5/62 words) model_loads=1
+aggregate processed wer=0.032 (2/62 words)
+
+$ UTTER_NO_VOCAB_PROMPT=1 utter-cli --model $MODELS/SenseVoiceSmall/SenseVoiceSmall-Q8_0.gguf --mode clean --vocab "$V" fixtures/audio/*.wav
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=57ms rtf=0.012 wer=0.875	testing utter1 two three hold my code uses postger sql
+  processed wer=0.125	Testing Utter two three HoldMyCode uses PostgreSQL.	["vocabulary: \"postger sql\" → \"PostgreSQL\"", "vocabulary: \"utter1\" → \"Utter\"", "vocabulary: \"hold my code\" → \"HoldMyCode\""]
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=53ms rtf=0.012 wer=0.000	the quick brown fox jumps over the lazy dog while the band plays in the park
+  processed wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.	[]
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=54ms rtf=0.013 wer=0.000	please schedule a meeting with the design team for next tuesday afternoon at three
+  processed wer=0.000	Please schedule a meeting with the design team for next tuesday afternoon at three.	[]
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=61ms rtf=0.013 wer=0.091	i studied computer science at manooth before moving into product engineering
+  processed wer=0.000	I studied computer science at Maynooth before moving into product engineering.	["vocabulary: \"manooth\" → \"Maynooth\""]
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=62ms rtf=0.012 wer=0.846	we rew wrotete the settings screen and swift the eye and moved the back end that ive script
+  processed wer=0.846	We rew wrotete the settings screen and swift the eye and moved the back end that ive script.	[]
+aggregate wer=0.306 (19/62 words) model_loads=1
+aggregate processed wer=0.194 (12/62 words)
+
+$ UTTER_NO_VOCAB_PROMPT=1 utter-cli --model $MODELS/moonshine-base/moonshine-base-Q8_0.gguf --mode clean --vocab "$V" fixtures/audio/*.wav
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=118ms rtf=0.025 wer=1.000	Testing udder, 123, hold my code uses post-gurr SQL.
+  processed wer=0.500	Testing udder, 123, HoldMyCode uses PostgreSQL.	["vocabulary: \"post-gurr SQL.\" → \"PostgreSQL\"", "vocabulary: \"hold my code\" → \"HoldMyCode\""]
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=108ms rtf=0.024 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+  processed wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.	[]
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=115ms rtf=0.027 wer=0.071	Please schedule a meeting with the design team for next Tuesday afternoon at 3:00.
+  processed wer=0.071	Please schedule a meeting with the design team for next Tuesday afternoon at 3:00.	[]
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=89ms rtf=0.018 wer=0.091	I studied computer science at Manuth before moving into product engineering.
+  processed wer=0.000	I studied computer science at Maynooth before moving into product engineering.	["vocabulary: \"Manuth\" → \"Maynooth\""]
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=134ms rtf=0.026 wer=0.846	We re-route the setting screen and swiftly lie and move the back end to type script.
+  processed wer=0.692	We re-route the setting screen and swiftly lie and move the back end to TypeScript.	["vocabulary: \"type script.\" → \"TypeScript\""]
+aggregate wer=0.339 (21/62 words) model_loads=1
+aggregate processed wer=0.226 (14/62 words)
+
+# Whisper Small with the vocabulary also as the initial prompt (the app does this for Whisper models):
+$ utter-cli --model $MODELS/whisper-small/whisper-small-Q8_0.gguf --mode clean --vocab "$V" fixtures/audio/*.wav
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=375ms rtf=0.081 wer=0.250	TestingUter, 1, 2, 3, HoldMyCode uses PostgreSQL
+  processed wer=0.250	TestingUter, 1, 2, 3, HoldMyCode uses PostgreSQL.	[]
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=363ms rtf=0.082 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+  processed wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.	[]
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=357ms rtf=0.084 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+  processed wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.	[]
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=354ms rtf=0.073 wer=0.000	I studied computer science at Maynooth before moving into product engineering.
+  processed wer=0.000	I studied computer science at Maynooth before moving into product engineering.	[]
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=363ms rtf=0.072 wer=0.077	We rewrote the settings screen and SwiftUI and moved the backend to TypeScript
+  processed wer=0.077	We rewrote the settings screen and SwiftUI and moved the backend to TypeScript.	[]
+aggregate wer=0.048 (3/62 words) model_loads=1
+aggregate processed wer=0.048 (3/62 words)

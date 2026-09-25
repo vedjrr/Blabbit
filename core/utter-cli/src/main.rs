@@ -29,6 +29,13 @@ struct Args {
     /// the old model is unloaded (G3: switching frees memory).
     #[arg(long)]
     switch_to: Option<PathBuf>,
+    /// Text pipeline mode applied after transcription: exact, clean, code (G4).
+    #[arg(long)]
+    mode: Option<String>,
+    /// Personal vocabulary, comma-separated (fuzzy post-correction; also the
+    /// Whisper initial prompt unless --prompt is given or UTTER_NO_VOCAB_PROMPT is set).
+    #[arg(long)]
+    vocab: Option<String>,
     /// WAV files (16 kHz). A sibling .txt is used as the WER reference.
     #[arg(required = true)]
     files: Vec<PathBuf>,
@@ -68,7 +75,21 @@ fn main() -> ExitCode {
         );
     }
 
-    let options = TranscribeOptions { language: args.language.clone(), translate: false, initial_prompt: args.prompt.clone() };
+    let vocabulary: Vec<String> =
+        args.vocab.as_deref().map(|v| v.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect()).unwrap_or_default();
+    let text_options = args.mode.as_deref().map(|m| utter_core::text::TextOptions {
+        mode: match m {
+            "exact" => utter_core::text::Mode::Exact,
+            "code" => utter_core::text::Mode::Code,
+            _ => utter_core::text::Mode::Clean,
+        },
+        vocabulary: vocabulary.clone(),
+        ..Default::default()
+    });
+    let vocab_prompt = if std::env::var_os("UTTER_NO_VOCAB_PROMPT").is_some() { None } else { utter_core::text::whisper_prompt(&vocabulary) };
+    let prompt = args.prompt.clone().or(vocab_prompt);
+    let options = TranscribeOptions { language: args.language.clone(), translate: false, initial_prompt: prompt };
+    let mut processed_errors = 0usize;
     let mut failed = false;
     let mut total_errors = 0usize;
     let mut total_ref_words = 0usize;
@@ -106,6 +127,10 @@ fn main() -> ExitCode {
             total_ref_words += c.reference_words;
         }
         let rtf = p50 / t.audio_ms.max(1) as f64;
+        let processed = text_options.as_ref().map(|o| utter_core::text::process(&t.text, o));
+        if let (Some(p), Some(r)) = (&processed, reference.as_deref()) {
+            processed_errors += wer::wer_counts(r, &p.text).errors();
+        }
         if args.json {
             println!(
                 "{}",
@@ -120,6 +145,10 @@ fn main() -> ExitCode {
         } else {
             let wer_s = counts.map(|c| format!(" wer={:.3}", c.wer())).unwrap_or_default();
             println!("{}\taudio={}ms infer_p50={p50:.0}ms rtf={rtf:.3}{wer_s}\t{}", file.display(), t.audio_ms, t.text);
+            if let Some(p) = &processed {
+                let pw = reference.as_deref().map(|r| format!(" wer={:.3}", wer::wer_counts(r, &p.text).wer())).unwrap_or_default();
+                println!("  processed{pw}\t{}\t{:?}", p.text.replace('\n', " / "), p.changes);
+            }
         }
     }
     if total_ref_words > 0 {
@@ -128,6 +157,12 @@ fn main() -> ExitCode {
             println!("{}", serde_json::json!({"event": "summary", "wer": agg, "errors": total_errors, "reference_words": total_ref_words, "model_loads": engine.load_count()}));
         } else {
             println!("aggregate wer={agg:.3} ({total_errors}/{total_ref_words} words) model_loads={}", engine.load_count());
+            if text_options.is_some() {
+                println!(
+                    "aggregate processed wer={:.3} ({processed_errors}/{total_ref_words} words)",
+                    processed_errors as f64 / total_ref_words as f64
+                );
+            }
         }
     }
     if let Some(next) = &args.switch_to {
