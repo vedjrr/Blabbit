@@ -277,7 +277,8 @@ public final class DictationController {
         // No system prompts at launch: the setup window explains each
         // permission and asks when the user clicks.
         let store = historyStore
-        historyQueue.async { _ = store.value } // open + migrate off the main thread
+        let privacy = privacySettings
+        historyQueue.async { _ = try? store.value?.prune(privacy) } // open + migrate + prune off the main thread
         // Build and draw the overlay once now, so the first key-down doesn't pay for it.
         overlay.prewarm()
         recorder.onCaptureLost = { [weak self] in
@@ -376,7 +377,64 @@ public final class DictationController {
     }
     /// Settings → Privacy.
     public var privacySettings = PrivacySettings.load() {
-        didSet { privacySettings.save() }
+        didSet {
+            privacySettings.save()
+            if privacySettings.retention != oldValue.retention || privacySettings.historyLimit != oldValue.historyLimit {
+                pruneHistory()
+            }
+        }
+    }
+
+    /// Applies the history limit / retention period off the main thread.
+    private func pruneHistory() {
+        let store = historyStore
+        let privacy = privacySettings
+        historyQueue.async {
+            do {
+                if let removed = try store.value?.prune(privacy), removed > 0 { Log.info("history pruned removed=\(removed)") }
+            } catch {
+                Log.error("history prune failed: \(error)")
+            }
+        }
+    }
+
+    /// Transcribes a kept recording again with the loaded model and the
+    /// current text settings, and updates its history entry (PARITY E4).
+    /// Returns a plain-English problem, or nil on success.
+    public func retranscribe(historyID: Int64) async -> String? {
+        guard modelLoaded, let modelID = loadedModelID else { return "\(modelName) isn't loaded yet. Try again in a moment." }
+        guard !isBusyDictating else { return "Finish the current dictation first." }
+        let store = historyStore
+        let engine = self.engine
+        let options = dictationOptions(noticeUnsupportedLanguage: false)
+        let loaded: (HistoryEntry, [Float])? = await Task.detached {
+            guard let history = store.value, let entry = try? history.entry(id: historyID),
+                  let name = entry.audioFile, let samples = try? history.loadAudio(name) else { return nil }
+            return (entry, samples)
+        }.value
+        guard let (entry, samples) = loaded else { return "The audio for that dictation isn't available any more." }
+        let result: TranscriptionResult
+        do {
+            result = try await Task.detached(priority: .userInitiated) { try engine.transcribe(pcm: samples, options: options) }.value
+        } catch let error as CoreError {
+            return error.userMessage
+        } catch {
+            return "Transcription failed. Please try again."
+        }
+        guard result.skipped == nil, !TranscriptPolicy.isBlank(result.text) else { return "No speech was found in that recording." }
+        // The mode the dictation used, with today's settings for everything else.
+        var text = textSettings
+        if let mode = TextPipelineSettings.Mode(rawValue: entry.mode) { text.mode = mode }
+        let allowed = processorSettings.isLocal || !privacySettings.localOnly
+        let settingsForKey = processorSettings
+        let processor: (any TextProcessor)? = text.mode.usesProcessor && allowed ? await Task.detached { settingsForKey.makeProcessor() }.value : nil
+        let processed = await TextPipeline(settings: text, processor: processor).run(result.text)
+        let mode = text.mode.rawValue
+        let failed = await Task.detached {
+            (try? store.value?.updateTranscription(id: historyID, raw: processed.raw, final: processed.final, model: modelID, mode: mode)) == nil
+        }.value
+        Log.info("history retranscribed id=\(historyID) model=\(modelID) inference_ms=\(Int(result.inferenceMs))")
+        return failed ? "The new text couldn't be saved to history." : nil
     }
     /// Local history, opened (with its migration) on a background queue.
     private nonisolated let historyStore = LazyStore()
@@ -414,6 +472,7 @@ public final class DictationController {
     /// Saves a finished dictation off the main thread (text only unless audio retention is on).
     private func recordHistory(_ pipeline: PipelineResult, recording: Recording, app: String?) {
         guard privacySettings.historyEnabled else { return }
+        let privacy = privacySettings
         let entry = HistoryEntry(durationMs: recording.durationMs, model: loadedModelID ?? "unknown",
                                  mode: dictationTextMode.rawValue, raw: pipeline.raw, final: pipeline.final, app: app)
         let audio = HistoryPolicy.audioToKeep(recording.samples, privacy: privacySettings)
@@ -424,6 +483,7 @@ public final class DictationController {
                 var e = entry
                 if let audio { e.audioFile = try history.saveAudio(audio) }
                 try history.add(e)
+                try history.prune(privacy)
             } catch {
                 Log.error("history write failed: \(error)")
             }

@@ -93,10 +93,10 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 |---|---|---|---|---|---|---|---|
 | E1 | History list with transcript + post-processed text | `H/src-tauri/src/managers/history.rs:22-34` | SQLite | GRDB SQLite: timestamp, duration, model, raw, final (ADR-009) | M5 | Built (GRDB + FTS5; raw and final; `HistoryTests`) | Raw vs final side by side + FTS search (Handy has no search) |
 | E2 | Play back recording audio | `get_audio_file_path` | WAV per entry, kept by default | Only if "Keep audio" enabled | M5 | Built (Play/Stop for kept audio) | Private by default |
-| E3 | Star / save entries | `toggle_history_entry_saved` | — | Same | M7 | Missing | — |
-| E4 | Retry transcription from history | `retry_history_entry_transcription` | — | Same (needs kept audio) | M7 | Missing | Retry with a different model |
+| E3 | Star / save entries | `toggle_history_entry_saved` | — | Same | M7 | Built (star from the list, context menu or detail; Starred filter; starred dictations survive the limit and retention; additive `v2-saved` migration tested on a v1 database: `aHistoryFromBeforeStarsIsMigrated`) | — |
+| E4 | Retry transcription from history | `retry_history_entry_transcription` | — | Same (needs kept audio) | M7 | Built (History → Transcribe Again with the loaded model, for dictations whose audio was kept; the dictation's own mode with today's settings; entry updated in place like Handy; `aKeptRecordingTranscribesAgainAndUpdatesItsEntry` (real Parakeet V3, WER 0), `keptAudioReadsBackExactly`) | Retry with a different model |
 | E5 | Delete entry / delete all | `delete_history_entry` | — | Same + delete all | M5 | Built | — |
-| E6 | History limit + retention period | `S.history_limit`, `S.recording_retention_period` | — | Same | M7 | Missing | — |
+| E6 | History limit + retention period | `S.history_limit`, `S.recording_retention_period` | — | Same | M7 | Built (Settings → Privacy → Keep dictations for: Forever (default) / the most recent 10–1000 / 3 days / 2 weeks / 3 months, Handy's periods; applied after each dictation, at launch and on change, off the main thread, audio deleted with its entry; `theLimitKeepsTheNewestAndEveryStarredOne`, `retentionRemovesOldUnstarredDictations`, `oldPrivacySettingsStillLoad`) | — |
 | E7 | Copy last transcript (tray) | `H/src-tauri/src/tray.rs:505` | — | Menu item | M5 | Built (menu: Copy Last Dictation) | — |
 | E8 | Open recordings folder | `open_recordings_folder` | — | Same | M5 | Built (Show Audio in Finder) | — |
 | E9 | Disable history | `S.history_limit` = 0 | — | Explicit toggle | M5 | Built (Settings → Privacy) | — |

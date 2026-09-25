@@ -617,6 +617,17 @@ struct SettingsView: View {
             Toggle("Keep a history of dictations", isOn: $model.privacy.historyEnabled)
             Toggle("Keep the audio of each dictation", isOn: $model.privacy.keepAudio)
                 .disabled(!model.privacy.historyEnabled)
+            Picker("Keep dictations for", selection: $model.privacy.retention) {
+                ForEach(HistoryRetention.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .disabled(!model.privacy.historyEnabled)
+            if model.privacy.retention == .limit {
+                Picker("How many", selection: $model.privacy.historyLimit) {
+                    ForEach(PrivacySettings.historyLimitChoices, id: \.self) { Text("\($0)").tag($0) }
+                }
+            }
+            Text("Older dictations and their audio are deleted automatically. Starred ones are always kept.")
+                .font(.caption).foregroundStyle(.secondary)
             Text("Everything stays on this Mac, in ~/Library/Application Support/Utter.").font(.caption).foregroundStyle(.secondary)
             LabeledContent("Saved dictations", value: model.historyCount.map(String.init) ?? "—")
             Button("Clear Local Data…", role: .destructive) { model.confirmClear = true }
