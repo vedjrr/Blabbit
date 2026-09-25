@@ -37,8 +37,25 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
     public var spokenLineBreaks = true
     public var vocabulary: [String] = []
     public var vocabularyThreshold: Double = defaultVocabularyThreshold()
-    /// Custom mode's instruction to the AI processor.
-    public var customInstruction = "Rewrite this as a concise, friendly message."
+    /// Saved instructions for Custom mode (PARITY D5); one is selected.
+    public var prompts: [SavedPrompt] = SavedPrompt.starters
+    public var selectedPromptID: String = SavedPrompt.starters[0].id
+
+    public var selectedPrompt: SavedPrompt? { prompts.first { $0.id == selectedPromptID } ?? prompts.first }
+
+    /// Custom mode's instruction to the AI processor: the selected prompt's.
+    public var customInstruction: String {
+        get { selectedPrompt?.instruction ?? SavedPrompt.starters[0].instruction }
+        set {
+            if let i = prompts.firstIndex(where: { $0.id == selectedPrompt?.id }) {
+                prompts[i].instruction = newValue
+            } else {
+                let prompt = SavedPrompt(name: "My instruction", instruction: newValue)
+                prompts.append(prompt)
+                selectedPromptID = prompt.id
+            }
+        }
+    }
     /// ISO language code, or nil for automatic detection.
     public var language: String?
     /// Whisper models only: output English whatever language is spoken.
@@ -57,6 +74,27 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
         defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey)
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case mode, removeFillers, capitalize, autoPunctuation, spokenLineBreaks, vocabulary, vocabularyThreshold
+        case customInstruction, prompts, selectedPromptID, language, translateToEnglish
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(mode, forKey: .mode)
+        try c.encode(removeFillers, forKey: .removeFillers)
+        try c.encode(capitalize, forKey: .capitalize)
+        try c.encode(autoPunctuation, forKey: .autoPunctuation)
+        try c.encode(spokenLineBreaks, forKey: .spokenLineBreaks)
+        try c.encode(vocabulary, forKey: .vocabulary)
+        try c.encode(vocabularyThreshold, forKey: .vocabularyThreshold)
+        try c.encode(customInstruction, forKey: .customInstruction) // read by older builds
+        try c.encode(prompts, forKey: .prompts)
+        try c.encode(selectedPromptID, forKey: .selectedPromptID)
+        try c.encodeIfPresent(language, forKey: .language)
+        try c.encode(translateToEnglish, forKey: .translateToEnglish)
+    }
+
     // Tolerate settings saved by older builds (missing keys keep defaults).
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -68,7 +106,16 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
         spokenLineBreaks = (try? c.decode(Bool.self, forKey: .spokenLineBreaks)) ?? d.spokenLineBreaks
         vocabulary = (try? c.decode([String].self, forKey: .vocabulary)) ?? d.vocabulary
         vocabularyThreshold = (try? c.decode(Double.self, forKey: .vocabularyThreshold)) ?? d.vocabularyThreshold
-        customInstruction = (try? c.decode(String.self, forKey: .customInstruction)) ?? d.customInstruction
+        if let prompts = try? c.decode([SavedPrompt].self, forKey: .prompts), !prompts.isEmpty {
+            self.prompts = prompts
+            selectedPromptID = (try? c.decode(String.self, forKey: .selectedPromptID)) ?? prompts[0].id
+        } else if let old = try? c.decode(String.self, forKey: .customInstruction),
+                  old != SavedPrompt.starters[0].instruction {
+            // A build before saved prompts: its one instruction becomes the first prompt.
+            let mine = SavedPrompt(id: "migrated", name: "My instruction", instruction: old)
+            prompts = [mine] + SavedPrompt.starters
+            selectedPromptID = mine.id
+        }
         language = try? c.decode(String.self, forKey: .language)
         translateToEnglish = (try? c.decode(Bool.self, forKey: .translateToEnglish)) ?? false
     }
@@ -101,6 +148,26 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
         guard family == "whisper", !Self.modelsWithoutPrompt.contains(modelID ?? "") else { return nil }
         return vocabularyPrompt(vocabulary: vocabulary)
     }
+}
+
+/// A named instruction for Custom mode.
+public struct SavedPrompt: Codable, Equatable, Hashable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var instruction: String
+
+    public init(id: String = UUID().uuidString, name: String, instruction: String) {
+        self.id = id
+        self.name = name
+        self.instruction = instruction
+    }
+
+    public static let starters: [SavedPrompt] = [
+        SavedPrompt(id: "friendly", name: "Friendly message", instruction: "Rewrite this as a concise, friendly message."),
+        SavedPrompt(id: "email", name: "Email", instruction: "Rewrite this as a clear, polite email body. Keep it short. No subject line, no signature."),
+        SavedPrompt(id: "bullets", name: "Bullet points", instruction: "Turn this into short bullet points, one idea per line, each starting with \"- \"."),
+        SavedPrompt(id: "prompt", name: "Prompt for an AI", instruction: "Rewrite this as a clear, specific prompt for an AI coding assistant. Keep every requirement; remove filler."),
+    ]
 }
 
 /// The result of running the pipeline on one transcript.

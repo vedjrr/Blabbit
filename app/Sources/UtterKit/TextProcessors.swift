@@ -209,6 +209,34 @@ public struct AnthropicProcessor: TextProcessor {
     }
 }
 
+/// The models a provider offers (PARITY D9), for the picker in Settings.
+/// User-initiated only (the Refresh button), never during dictation.
+public enum ProcessorModels {
+    /// Ollama `GET /api/tags`: the models pulled on that machine.
+    public static func ollama(baseURL: URL, session: URLSession = .shared) async throws -> [String] {
+        let request = URLRequest(url: baseURL.appendingPathComponent("api/tags"), timeoutInterval: 5)
+        let (data, status) = try await send(request, session: session, who: "Ollama")
+        guard status == 200 else { throw TextProcessorError.rejected(status: status, detail: String(decoding: data.prefix(300), as: UTF8.self)) }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let models = json["models"] as? [[String: Any]] else { throw TextProcessorError.badResponse("no models") }
+        return models.compactMap { $0["name"] as? String }.sorted()
+    }
+
+    public static let anthropicModelsEndpoint = URL(string: "https://api.anthropic.com/v1/models?limit=100")!
+
+    /// Anthropic `GET /v1/models`, newest first as the API returns them.
+    public static func anthropic(apiKey: String, session: URLSession = .shared) async throws -> [String] {
+        var request = URLRequest(url: anthropicModelsEndpoint, timeoutInterval: 10)
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        let (data, status) = try await send(request, session: session, who: "Anthropic")
+        guard status == 200 else { throw TextProcessorError.rejected(status: status, detail: String(decoding: data.prefix(300), as: UTF8.self)) }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let models = json["data"] as? [[String: Any]] else { throw TextProcessorError.badResponse("no data") }
+        return models.compactMap { $0["id"] as? String }
+    }
+}
+
 /// A generic-password Keychain item (the cloud API key).
 public struct KeychainStore: Sendable {
     public let service: String

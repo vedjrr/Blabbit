@@ -25,6 +25,9 @@ public final class SettingsModel {
     var hasAPIKey = false
     var historyCount: Int?
     var connectionResult: String?
+    /// Models the chosen provider reported (Refresh), and a note about the last fetch.
+    var providerModels: [String] = []
+    var providerModelsNote: String?
     var confirmClear = false
     var section = SettingsSection.general
     /// History shown in its sidebar page (made on first use).
@@ -167,6 +170,42 @@ public final class SettingsModel {
                 connectionResult = error.userMessage
             } catch {
                 connectionResult = "The test failed."
+            }
+        }
+    }
+
+    /// Asks the provider which models it has (user-initiated).
+    func refreshProviderModels() {
+        let settings = processing
+        providerModels = []
+        if privacy.localOnly && !settings.isLocal {
+            providerModelsNote = "Local-only mode is on (Privacy), so Utter won't contact that server."
+            return
+        }
+        providerModelsNote = "Asking…"
+        Task {
+            do {
+                let models: [String]
+                switch settings.provider {
+                case .none: models = []
+                case .ollama:
+                    guard let url = URL(string: settings.ollamaURL) else { providerModelsNote = "That Ollama address isn't valid."; return }
+                    models = try await ProcessorModels.ollama(baseURL: url)
+                case .anthropic:
+                    guard let key = await Task.detached(operation: { KeychainStore.anthropic.read() }).value else {
+                        providerModelsNote = "Add an API key first."
+                        return
+                    }
+                    models = try await ProcessorModels.anthropic(apiKey: key)
+                }
+                providerModels = models
+                providerModelsNote = models.isEmpty
+                    ? (settings.provider == .ollama ? "Ollama has no models yet. Run “ollama pull llama3.2” in Terminal." : "No models were listed.")
+                    : nil
+            } catch let error as TextProcessorError {
+                providerModelsNote = error.userMessage
+            } catch {
+                providerModelsNote = "The model list couldn't be fetched."
             }
         }
     }
@@ -327,10 +366,7 @@ struct SettingsView: View {
                 Toggle("Capitalize sentences", isOn: $model.text.capitalize)
                 Toggle("Add a full stop at the end", isOn: $model.text.autoPunctuation)
                 Toggle("“New line” / “new paragraph” start a new line", isOn: $model.text.spokenLineBreaks)
-                if model.text.mode == .custom {
-                    TextField("Instruction for Custom mode", text: $model.text.customInstruction, axis: .vertical)
-                        .lineLimit(2...4)
-                }
+                if model.text.mode == .custom { promptEditor }
             }
             Section("Personal vocabulary") {
                 Text("Names and terms Utter should spell your way. Close mishearings are corrected, and Whisper models are primed with them.")
@@ -350,6 +386,30 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Custom mode's saved prompts (PARITY D5): pick one, edit it, add or delete.
+    @ViewBuilder private var promptEditor: some View {
+        Picker("Prompt", selection: $model.text.selectedPromptID) {
+            ForEach(model.text.prompts) { Text($0.name).tag($0.id) }
+        }
+        if let index = model.text.prompts.firstIndex(where: { $0.id == model.text.selectedPrompt?.id }) {
+            TextField("Name", text: $model.text.prompts[index].name)
+            TextField("Instruction", text: $model.text.prompts[index].instruction, axis: .vertical)
+                .lineLimit(2...5)
+        }
+        HStack {
+            Button("New Prompt") {
+                let prompt = SavedPrompt(name: "New prompt", instruction: "Rewrite this as ")
+                model.text.prompts.append(prompt)
+                model.text.selectedPromptID = prompt.id
+            }
+            Button("Delete", role: .destructive) {
+                model.text.prompts.removeAll { $0.id == model.text.selectedPrompt?.id }
+                model.text.selectedPromptID = model.text.prompts.first?.id ?? ""
+            }
+            .disabled(model.text.prompts.count <= 1)
+        }
     }
 
     // MARK: Audio
@@ -570,7 +630,7 @@ struct SettingsView: View {
                 EmptyView()
             case .ollama:
                 TextField("Ollama address", text: $model.processing.ollamaURL)
-                TextField("Model", text: $model.processing.ollamaModel)
+                modelField($model.processing.ollamaModel)
                 if model.privacy.localOnly && !model.processing.isLocal {
                     Text("This address isn't on this Mac. Local-only mode is on (Privacy), so it won't be used.")
                         .font(.callout).foregroundStyle(.orange)
@@ -580,7 +640,7 @@ struct SettingsView: View {
                     Text("Local-only mode is on (Privacy), so the cloud processor won't be used.")
                         .font(.callout).foregroundStyle(.orange)
                 }
-                TextField("Model", text: $model.processing.anthropicModel)
+                modelField($model.processing.anthropicModel)
                 if model.hasAPIKey {
                     LabeledContent("API key") {
                         HStack { Text("Saved in Keychain"); Button("Remove") { model.removeAPIKey() } }
@@ -602,6 +662,24 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// A model name with a menu of what the provider reported (PARITY D9).
+    private func modelField(_ name: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                TextField("Model", text: name)
+                if !model.providerModels.isEmpty {
+                    Menu("Choose") {
+                        ForEach(model.providerModels, id: \.self) { id in Button(id) { name.wrappedValue = id } }
+                    }
+                    .fixedSize()
+                }
+                Button("Refresh") { model.refreshProviderModels() }
+                    .help("Ask the provider which models it has")
+            }
+            if let note = model.providerModelsNote { Text(note).font(.caption).foregroundStyle(.secondary) }
+        }
     }
 
     // MARK: Privacy

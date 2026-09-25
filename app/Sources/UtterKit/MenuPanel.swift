@@ -16,6 +16,8 @@ final class MenuPanelModel {
     var mode = DictationMode.pushToTalk
     var textMode = TextPipelineSettings.Mode.clean
     var microphoneUID = ""
+    var prompts: [SavedPrompt] = []
+    var promptID = ""
     var needsSetup = false
     var copied = false
 
@@ -38,6 +40,8 @@ final class MenuPanelModel {
         shortcut = controller.hotkey.shortcut.displayString
         mode = controller.mode
         textMode = controller.textSettings.mode
+        prompts = controller.textSettings.prompts
+        promptID = controller.textSettings.selectedPrompt?.id ?? ""
         microphoneUID = controller.preferredMicrophoneUID ?? ""
         needsSetup = !PermissionSnapshot.current().allGranted || !controller.hotkey.isRunning
     }
@@ -85,6 +89,11 @@ final class MenuPanelModel {
     func setTextMode(_ mode: TextPipelineSettings.Mode) {
         controller.textSettings.mode = mode
         textMode = mode
+    }
+
+    func setPrompt(_ id: String) {
+        controller.textSettings.selectedPromptID = id
+        promptID = id
     }
 
     func setMicrophone(_ uid: String) {
@@ -204,6 +213,16 @@ struct MenuPanelView: View {
                 }
                 .fixedSize()
                 Spacer(minLength: 0)
+            }
+            if model.textMode == .custom {
+                HStack(spacing: 10) {
+                    label("Prompt", "text.quote")
+                    Picker("Prompt", selection: Binding(get: { model.promptID }, set: { model.setPrompt($0) })) {
+                        ForEach(model.prompts) { Text($0.name).tag($0.id) }
+                    }
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                }
             }
             HStack(spacing: 10) {
                 label("Microphone", "mic")

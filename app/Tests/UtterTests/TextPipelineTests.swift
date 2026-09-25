@@ -222,3 +222,53 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         #expect(p.makeProcessor(keychain: store)?.name == "Ollama (llama3.2)")
     }
 }
+
+/// PARITY D5 (saved prompts) and D9 (provider model lists).
+extension TextPipelineTests {
+    @Test func olderCustomInstructionBecomesTheFirstPrompt() throws {
+        let old = #"{"mode":"custom","customInstruction":"Make it rhyme."}"#
+        let s = try JSONDecoder().decode(TextPipelineSettings.self, from: Data(old.utf8))
+        #expect(s.customInstruction == "Make it rhyme.")
+        #expect(s.prompts.first?.name == "My instruction")
+        #expect(s.prompts.count == SavedPrompt.starters.count + 1)
+    }
+
+    @Test func defaultInstructionNeedsNoMigration() throws {
+        let old = #"{"customInstruction":"Rewrite this as a concise, friendly message."}"#
+        let s = try JSONDecoder().decode(TextPipelineSettings.self, from: Data(old.utf8))
+        #expect(s.prompts == SavedPrompt.starters)
+    }
+
+    @Test func selectedPromptRoundTripsAndDrivesTheInstruction() throws {
+        var s = TextPipelineSettings()
+        s.selectedPromptID = "bullets"
+        #expect(s.customInstruction.contains("bullet points"))
+        s.customInstruction = "Shout it."
+        let back = try JSONDecoder().decode(TextPipelineSettings.self, from: JSONEncoder().encode(s))
+        #expect(back.selectedPromptID == "bullets" && back.customInstruction == "Shout it.")
+        #expect(back.prompts.first { $0.id == "friendly" }?.instruction == SavedPrompt.starters[0].instruction)
+    }
+
+    @Test func ollamaTagsAreListed() async throws {
+        StubURLProtocol.handler = { _ in (200, Data(#"{"models":[{"name":"qwen2.5:7b"},{"name":"llama3.2:latest"}]}"#.utf8)) }
+        let models = try await ProcessorModels.ollama(baseURL: URL(string: "http://localhost:11434")!, session: StubURLProtocol.session())
+        #expect(models == ["llama3.2:latest", "qwen2.5:7b"])
+        #expect(StubURLProtocol.lastRequest?.url?.path == "/api/tags")
+    }
+
+    @Test func anthropicModelsAreListedWithTheKey() async throws {
+        StubURLProtocol.handler = { _ in (200, Data(#"{"data":[{"id":"claude-sonnet-5","type":"model"},{"id":"claude-haiku-4-5-20251001","type":"model"}]}"#.utf8)) }
+        let models = try await ProcessorModels.anthropic(apiKey: "sk-test", session: StubURLProtocol.session())
+        #expect(models == ["claude-sonnet-5", "claude-haiku-4-5-20251001"])
+        let request = try #require(StubURLProtocol.lastRequest)
+        #expect(request.value(forHTTPHeaderField: "x-api-key") == "sk-test")
+        #expect(request.url?.path == "/v1/models")
+    }
+
+    @Test func aFailedListIsAPlainError() async {
+        StubURLProtocol.handler = { _ in (401, Data("bad key".utf8)) }
+        await #expect(throws: TextProcessorError.self) {
+            try await ProcessorModels.anthropic(apiKey: "sk-bad", session: StubURLProtocol.session())
+        }
+    }
+}
