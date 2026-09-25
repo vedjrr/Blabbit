@@ -232,6 +232,9 @@ pub struct ModelEntry {
     pub measured_rtf: f64,
     pub measured_p50_ms: u64,
     pub measured_footprint_mb: u64,
+    /// The model this is a smaller quantisation of (PARITY C6).
+    pub variant_of: Option<String>,
+    pub quant: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -260,6 +263,8 @@ pub fn catalog_entries() -> Vec<ModelEntry> {
             measured_rtf: m.measured.rtf,
             measured_p50_ms: m.measured.p50_ms_5s_clip,
             measured_footprint_mb: m.measured.footprint_mb,
+            variant_of: m.variant_of.clone(),
+            quant: m.quant(),
         })
         .collect()
 }

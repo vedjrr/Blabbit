@@ -116,7 +116,8 @@ public final class ModelManager {
                               description: "Your own model file. Not measured by Utter, so there are no scores.",
                               languages: [], sizeBytes: size, license: "Your file", licenseUrl: url.deletingLastPathComponent().absoluteString,
                               licenseRequiresAcceptance: false, recommended: false,
-                              measuredWer: 0, measuredRtf: 0, measuredP50Ms: 0, measuredFootprintMb: 0)
+                              measuredWer: 0, measuredRtf: 0, measuredP50Ms: 0, measuredFootprintMb: 0,
+                              variantOf: nil, quant: "")
         }
     }
 
@@ -137,6 +138,9 @@ public final class ModelManager {
         refresh()
         return nil
     }
+
+    /// Smaller quantisations of a model (PARITY C6), shown inside its card.
+    public func variants(of id: String) -> [ModelEntry] { entries.filter { $0.variantOf == id } }
 
     public var installedEntries: [ModelEntry] { entries.filter { status[$0.id] == .installed } }
 

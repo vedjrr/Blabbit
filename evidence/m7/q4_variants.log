@@ -1,0 +1,136 @@
+# 2026-09-25T22:59:59Z Apple M4 16 GB macOS 27.0 — git fc2395a — Q4_K_M variants (PARITY C6), same method as evidence/m3/model_verification.log
+
+$ core/target/release/utter-cli --model "$MODELS/parakeet-tdt-0.6b-v3-q4/parakeet-tdt-0.6b-v3-Q4_K_M.gguf" --repeat 3 fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3-q4/parakeet-tdt-0.6b-v3-Q4_K_M.gguf arch=parakeet backend=MTL0 load=267ms warmup=264ms footprint+647MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=93ms rtf=0.020 wer=0.875	Testing Uder, 123, hold my code uses postGur SQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=89ms rtf=0.020 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=87ms rtf=0.020 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=89ms rtf=0.018 wer=0.091	I studied computer science at Minute before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=92ms rtf=0.018 wer=0.308	We rewrote the settings screen and swiftly lie and moved the backend the TypeScript.
+fixtures/audio/tts_06.wav	audio=3221ms infer_p50=75ms rtf=0.023 wer=0.500	DeSiva transcribe speech with whisper kit on the device.
+aggregate wer=0.229 (16/70 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/parakeet-tdt-0.6b-v2-q4/parakeet-tdt-0.6b-v2-Q4_K_M.gguf" --repeat 3 fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v2-q4/parakeet-tdt-0.6b-v2-Q4_K_M.gguf arch=parakeet backend=MTL0 load=205ms warmup=35ms footprint+584MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=77ms rtf=0.017 wer=0.750	Testing Udder, 123, hold my code uses postGirSQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=74ms rtf=0.017 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=75ms rtf=0.018 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=78ms rtf=0.016 wer=0.091	I studied computer science at Manooth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=80ms rtf=0.016 wer=0.462	We rewrote the settings screen and swiftly lie and moved the backend the type script.
+fixtures/audio/tts_06.wav	audio=3221ms infer_p50=68ms rtf=0.021 wer=0.375	Deciva transcribes speech with whisper kit on the device.
+aggregate wer=0.229 (16/70 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/whisper-small-q4/whisper-small-Q4_K_M.gguf" --repeat 3 fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-small-q4/whisper-small-Q4_K_M.gguf arch=whisper backend=MTL0 load=121ms warmup=380ms footprint+350MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=368ms rtf=0.079 wer=0.625	testing utter 1 2 3 hold my code uses post guresql
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=385ms rtf=0.087 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=386ms rtf=0.090 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=357ms rtf=0.074 wer=0.091	I studied computer science at Maneuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=398ms rtf=0.079 wer=0.154	We rewrote the setting screen and SwiftUI and moved the backend to TypeScript.
+fixtures/audio/tts_06.wav	audio=3221ms infer_p50=384ms rtf=0.119 wer=0.500	DeSivitranscribe speech with whisper kid on the device.
+aggregate wer=0.171 (12/70 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/whisper-medium-q4/whisper-medium-Q4_K_M.gguf" --repeat 3 fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-medium-q4/whisper-medium-Q4_K_M.gguf arch=whisper backend=MTL0 load=235ms warmup=952ms footprint+806MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=1011ms rtf=0.218 wer=0.875	Testing utter 123 hold my code uses post-ger SQL
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=1059ms rtf=0.240 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=1039ms rtf=0.244 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=1032ms rtf=0.214 wer=0.091	I studied computer science at Mnuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=1053ms rtf=0.208 wer=0.000	We rewrote the settings screen in SwiftUI and moved the backend to TypeScript.
+fixtures/audio/tts_06.wav	audio=3221ms infer_p50=1050ms rtf=0.326 wer=0.375	Decivrotranscribe speech with WhisperKid on the device.
+aggregate wer=0.157 (11/70 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/whisper-large-v3-q4/whisper-large-v3-Q4_K_M.gguf" --repeat 3 fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-large-v3-q4/whisper-large-v3-Q4_K_M.gguf arch=whisper backend=MTL0 load=406ms warmup=1769ms footprint+1424MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=1964ms rtf=0.423 wer=0.750	Testing utter, 1, 2, 3, hold my code uses post-ger SQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=1950ms rtf=0.441 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=1933ms rtf=0.453 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=1945ms rtf=0.403 wer=0.000	I studied computer science at Maynooth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=2048ms rtf=0.406 wer=0.154	we rewrote the settings screen in SwiftUI and moved the back end to TypeScript.
+fixtures/audio/tts_06.wav	audio=3221ms infer_p50=2001ms rtf=0.621 wer=0.000	Decivra transcribes speech with WhisperKit on the device.
+aggregate wer=0.114 (8/70 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/whisper-large-v3-turbo-q4/whisper-large-v3-turbo-Q4_K_M.gguf" --repeat 3 fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-large-v3-turbo-q4/whisper-large-v3-turbo-Q4_K_M.gguf arch=whisper backend=MTL0 load=244ms warmup=1401ms footprint+712MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=1459ms rtf=0.314 wer=0.375	Testing utter, 1, 2, 3, hold my code uses postgreSQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=1468ms rtf=0.332 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=1472ms rtf=0.345 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=1480ms rtf=0.307 wer=0.000	I studied computer science at Maynooth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=1493ms rtf=0.296 wer=0.154	We rewrote the settings screen in SwiftUI and moved the back end to TypeScript.
+fixtures/audio/tts_06.wav	audio=3221ms infer_p50=1481ms rtf=0.460 wer=0.500	Desivre transcribe speech with whisper kid on the device.
+aggregate wer=0.129 (9/70 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/SenseVoiceSmall-q4/SenseVoiceSmall-Q4_K_M.gguf" --repeat 3 fixtures/audio/*.wav
+model /Users/ved/Library/Application Support/Utter/Models/SenseVoiceSmall-q4/SenseVoiceSmall-Q4_K_M.gguf arch=sensevoice backend=MTL0 load=102ms warmup=28ms footprint+222MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=57ms rtf=0.012 wer=0.625	testing utter one two three hold my code uses postg sql
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=56ms rtf=0.013 wer=0.000	the quick brown fox jumps over the lazy dog while the band plays in the park
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=58ms rtf=0.014 wer=0.000	please schedule a meeting with the design team for next tuesday afternoon at three
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=62ms rtf=0.013 wer=0.091	i studied computer science at manuth before moving into product engineering
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=64ms rtf=0.013 wer=0.923	we era wrotete the settings screen and swift the eye and move the back end that i scriptpped
+fixtures/audio/tts_06.wav	audio=3221ms infer_p50=47ms rtf=0.015 wer=0.500	a srannscribe speech with whisper kid on the device
+aggregate wer=0.314 (22/70 words) model_loads=1
+
+## Same five clips as the catalog's Q8_0 numbers (tts_01–05, 62 words)
+
+$ core/target/release/utter-cli --model "$MODELS/parakeet-tdt-0.6b-v3-q4/parakeet-tdt-0.6b-v3-Q4_K_M.gguf" --repeat 3 fixtures/audio/tts_0[1-5].wav
+model /Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v3-q4/parakeet-tdt-0.6b-v3-Q4_K_M.gguf arch=parakeet backend=MTL0 load=214ms warmup=55ms footprint+647MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=88ms rtf=0.019 wer=0.875	Testing Uder, 123, hold my code uses postGur SQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=84ms rtf=0.019 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=88ms rtf=0.021 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=84ms rtf=0.017 wer=0.091	I studied computer science at Minute before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=110ms rtf=0.022 wer=0.308	We rewrote the settings screen and swiftly lie and moved the backend the TypeScript.
+aggregate wer=0.194 (12/62 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/parakeet-tdt-0.6b-v2-q4/parakeet-tdt-0.6b-v2-Q4_K_M.gguf" --repeat 3 fixtures/audio/tts_0[1-5].wav
+model /Users/ved/Library/Application Support/Utter/Models/parakeet-tdt-0.6b-v2-q4/parakeet-tdt-0.6b-v2-Q4_K_M.gguf arch=parakeet backend=MTL0 load=203ms warmup=47ms footprint+584MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=76ms rtf=0.016 wer=0.750	Testing Udder, 123, hold my code uses postGirSQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=74ms rtf=0.017 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=75ms rtf=0.018 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=76ms rtf=0.016 wer=0.091	I studied computer science at Manooth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=84ms rtf=0.017 wer=0.462	We rewrote the settings screen and swiftly lie and moved the backend the type script.
+aggregate wer=0.210 (13/62 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/whisper-small-q4/whisper-small-Q4_K_M.gguf" --repeat 3 fixtures/audio/tts_0[1-5].wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-small-q4/whisper-small-Q4_K_M.gguf arch=whisper backend=MTL0 load=117ms warmup=314ms footprint+350MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=359ms rtf=0.077 wer=0.625	testing utter 1 2 3 hold my code uses post guresql
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=394ms rtf=0.089 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=386ms rtf=0.091 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=374ms rtf=0.078 wer=0.091	I studied computer science at Maneuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=400ms rtf=0.079 wer=0.154	We rewrote the setting screen and SwiftUI and moved the backend to TypeScript.
+aggregate wer=0.129 (8/62 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/whisper-medium-q4/whisper-medium-Q4_K_M.gguf" --repeat 3 fixtures/audio/tts_0[1-5].wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-medium-q4/whisper-medium-Q4_K_M.gguf arch=whisper backend=MTL0 load=243ms warmup=949ms footprint+807MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=990ms rtf=0.213 wer=0.875	Testing utter 123 hold my code uses post-ger SQL
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=1057ms rtf=0.239 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=1047ms rtf=0.245 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=1053ms rtf=0.218 wer=0.091	I studied computer science at Mnuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=1086ms rtf=0.215 wer=0.000	We rewrote the settings screen in SwiftUI and moved the backend to TypeScript.
+aggregate wer=0.129 (8/62 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/whisper-large-v3-q4/whisper-large-v3-Q4_K_M.gguf" --repeat 3 fixtures/audio/tts_0[1-5].wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-large-v3-q4/whisper-large-v3-Q4_K_M.gguf arch=whisper backend=MTL0 load=409ms warmup=1837ms footprint+1425MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=2057ms rtf=0.443 wer=0.750	Testing utter, 1, 2, 3, hold my code uses post-ger SQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=2061ms rtf=0.466 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=2057ms rtf=0.482 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=2058ms rtf=0.427 wer=0.000	I studied computer science at Maynooth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=2154ms rtf=0.427 wer=0.154	we rewrote the settings screen in SwiftUI and moved the back end to TypeScript.
+aggregate wer=0.129 (8/62 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/whisper-large-v3-turbo-q4/whisper-large-v3-turbo-Q4_K_M.gguf" --repeat 3 fixtures/audio/tts_0[1-5].wav
+model /Users/ved/Library/Application Support/Utter/Models/whisper-large-v3-turbo-q4/whisper-large-v3-turbo-Q4_K_M.gguf arch=whisper backend=MTL0 load=248ms warmup=1451ms footprint+712MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=1546ms rtf=0.333 wer=0.375	Testing utter, 1, 2, 3, hold my code uses postgreSQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=1589ms rtf=0.360 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=1618ms rtf=0.379 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=1657ms rtf=0.344 wer=0.000	I studied computer science at Maynooth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=1692ms rtf=0.335 wer=0.154	We rewrote the settings screen in SwiftUI and moved the back end to TypeScript.
+aggregate wer=0.081 (5/62 words) model_loads=1
+
+$ core/target/release/utter-cli --model "$MODELS/SenseVoiceSmall-q4/SenseVoiceSmall-Q4_K_M.gguf" --repeat 3 fixtures/audio/tts_0[1-5].wav
+model /Users/ved/Library/Application Support/Utter/Models/SenseVoiceSmall-q4/SenseVoiceSmall-Q4_K_M.gguf arch=sensevoice backend=MTL0 load=103ms warmup=32ms footprint+223MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=61ms rtf=0.013 wer=0.625	testing utter one two three hold my code uses postg sql
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=58ms rtf=0.013 wer=0.000	the quick brown fox jumps over the lazy dog while the band plays in the park
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=57ms rtf=0.013 wer=0.000	please schedule a meeting with the design team for next tuesday afternoon at three
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=62ms rtf=0.013 wer=0.091	i studied computer science at manuth before moving into product engineering
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=63ms rtf=0.012 wer=0.923	we era wrotete the settings screen and swift the eye and move the back end that i scriptpped
+aggregate wer=0.290 (18/62 words) model_loads=1

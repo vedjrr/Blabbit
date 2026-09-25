@@ -24,15 +24,21 @@ public struct ModelManagerView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(manager.entries, id: \.id) { entry in
-                    ModelRow(entry: entry, status: manager.status[entry.id] ?? .notInstalled,
-                             isDefault: entry.id == manager.defaultModelID,
-                             action: { handle($0, entry) })
+                ForEach(manager.entries.filter { $0.variantOf == nil }, id: \.id) { entry in
+                    let family = [entry] + manager.variants(of: entry.id)
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(family, id: \.id) { member in
+                            if member.variantOf != nil { Divider() }
+                            ModelRow(entry: member, status: manager.status[member.id] ?? .notInstalled,
+                                     isDefault: member.id == manager.defaultModelID,
+                                     action: { handle($0, member) })
+                        }
+                    }
                         .padding(14)
                         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(entry.id == manager.defaultModelID ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.08),
-                                          lineWidth: entry.id == manager.defaultModelID ? 1.5 : 1))
+                            .strokeBorder(family.contains { $0.id == manager.defaultModelID } ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.08),
+                                          lineWidth: family.contains { $0.id == manager.defaultModelID } ? 1.5 : 1))
                 }
                 if let problem = viewState.addProblem {
                     Text(problem).font(.caption).foregroundStyle(.red).onTapGesture { viewState.addProblem = nil }
@@ -69,7 +75,7 @@ public struct ModelManagerView: View {
                 Text("CPU is about 3× slower; use it to keep the GPU free or if the GPU misbehaves.")
             }
             .padding(.bottom, 6)
-            Text("Accuracy is the share of words right on Utter's spoken test clips; speed comes from the time to transcribe them. Both were measured on an Apple M4. Every model is faster on newer chips, but the order stays the same.")
+            Text("Accuracy is the share of words right on Utter's spoken test clips; speed comes from the time to transcribe them. Both were measured on an Apple M4. Every model is faster on newer chips, but the order stays the same. The test set is 62 words, so a few points either way is noise: the smaller files are about as accurate as the standard ones.")
             HStack {
                 Text("Installed: \(manager.installedEntries.count) of \(manager.entries.count)")
                 Spacer()
@@ -127,7 +133,8 @@ struct ModelRow: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    Text(entry.name).font(.headline)
+                    Text(entry.name).font(entry.variantOf == nil ? .headline : .subheadline.weight(.semibold))
+                    if !entry.quant.isEmpty { Text(entry.quant).font(.caption2.monospaced()).foregroundStyle(.secondary) }
                     if entry.recommended { Tag(text: "Recommended", tint: .accentColor) }
                     if isDefault { Tag(text: "In use", tint: .green) }
                 }

@@ -32,6 +32,17 @@ pub struct CatalogModel {
     pub license_requires_acceptance: bool,
     pub recommended: bool,
     pub measured: Measured,
+    /// A smaller quantisation of another catalog model (PARITY C6).
+    #[serde(default)]
+    pub variant_of: Option<String>,
+}
+
+impl CatalogModel {
+    /// The quantisation, read from the file name ("…-Q4_K_M.gguf" → "Q4_K_M").
+    pub fn quant(&self) -> String {
+        let stem = self.file_name.trim_end_matches(".gguf");
+        stem.rsplit('-').next().unwrap_or(stem).to_string()
+    }
 }
 
 #[derive(Deserialize)]
@@ -104,6 +115,19 @@ impl CatalogModel {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn variants_point_at_a_catalog_model_and_are_smaller() {
+        for v in models().iter().filter(|m| m.variant_of.is_some()) {
+            let base = find(v.variant_of.as_deref().unwrap()).expect("variant of an unknown model");
+            assert!(base.variant_of.is_none(), "{} is a variant of a variant", v.id);
+            assert!(v.size_bytes < base.size_bytes, "{} isn't smaller", v.id);
+            assert_eq!(v.quant(), "Q4_K_M");
+            assert_eq!(v.family, base.family);
+            assert_ne!(v.id, base.id);
+        }
+        assert_eq!(find("whisper-large-v3").unwrap().quant(), "Q5_K_M");
+    }
+
     use super::*;
 
     #[test]

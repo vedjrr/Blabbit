@@ -28,7 +28,10 @@ import UtterCore
     @Test func catalogHasAllVerifiedModelsAndRecommendsParakeet() throws {
         let (m, d) = try makeManager()
         defer { d.removePersistentDomain(forName: suite) }
-        #expect(m.entries.count == 8)
+        // The 8 G3 models, plus a smaller Q4_K_M file for 7 of them (PARITY C6).
+        #expect(m.entries.filter { $0.variantOf == nil }.count == 8)
+        #expect(m.entries.filter { $0.variantOf != nil }.count == 7)
+        #expect(m.variants(of: "parakeet-tdt-0.6b-v3").map(\.quant) == ["Q4_K_M"])
         #expect(m.defaultModelID == "parakeet-tdt-0.6b-v3")
         #expect(m.entries.allSatisfy { m.status[$0.id] == .notInstalled })
         #expect(m.entries.allSatisfy { $0.measuredWer > 0 && $0.measuredP50Ms > 0 })
