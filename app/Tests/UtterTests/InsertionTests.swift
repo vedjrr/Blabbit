@@ -20,6 +20,7 @@ final class FakeElement: FocusedTextElement, @unchecked Sendable {
     }
     var selectedRange: NSRange?
     var canSetSelectedText = true
+    var pid: pid_t?
     var onWrite: OnWrite = .insert
     var writes = 0
 
@@ -359,10 +360,11 @@ final class FakeElement: FocusedTextElement, @unchecked Sendable {
         let ins = TextInserter(settings: settings, paste: paste, keys: { _ in submitted = true }, checkSecureInput: false,
                                focus: { f }, typer: { _ in nil })
         let report = await ins.insert(text, bundleID: "com.apple.TextEdit")
-        #expect(report.result == .failed("empty transcript"))
+        #expect(report.result == .skipped)
         #expect(field.writes == 0 && !submitted)
         #expect(pb.string(forType: .string) == "SENTINEL")
         #expect(TranscriptPolicy.isBlank(text))
+        #expect(InsertionOutcome.plan(for: report) == InsertionOutcome.Plan()) // no clipboard write, no message
     }
 
     @Test func copyToClipboardKeepsTheInsertedText() async {
@@ -385,8 +387,24 @@ final class FakeElement: FocusedTextElement, @unchecked Sendable {
         ins.table.overrides["com.example.app"] = [.typing]
         let report = await ins.insert("secret", bundleID: "com.example.app")
         #expect(report.result == .blockedBySecureInput)
+        #expect(report.partiallyTyped)
+        #expect(InsertionOutcome.plan(for: report).message == InsertionOutcome.partialTypingMessage)
         // And the real typer checks before every piece (returns before posting any event).
         #expect(await TypingInserter.type("never typed", secureInputActive: { true }) == TypingInserter.secureInputStoppedTyping)
+    }
+
+    @Test func chainFollowsTheFocusedFieldsAppNotTheFrontmostApp() async throws {
+        let pb = makePasteboard(); defer { pb.releaseGlobally() }
+        // A non-activating panel: TextEdit is frontmost, but the focused field belongs to Finder.
+        let finder = try #require(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first)
+        let field = FakeElement(); field.pid = finder.processIdentifier
+        var typedText: String?
+        let ins = inserter(field: field, pb: pb, typed: { typedText = $0 })
+        ins.table.overrides["com.apple.finder"] = [.typing]
+        let report = await ins.insert("found", bundleID: "com.apple.TextEdit")
+        #expect(report.result == .inserted(.typing))
+        #expect(report.bundleID == "com.apple.finder")
+        #expect(typedText == "found" && field.writes == 0) // TextEdit's AX-first chain was not used
     }
 
     @Test func autoSubmitSkippedWhenUnverified() async {

@@ -2,8 +2,8 @@ STATUS: IN_PROGRESS
 
 # Progress (loop state — Claude owns this file)
 
-Current milestone: M2 — insertion reliability
-Iteration: 5
+Current milestone: M3 — models (download, catalog, manager)
+Iteration: 6
 
 ## Environment (verified 2026-09-24)
 - Apple M4, 16 GB, macOS 27.0 (26A428), arm64.
@@ -12,7 +12,7 @@ Iteration: 5
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M2 gate: critic re-review #3 after fixing review #2 (2 BLOCKERs). Then merge branch `m3` (downloader + catalog + all 8 G3 models verified, already built in isolation) and continue M3 (FFI + Model Manager window).
+- Merge branch `m3` (clean: `git merge-tree` exit 0) (downloader + catalog + all 8 G3 models verified, already built in isolation) and continue M3 (FFI + Model Manager window).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -20,7 +20,7 @@ Iteration: 5
 ## Milestones
 - [x] **M0 — Research & decisions.** Critic re-review: `VERDICT: PASS`, zero BLOCKERs (2026-09-24). Its 3 MAJOR and all minor findings fixed in 08f14b8 (bench fails loudly, `make models`, `make dmg` preflight, ONNX bench committed at `evidence/m0/onnxbench/`, CoreML EP measured, first-load cause marked unconfirmed).
 - [x] M1 — Vertical slice (automated). Critic re-review `VERDICT: PASS`; its 4 MAJORs fixed in 01a38e5. (H) TextEdit test deferred by the human to the end (see Decisions).
-- [ ] M2 — Insertion reliability. Built (see Done); critic review pending. Live per-app checklist (H) deferred with the other human checks.
+- [x] M2 — Insertion reliability (automated). Critic re-review #3 `VERDICT: PASS`, zero BLOCKERs (2026-09-25); its MAJOR and MINORs fixed afterwards. Live per-app checklist (H) deferred with the other human checks. G2's overlay notice is carried to M4 (see Proposed goal changes).
 
 ## Done (with evidence)
 - [M0] Handy cloned read-only to `/tmp/handy-ref` (v0.9.7-6-g8f9cf53). Component map → `docs/ARCHITECTURE.md` §1.
@@ -87,6 +87,10 @@ Iteration: 5
   MINORs: ADR-006 names the residual >150 ms late-AX-write risk. A timed-out script's whole process tree is killed (`proc_listchildpids`, TERM then KILL; a test checks the child is gone). The chain is chosen by the focused element's owner (pid → `NSRunningApplication`, off main), so non-activating panels get their own chain. `copyToClipboard` copies the final text. Typing re-checks secure input before every chunk. The clipboard snapshot has a 1 s limit (a hanging owner = unreadable). Clipboard-replacing messages say so. ADR-008 watchdog text corrected.
   Also fixed a test-only stall: blocking script tests ran on the main actor next to async ones; they moved to `ScriptRunnerTests`.
 - [M2] `make test` after review #2 fixes: Rust 14 + 3 ok; Swift `Test run with 89 tests in 16 suites passed`, AX integration tests executed and passed → `evidence/m2/make_test_unlocked.log`; 3/3 consecutive full runs green. `make build` → `Built …/build/Utter.app`.
+- [M2] Critic re-review #3 → **PASS** (it re-ran `make test` twice, and the status test under 10× `yes`, load average 11.5: worst 9.56 ms). Fixed its findings anyway:
+  (MAJOR) Typing reachability is now stated plainly. It runs automatically only when ⌘V can't be sent, because an unread paste stops the chain to avoid duplicates. Paste-blocking apps get typing through a per-app override (ADR-006, PARITY B2, `InsertionStrategy.typing` doc, checklist recipe). Tested by `overrideToTypingIsHonoured` and `chainFollowsTheFocusedFieldsAppNotTheFrontmostApp`.
+  MINORs: the tooltip is cleared when a cue is cancelled; `lastMessage` is cleared at each new dictation; a blank transcript is `.skipped` (a no-op plan, not a failure); partial typing under secure input gets its own message (`partiallyTyped`); script kill pins each PID by its start time (`proc_pidinfo`), re-collects the tree before SIGKILL, and closes stdin in one place only; a stuck clipboard capture makes later snapshots unreadable at once (tested: second insert < 0.15 s); an owner-chain test was added; the checklist explains every `result` value; the G2 overlay deferral is recorded under Proposed goal changes.
+- [M2] Final: `make test` 3 consecutive runs, all exit 0: Rust 14 + 3; Swift `Test run with 90 tests in 16 suites passed`, `AXIntegrationTests passed` → `evidence/m2/make_test_unlocked.log` (holds all 3 runs).
 - [M2] `docs/TEST_CHECKLIST.md`: an expected strategy per app, how to read the `dictation` log line, a secure-keyboard-entry check, and a verified `defaults write` override recipe. PARITY: 15 rows now **Built**.
 
 ## Blocked on human
@@ -105,6 +109,7 @@ Iteration: 5
 - (optional) Install Xcode.app if you want Instruments profiling in M6; the build does not need it.
 
 ## Proposed goal changes
+- G2 says secure input → "subtle **overlay** notice". The overlay is built in M4. Until then M2 gives a visible cue: the menu bar icon becomes a lock for 4 s, with the message as its tooltip and in the menu. I moved the overlay version to M4 (`docs/MILESTONES.md`) and left the G2 box **unchecked** until M4 delivers it. Please confirm this interim behaviour is acceptable.
 - CLAUDE.md says `make test` = `cargo test` + `xcodebuild test`. Xcode is not installed, so `make test` runs `swift test` (Swift Testing) instead. Same coverage, and it works with or without Xcode. (ADR-001)
 
 ## Notes / decisions log

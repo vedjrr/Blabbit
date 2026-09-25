@@ -5,7 +5,13 @@ For each app: focus a text field, hold **⌥ Space**, say **"Testing Utter, one 
 **Pass** means: the exact text appears at the cursor; the clipboard is unchanged afterwards (copy `SENTINEL` beforehand, paste after); focus doesn't change; no stray keystroke (no space or `…` typed by the shortcut).
 
 **How to read the result:** every dictation writes one `dictation …` line to `~/Library/Logs/Utter/utter.log` (menu → Open Log). Copy these fields into the table:
-- `result`: e.g. `inserted(accessibility)`, `inserted(paste)`, `inserted(typing)`, `blockedBySecureInput`
+- `result`:
+  - `inserted(accessibility)` / `inserted(paste)` / `inserted(typing)`: the text went in and was confirmed.
+  - `unverified(accessibility)`: the field changed in an unexpected way; the text is probably there. It is also on the clipboard, and the menu bar icon shows a bubble for 4 s.
+  - `unverified(paste)`: the app never read the pasted clipboard (paste blocked, no text field focused, a VM or remote desktop). The text is on the clipboard; nothing was typed or submitted. If an app always does this, set it to typing (override recipe below).
+  - `blockedBySecureInput`: secure input or a password field; nothing was typed (lock icon for 4 s).
+  - `copiedToClipboard`: the "clipboard only" method is selected. `handledByScript`: the external script got the text.
+  - `failed(...)`: every method failed; the text is on the clipboard and the reason is in `attempts`.
 - `release_to_insert_done_ms`
 - `clipboard_readable`
 - `attempts`: why earlier strategies were skipped

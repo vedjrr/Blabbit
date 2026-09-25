@@ -86,6 +86,11 @@ public enum InsertionOutcome {
     public static let clipboardUnreadableMessage =
         "Utter could not save your clipboard first, so the transcript was left on it. To keep your clipboard, allow Utter under System Settings → Privacy & Security → Paste from Other Apps."
 
+    public static let partialTypingMessage =
+        "Secure input turned on while Utter was typing, so it stopped partway. The full text replaced the clipboard."
+    public static let partialTypingPasswordMessage =
+        "A password field took focus while Utter was typing, so it stopped partway."
+
     public static func plan(for report: InsertReport) -> Plan {
         var plan = Plan()
         switch report.result {
@@ -97,12 +102,15 @@ public enum InsertionOutcome {
             plan.copyToClipboard = strategy != .paste
             plan.message = unconfirmedMessage
             plan.cue = .unconfirmed
-        case .copiedToClipboard, .handledByScript:
+        case .copiedToClipboard, .handledByScript, .skipped:
             break
         case .blockedBySecureInput:
             let action = SecureInputFallback.action(secureFieldFocused: report.secureFieldFocused)
             plan.copyToClipboard = action.copyToClipboard
             plan.message = action.message
+            if report.partiallyTyped {
+                plan.message = action.copyToClipboard ? partialTypingMessage : partialTypingPasswordMessage
+            }
             plan.cue = .blocked
         case .failed(let why):
             plan.copyToClipboard = true

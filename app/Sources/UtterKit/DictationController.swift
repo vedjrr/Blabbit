@@ -141,6 +141,8 @@ public final class DictationController {
         }
         press = timing
         recordStartedNs = 0
+        // A notice belongs to the dictation that caused it.
+        lastMessage = nil
         state = .recording
         recordingSource = timing.source
         startWatchdog()

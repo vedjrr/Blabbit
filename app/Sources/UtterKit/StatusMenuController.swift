@@ -15,6 +15,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         statusItem.menu = menu
         controller.onStateChange = { [weak self] state in
             self?.cueReset?.cancel()
+            self?.statusItem.button?.toolTip = nil
             self?.updateIcon(for: state)
         }
         controller.onAttention = { [weak self] cue in self?.showCue(cue) }

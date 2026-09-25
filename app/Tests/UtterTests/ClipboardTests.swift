@@ -213,6 +213,11 @@ struct HangingReader: PasteboardReading {
         #expect(inserter.lastTiming.clipboardReadable == false)
         // Unreadable, so never "restored": the transcript stays as plain text.
         #expect(pb.string(forType: .string) == "not stalled")
+        // The stuck capture is still running: the next dictation doesn't queue behind it.
+        let second = Date()
+        #expect(await inserter.insert("also not stalled") == .pasted(receipt: true))
+        #expect(Date().timeIntervalSince(second) < 0.15)
+        #expect(inserter.lastTiming.clipboardReadable == false)
     }
 
     @Test func declinedReadLeavesTranscriptAsPlainClipboardText() async {

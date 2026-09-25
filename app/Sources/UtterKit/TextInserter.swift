@@ -14,6 +14,8 @@ public struct InsertReport: Sendable {
         case copiedToClipboard
         /// Method "external script": the user's script received the text.
         case handledByScript
+        /// Nothing to insert (blank transcript); nothing was touched.
+        case skipped
         case failed(String)
     }
 
@@ -22,6 +24,8 @@ public struct InsertReport: Sendable {
     /// With `.blockedBySecureInput`: true if a password field was focused (text
     /// must be dropped), false if only global secure input was on.
     public var secureFieldFocused = false
+    /// With `.blockedBySecureInput`: typing had already sent part of the text.
+    public var partiallyTyped = false
     /// Each strategy tried, with the reason it was skipped or failed.
     public var attempts: [String] = []
     /// Timing of the paste attempt (if paste was used).
@@ -84,7 +88,7 @@ public final class TextInserter {
     public func insert(_ rawText: String, bundleID: String?) async -> InsertReport {
         // Noise can transcribe to nothing; never paste an empty string or send a bare Enter.
         guard !TranscriptPolicy.isBlank(rawText) else {
-            return InsertReport(result: .failed("empty transcript"), bundleID: bundleID)
+            return InsertReport(result: .skipped, bundleID: bundleID)
         }
         let text = settings.finalText(rawText)
         var report = await insertWithoutExtras(text, bundleID: bundleID)
@@ -96,7 +100,7 @@ public final class TextInserter {
                 keys(settings.autoSubmit)
                 report.attempts.append("auto-submit: \(settings.autoSubmit.rawValue)")
             }
-        case .copiedToClipboard, .blockedBySecureInput, .failed:
+        case .copiedToClipboard, .blockedBySecureInput, .failed, .skipped:
             break
         }
         return report
@@ -196,6 +200,7 @@ public final class TextInserter {
                     report.attempts.append("typing: \(error)")
                     if error == TypingInserter.secureInputStoppedTyping {
                         report.result = .blockedBySecureInput
+                        report.partiallyTyped = true
                         return report
                     }
                 } else {
@@ -247,13 +252,15 @@ public final class TextInserter {
             // Children (e.g. `sleep` under `sh`) would outlive the shell and keep
             // stdin open, so stop the whole tree. Collect it while the shell
             // still exists: afterwards they are reparented to launchd.
-            let tree = [process.processIdentifier] + descendants(of: process.processIdentifier)
-            for pid in tree { kill(pid, SIGTERM) }
+            let shell = process.processIdentifier
+            var tree = ([shell] + descendants(of: shell)).compactMap(ProcessIdentity.init)
+            for member in tree { member.signal(SIGTERM) }
             let shellExited = exited.wait(timeout: .now() + 1) == .success
-            // Anything that ignored SIGTERM (the shell or a child) goes now.
-            for pid in tree { kill(pid, SIGKILL) }
+            // Anything that ignored SIGTERM goes now, including children forked
+            // since. Identity (pid + start time) guards against PID reuse.
+            if !shellExited { tree += descendants(of: shell).compactMap(ProcessIdentity.init) }
+            for member in tree { member.signal(SIGKILL) }
             if !shellExited { _ = exited.wait(timeout: .now() + 1) }
-            try? writer.close()
             let seconds = Int(timeout.rounded(.up))
             return .failed("The insertion script took longer than \(seconds) second\(seconds == 1 ? "" : "s") and was stopped.")
         }
@@ -261,6 +268,31 @@ public final class TextInserter {
             return .failed("The insertion script failed (exit code \(process.terminationStatus)).")
         }
         return .handledByScript
+    }
+
+    /// A process pinned by its start time, so a signal never reaches a
+    /// different process that later reused the PID.
+    struct ProcessIdentity {
+        let pid: pid_t
+        let started: (UInt64, UInt64)
+
+        init?(_ pid: pid_t) {
+            guard let started = Self.startTime(of: pid) else { return nil }
+            self.pid = pid
+            self.started = started
+        }
+
+        static func startTime(of pid: pid_t) -> (UInt64, UInt64)? {
+            var info = proc_bsdinfo()
+            let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+            guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+            return (info.pbi_start_tvsec, info.pbi_start_tvusec)
+        }
+
+        func signal(_ sig: Int32) {
+            guard let now = Self.startTime(of: pid), now == started else { return }
+            kill(pid, sig)
+        }
     }
 
     /// All descendant PIDs of `pid` (children first found, depth-first).

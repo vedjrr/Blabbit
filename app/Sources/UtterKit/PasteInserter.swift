@@ -46,6 +46,7 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     /// Pasteboard reads for the snapshot can block on the source app (promised
     /// data), so they run here instead of on the main thread.
     private let snapshotQueue = DispatchQueue(label: "dev.utter.clipboard-snapshot", qos: .userInitiated)
+    private let captureInFlight = AtomicFlag()
     private var pendingText = ""
     private var receiptCount = 0
     private var waiter: CheckedContinuation<Void, Never>?
@@ -107,10 +108,20 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
             // The owner of promised clipboard data can hang while serving it; past
             // the limit, treat the clipboard as unreadable (never restored).
             let limit = snapshotTimeout
+            let busy = captureInFlight
             snapshot = await withCheckedContinuation { continuation in
+                // A capture from an earlier dictation is still stuck on a hung
+                // owner: don't queue behind it (and wait the full limit again).
+                if busy.isSet {
+                    Log.info("previous clipboard snapshot still running; treating the clipboard as unreadable")
+                    continuation.resume(returning: .unreadable)
+                    return
+                }
+                busy.set(true)
                 let once = OnceFlag()
                 snapshotQueue.async {
                     let captured = PasteboardSnapshot.capture(from: reader)
+                    busy.set(false)
                     if once.claim() { continuation.resume(returning: captured) }
                 }
                 DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + limit) {
@@ -269,4 +280,12 @@ final class OnceFlag: @unchecked Sendable {
         claimed = true
         return true
     }
+}
+
+/// A lock-protected Bool shared with the snapshot queue.
+final class AtomicFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    func set(_ newValue: Bool) { lock.lock(); value = newValue; lock.unlock() }
 }

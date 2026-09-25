@@ -7,7 +7,10 @@ public enum InsertionStrategy: String, Codable, CaseIterable, Sendable {
     case accessibility
     /// Clipboard + synthetic ⌘V, with the clipboard restored afterwards.
     case paste
-    /// Synthetic Unicode key events (slowest; works where paste is blocked).
+    /// Synthetic Unicode key events (slowest). Runs automatically only when the
+    /// paste keystroke can't be sent; an unread paste stops the chain instead
+    /// (a late read would duplicate the text, ADR-006). Choose it per app with
+    /// an override for apps that block paste.
     case typing
 
     public var displayName: String {
