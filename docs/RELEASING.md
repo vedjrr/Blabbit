@@ -32,7 +32,7 @@ If you join the Apple Developer Program later, `make dmg` (below, "Notarised rel
 4. Tag and publish:
    ```sh
    git tag v<version> && git push origin v<version>
-   gh release create v<version> build/updates/Utter-<version>.dmg build/updates/appcast.xml --title "Utter <version>" --notes-file docs/release-notes/<version>.md
+   gh release create v<version> build/updates/Utter-<version>.dmg build/release/Utter.dmg build/updates/appcast.xml --title "Utter <version>" --notes-file docs/release-notes/<version>.md
    ```
    The feed URL points at `releases/latest/download/appcast.xml`, so it must be attached to the newest release.
 5. Verify on another Mac or user account: download the DMG, drag Utter to Applications, open it, use **Open Anyway** once, grant the permissions, dictate. Then in an older install choose **Check for Updates…**.

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Utter: private dictation for your Mac</title>
+<meta name="description" content="Hold a key, speak, let go. Utter types your words at the cursor in any Mac app. Speech recognition runs on your Mac, offline. Free and open source.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Utter: private dictation for your Mac">
+<meta property="og:description" content="Hold a key, speak, let go. Your words appear at the cursor in any app, transcribed on your Mac. Free and open source.">
+<meta property="og:image" content="icon-512.png">
+<meta name="twitter:card" content="summary">
+<link rel="icon" type="image/png" href="favicon-64.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css?v=1">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#FBFBFD">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B0B0F">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a class="brand" href="#top" aria-label="Utter home">
+      <img src="icon-512.png" width="28" height="28" alt="">
+      <span>Utter</span>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#models">Models</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn btn-small" href="#download">Download</a>
+  </div>
+</header>
+
+<main id="top">
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">Free · Open source · Apple Silicon</p>
+      <h1>Speak.<br><span class="grad">It types.</span></h1>
+      <p class="lede">Hold a key, say what you mean, let go. Utter puts your words at the cursor in any Mac app, and the speech never leaves your Mac.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/vedjrr/Utter/releases/latest/download/Utter.dmg" data-download>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+          Download for Mac
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/vedjrr/Utter">View on GitHub</a>
+      </div>
+      <p class="fine">macOS 14 or later · Apple Silicon · 8 MB app, models download inside it</p>
+    </div>
+
+    <div class="demo" aria-label="A dictation typed into a note while the Utter pill listens">
+      <div class="window">
+        <div class="window-bar"><i></i><i></i><i></i><span>Notes</span></div>
+        <div class="window-body">
+          <p class="note-title">Standup</p>
+          <p class="note-text"><span id="typed">Shipped the new settings window. Next up, </span><span class="caret"></span></p>
+        </div>
+      </div>
+      <div class="pill" id="pill">
+        <span class="pill-dot"></span>
+        <span class="bars" aria-hidden="true"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></span>
+        <span class="pill-time" id="pill-time">0:02</span>
+      </div>
+      <div class="keys" aria-hidden="true"><kbd id="key-mod">⌥</kbd><kbd id="key-space" class="wide">Space</kbd></div>
+    </div>
+  </div>
+</section>
+
+<section class="stats band">
+  <div class="wrap stat-grid">
+    <div><strong>83<small> ms</small></strong><span>to transcribe 5 s of speech with Parakeet V3 on an M4</span></div>
+    <div><strong>0<small> bytes</small></strong><span>of audio sent anywhere. It works with Wi-Fi off.</span></div>
+    <div><strong>8</strong><span>speech models: Parakeet, Whisper, SenseVoice, Moonshine</span></div>
+    <div><strong>100+</strong><span>languages, depending on the model you pick</span></div>
+  </div>
+</section>
+
+<section id="how" class="section">
+  <div class="wrap">
+    <h2 class="section-title">Three steps. No window to open.</h2>
+    <ol class="steps">
+      <li>
+        <span class="step-num">1</span>
+        <h3>Hold your shortcut</h3>
+        <p>⌥ Space by default, or any key you like, even fn or Right ⇧. Prefer tapping? Switch to press-to-start.</p>
+      </li>
+      <li>
+        <span class="step-num">2</span>
+        <h3>Speak naturally</h3>
+        <p>A small pill shows your level, a timer and, with the faster models, your words as you say them. It never takes focus from your app.</p>
+      </li>
+      <li>
+        <span class="step-num">3</span>
+        <h3>Let go</h3>
+        <p>The text lands at your cursor, in Slack, Notion, Xcode, a terminal or a browser. Your clipboard is put back exactly as it was.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="section band">
+  <div class="wrap">
+    <h2 class="section-title">Made for how you actually write.</h2>
+    <div class="features">
+      <article>
+        <h3>Five writing modes</h3>
+        <p><b>Exact</b> keeps every word. <b>Clean</b> drops the ums and fixes capitals. <b>Code</b> keeps symbols and casing. <b>Professional</b> and <b>Custom</b> can rewrite with a local Ollama model, or Anthropic if you opt in.</p>
+      </article>
+      <article>
+        <h3>Your vocabulary</h3>
+        <p>Add names and jargon like "HoldMyCode" or "PostgreSQL". Near-misses get corrected, and Whisper models are primed with them before they listen.</p>
+      </article>
+      <article>
+        <h3>Insertion that works</h3>
+        <p>Types through Accessibility where it can, pastes where it must, and lets you choose per app. It checks the text arrived, and it never types into a password field.</p>
+      </article>
+      <article>
+        <h3>History you can search</h3>
+        <p>Every dictation, raw and cleaned up side by side. Star the good ones, run one again with another model, or turn history off.</p>
+      </article>
+      <article>
+        <h3>Long dictations, no wait</h3>
+        <p>Talk for five minutes. Utter transcribes at your natural pauses while you speak, so the text is ready about a third of a second after you let go.</p>
+      </article>
+      <article>
+        <h3>A real Mac app</h3>
+        <p>Swift and AppKit, not a web view. It lives in the menu bar, is ready about half a second after launch, and gets out of the way.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="models" class="section">
+  <div class="wrap">
+    <h2 class="section-title">Pick your model. See the trade-off.</h2>
+    <p class="section-lede">Scores are measured, not guessed: accuracy is the share of words right on Utter's spoken test clips, and speed comes from how long each model takes on an Apple M4. Utter shows the same bars when you choose.</p>
+    <div class="models" role="table" aria-label="Speech models with accuracy and speed out of 100">
+      <div class="model-head" role="row">
+        <span role="columnheader">Model</span><span role="columnheader">Accuracy</span><span role="columnheader">Speed</span><span role="columnheader" class="hide-sm">Size</span>
+      </div>
+      <!-- Filled from data-* by main.js; the text is there without JS too. -->
+      <div class="model" role="row" data-acc="74" data-speed="90"><span role="cell"><b>Parakeet V3</b><em>Recommended · 25 languages</em></span><span role="cell" class="bar acc">74</span><span role="cell" class="bar spd">90</span><span role="cell" class="hide-sm">740 MB</span></div>
+      <div class="model" role="row" data-acc="79" data-speed="92"><span role="cell"><b>Parakeet V2</b><em>English</em></span><span role="cell" class="bar acc">79</span><span role="cell" class="bar spd">92</span><span role="cell" class="hide-sm">730 MB</span></div>
+      <div class="model" role="row" data-acc="92" data-speed="41"><span role="cell"><b>Whisper Large v3 Turbo</b><em>100 languages</em></span><span role="cell" class="bar acc">92</span><span role="cell" class="bar spd">41</span><span role="cell" class="hide-sm">886 MB</span></div>
+      <div class="model" role="row" data-acc="87" data-speed="34"><span role="cell"><b>Whisper Large v3</b><em>100 languages</em></span><span role="cell" class="bar acc">87</span><span role="cell" class="bar spd">34</span><span role="cell" class="hide-sm">1.2 GB</span></div>
+      <div class="model" role="row" data-acc="87" data-speed="46"><span role="cell"><b>Whisper Medium</b><em>99 languages</em></span><span role="cell" class="bar acc">87</span><span role="cell" class="bar spd">46</span><span role="cell" class="hide-sm">832 MB</span></div>
+      <div class="model" role="row" data-acc="84" data-speed="63"><span role="cell"><b>Whisper Small</b><em>99 languages</em></span><span role="cell" class="bar acc">84</span><span role="cell" class="bar spd">63</span><span role="cell" class="hide-sm">270 MB</span></div>
+      <div class="model" role="row" data-acc="69" data-speed="95"><span role="cell"><b>SenseVoice Small</b><em>Chinese, Cantonese, English, Japanese, Korean</em></span><span role="cell" class="bar acc">69</span><span role="cell" class="bar spd">95</span><span role="cell" class="hide-sm">253 MB</span></div>
+      <div class="model" role="row" data-acc="66" data-speed="84"><span role="cell"><b>Moonshine Base</b><em>English · smallest</em></span><span role="cell" class="bar acc">66</span><span role="cell" class="bar spd">84</span><span role="cell" class="hide-sm">77 MB</span></div>
+    </div>
+    <p class="fine">Strict scoring: "123" for "one two three" and a misspelt product name both count as errors, so real-world accuracy is higher. Every model is faster on newer chips; the order stays the same.</p>
+  </div>
+</section>
+
+<section id="privacy" class="section band">
+  <div class="wrap privacy">
+    <div>
+      <h2 class="section-title">Your voice stays on your Mac.</h2>
+      <p class="section-lede">Utter doesn't have an account, a server or analytics. Recognition runs on your Mac's GPU with the model you downloaded.</p>
+    </div>
+    <ul class="checks">
+      <li>No network while you dictate. Test it with Wi-Fi off.</li>
+      <li>Audio is thrown away after transcribing, unless you choose to keep it.</li>
+      <li>History is a file on your Mac. Turn it off, cap it, or clear it.</li>
+      <li>Cloud rewriting is off by default, and Local-only mode blocks it completely.</li>
+      <li>The network is used for model downloads, update checks and nothing else.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="download" class="section">
+  <div class="wrap download">
+    <img src="icon-512.png" width="96" height="96" alt="Utter icon">
+    <h2 class="section-title">Get Utter</h2>
+    <p class="section-lede">Free and MIT-licensed. For Apple Silicon Macs on macOS 14 or later.</p>
+    <a class="btn btn-primary btn-large" href="https://github.com/vedjrr/Utter/releases/latest/download/Utter.dmg" data-download>Download Utter.dmg</a>
+    <p class="fine"><a href="https://github.com/vedjrr/Utter/releases">All releases and notes</a> · <code>brew install --cask vedjrr/tap/utter</code></p>
+
+    <div class="install">
+      <h3>Opening it the first time</h3>
+      <p>Utter is signed, but not notarised by Apple (notarisation needs a paid developer account), so macOS asks you to confirm once:</p>
+      <ol>
+        <li>Drag <b>Utter</b> into <b>Applications</b> and open it. When macOS says it can't verify the app, click <b>Done</b>.</li>
+        <li>Open <b>System Settings → Privacy &amp; Security</b>, scroll down, and click <b>Open Anyway</b> next to "Utter was blocked".</li>
+        <li>Allow <b>Microphone</b> and <b>Accessibility</b> when Utter asks, then pick a model. Parakeet V3 is a good start.</li>
+      </ol>
+      <p class="fine">Prefer Terminal? <code>xattr -dr com.apple.quarantine /Applications/Utter.app</code>. Updates install from inside the app and skip this step.</p>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="section band">
+  <div class="wrap faq">
+    <h2 class="section-title">Questions</h2>
+    <details>
+      <summary>How is this different from Apple's built-in Dictation?</summary>
+      <p>Apple Dictation is on the fn key, works well in Apple's own apps, and stops after a pause. Utter is hold-to-talk with any shortcut, works the same in terminals, Electron apps and browsers, lets you choose the model, fixes your vocabulary, keeps a searchable history, and can clean up or rewrite as it goes.</p>
+    </details>
+    <details>
+      <summary>Is it really free?</summary>
+      <p>Yes. It's MIT-licensed and the source is on GitHub. There's no account, trial or paid tier. The optional Anthropic rewriting uses your own API key.</p>
+    </details>
+    <details>
+      <summary>Does it work on Intel Macs?</summary>
+      <p>No. It needs Apple Silicon (M1 or later), because recognition runs on the GPU through Metal.</p>
+    </details>
+    <details>
+      <summary>Why does macOS warn me when I first open it?</summary>
+      <p>Apple only skips that warning for apps notarised through the paid Developer Program. Utter is signed and the code is public, but it isn't notarised yet, so you confirm once with Open Anyway. Updates arrive through the app and are checked against Utter's signing key.</p>
+    </details>
+    <details>
+      <summary>How much memory does it use?</summary>
+      <p>Mostly the model: Moonshine Base adds about 100 MB, Whisper Small about 400 MB and Parakeet V3 about 870 MB. The model stays loaded so dictation starts instantly. Switching models unloads the old one.</p>
+    </details>
+    <details>
+      <summary>Which apps does it type into?</summary>
+      <p>Any app with a text cursor. Utter picks the method per app: Accessibility in native apps, paste in terminals, browsers and Electron apps like Slack or VS Code, and typing as a last resort. If an app needs something else, set it per app in Settings.</p>
+    </details>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-row">
+    <span>© 2026 Utter · MIT licence</span>
+    <span>Inspired by <a href="https://github.com/cjpais/Handy">Handy</a>. Speech recognition by transcribe.cpp.</span>
+    <a href="https://github.com/vedjrr/Utter">GitHub</a>
+  </div>
+</footer>
+
+<script src="main.js?v=1" defer></script>
+</body>
+</html>

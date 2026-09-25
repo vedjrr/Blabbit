@@ -55,10 +55,14 @@ hdiutil verify -quiet "$dmg"
 "$sparkle_bin/generate_appcast" --account dev.utter.mac \
   --download-url-prefix "https://github.com/vedjrr/Utter/releases/download/v$ver/" "$updates"
 
+# The website links to releases/latest/download/Utter.dmg, which needs a stable
+# name; it lives outside build/updates so the appcast doesn't list it twice.
+mkdir -p build/release
+cp "$dmg" build/release/Utter.dmg
 sum=$(shasum -a 256 "$dmg" | cut -d' ' -f1)
 echo
 echo "Release ready: $dmg (version $ver, build $build)"
 echo "SHA-256: $sum"
 echo "Publish (docs/RELEASING.md):"
 echo "  git tag v$ver && git push origin v$ver"
-echo "  gh release create v$ver \"$dmg\" \"$updates/appcast.xml\" --title \"Utter $ver\" --notes-file docs/release-notes/$ver.md"
+echo "  gh release create v$ver \"$dmg\" build/release/Utter.dmg \"$updates/appcast.xml\" --title \"Utter $ver\" --notes-file docs/release-notes/$ver.md"
