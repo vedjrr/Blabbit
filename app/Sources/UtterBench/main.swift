@@ -270,7 +270,9 @@ for (id, seconds) in longCases {
 }
 report["long_dictation"] = longRuns
 
-// The worst case for segmenting: release right after a segment starts.
+// The worst case for segmenting: the user releases right when a segment has
+// started. The recording ends there (audio cut at that point); both sides are
+// the median of 3 runs.
 func releaseRightAfterStart(_ entry: ModelEntry, seconds: Double) async -> [String: Any]? {
     guard let path = await MainActor.run(body: { manager.path(for: entry.id) }) else { return nil }
     let engine = UtterEngine()
@@ -284,26 +286,35 @@ func releaseRightAfterStart(_ entry: ModelEntry, seconds: Double) async -> [Stri
         index += 1
     }
     let options = DictationOptions(language: nil, translate: false, initialPrompt: nil)
-    let t0 = nowNs()
-    _ = try? engine.transcribe(pcm: audio, options: options)
-    let oneShotMs = ms(t0, nowNs())
-    let inc = IncrementalTranscriber(engine: engine, options: options, policy: .forModelFamily(entry.family))
-    var fed = 0
-    while fed < audio.count, !inc.hasStarted {
-        let next = min(fed + 32_000, audio.count)
-        inc.append(Array(audio[fed..<next]))
-        fed = next
+    var releases: [Double] = [], oneShots: [Double] = []
+    var started = false
+    var recorded = audio.count
+    for _ in 0..<3 {
+        let inc = IncrementalTranscriber(engine: engine, options: options, policy: .forModelFamily(entry.family))
+        var fed = 0
+        while fed < audio.count, !inc.hasStarted {
+            let next = min(fed + 32_000, audio.count)
+            inc.append(Array(audio[fed..<next]))
+            fed = next
+        }
+        started = inc.hasStarted
+        recorded = fed
+        let recording = Array(audio[..<fed]) // released now
+        let t1 = nowNs()
+        if started { _ = try? await inc.finish(complete: recording) } else { _ = try? engine.transcribe(pcm: recording, options: options) }
+        releases.append(ms(t1, nowNs()))
+        let t0 = nowNs()
+        _ = try? engine.transcribe(pcm: recording, options: options)
+        oneShots.append(ms(t0, nowNs()))
     }
-    let started = inc.hasStarted
-    let t1 = nowNs()
-    if started { _ = try? await inc.finish(complete: audio) } else { _ = try? engine.transcribe(pcm: audio, options: options) }
-    return ["model": entry.id, "audio_s": round1(Double(audio.count) / 16_000), "segment_started": started,
-            "one_shot_ms": round1(oneShotMs), "release_ms": round1(ms(t1, nowNs()))]
+    return ["model": entry.id, "audio_s": round1(Double(recorded) / 16_000), "segment_started": started,
+            "one_shot_ms": round1(percentile(oneShots, 50) ?? -1), "release_ms": round1(percentile(releases, 50) ?? -1)]
 }
 
 log("release right after a segment starts…")
 var worst: [[String: Any]] = []
-for (id, seconds) in [("parakeet-tdt-0.6b-v3", 25.0), ("whisper-medium", 25.0), ("whisper-medium", 45.0)] {
+for (id, seconds) in [("parakeet-tdt-0.6b-v3", 25.0), ("moonshine-base", 25.0), ("SenseVoiceSmall", 25.0),
+                      ("whisper-medium", 25.0), ("whisper-medium", 45.0), ("whisper-large-v3", 45.0)] {
     guard let entry = installed.first(where: { $0.id == id }), let row = await releaseRightAfterStart(entry, seconds: seconds) else { continue }
     worst.append(row)
     log("  \(id) \(row["audio_s"] ?? "?") s: segment started \(row["segment_started"] ?? "?"), release \(row["release_ms"] ?? "?") ms vs one-shot \(row["one_shot_ms"] ?? "?") ms")

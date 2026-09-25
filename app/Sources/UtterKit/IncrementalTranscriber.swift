@@ -4,8 +4,9 @@ import UtterCore
 /// Transcribes a long dictation in segments while the user is still speaking,
 /// cutting only in natural pauses (`findPause`), so on release just the tail
 /// is left: a 5-minute recording needed 0.2 s of work at release instead of
-/// 15.8 s, with no loss of accuracy (ADR-013). Thread-safe; segments run one
-/// at a time on a serial queue.
+/// 15.8 s, with no loss of accuracy (ADR-013). Call `append` from one serial
+/// queue (the app uses its audio queue); state reads are thread-safe, and
+/// segments run one at a time on the transcriber's own serial queue.
 public final class IncrementalTranscriber: @unchecked Sendable {
     /// When segmenting pays off, per model family (measured, ADR-013).
     public struct Policy: Equatable, Sendable {
@@ -91,6 +92,7 @@ public final class IncrementalTranscriber: @unchecked Sendable {
                                           minSilenceSamples: UInt64(Self.minPauseSeconds * 16_000)) else { return }
         let cut = offset + Int(cutInRecent)
         lock.lock()
+        guard !busy, cut <= pending.count else { lock.unlock(); return }
         let segment = Array(pending[..<cut])
         busy = true
         let options = self.options

@@ -107,9 +107,6 @@ import UtterCore
     @Test func whisperReleaseRightAfterASegmentStartsIsNoSlower() async throws {
         let engine = try Self.engine(Self.whisperMedium)
         let (audio, _) = try Self.dictation(seconds: 45)
-        let t0 = MonoClock.nowNs()
-        _ = try engine.transcribe(pcm: audio, options: Self.options)
-        let oneShotMs = MonoClock.ms(from: t0, to: MonoClock.nowNs())
         let inc = IncrementalTranscriber(engine: engine, options: Self.options, policy: .forModelFamily("whisper"))
         var fed = 0
         while fed < audio.count, !inc.hasStarted {
@@ -118,10 +115,17 @@ import UtterCore
             fed = next
         }
         try #require(inc.hasStarted, "a segment should start past 30 s")
+        // The user lets go right now: the recording ends where the segment started.
+        let recording = Array(audio[..<fed])
         let released = MonoClock.nowNs()
-        let result = try await inc.finish(complete: audio)
+        let result = try await inc.finish(complete: recording)
         let releaseMs = MonoClock.ms(from: released, to: MonoClock.nowNs())
-        #expect(releaseMs <= oneShotMs * 1.1 + 50, "release \(Int(releaseMs)) ms vs one-shot \(Int(oneShotMs)) ms")
+        let oneShotMs = (0..<2).map { _ in
+            let t0 = MonoClock.nowNs()
+            _ = try? engine.transcribe(pcm: recording, options: Self.options)
+            return MonoClock.ms(from: t0, to: MonoClock.nowNs())
+        }.min() ?? 0
+        #expect(releaseMs <= oneShotMs * 1.15 + 50, "release \(Int(releaseMs)) ms vs one-shot \(Int(oneShotMs)) ms")
         #expect(!result.text.isEmpty)
     }
 

@@ -125,7 +125,7 @@ func writeMarkdown(_ r: [String: Any], to url: URL, json: String) throws {
         }
     }
     if let rows = r["release_mid_segment"] as? [[String: Any]], !rows.isEmpty {
-        md += "\nWorst case, release right after a segment starts (Whisper pads calls to 30 s, so it segments only past one window, in 20–29.5 s pieces):\n\n| Model | Audio s | Segment started | Release ms | One-shot ms |\n|---|---|---|---|---|\n"
+        md += "\nWorst case: the user releases the moment a segment has started (the recording ends there; median of 3 runs each). Whisper pads calls to 30 s, so it segments only past one window, in 20–29.5 s pieces:\n\n| Model | Recorded s | Segment started | Release ms | One-shot ms |\n|---|---|---|---|---|\n"
         for l in rows {
             md += "| \(d(l["model"])) | \(d(l["audio_s"])) | \(d(l["segment_started"])) | \(d(l["release_ms"])) | \(d(l["one_shot_ms"])) |\n"
         }
