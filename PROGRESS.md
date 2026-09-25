@@ -1,4 +1,4 @@
-STATUS: IN_PROGRESS
+STATUS: WAITING_ON_HUMAN
 
 # Progress (loop state — Claude owns this file)
 
@@ -245,6 +245,7 @@ M7 is not done: the gate critic (review #1, 2026-09-25) returned **FAIL**. Work 
 - [M6] Critic re-review #3 → **PASS** (its own probe: release ≤ 1.03× one-shot on Whisper Large v3 and Turbo across 17–35 s; 3/3 reruns of the incremental suite green). MINORs fixed: the worst-case rows now end the recording where the segment started and use the median of 3 runs each, with Moonshine, SenseVoice and Whisper Large added (`bench/results/2026-09-25.json`, git `32a5914`): parakeet-tdt-0.6b-v3 16 s 289.8 vs 270 ms; moonshine-base 16 s 603.9 vs 1578.5 ms; SenseVoiceSmall 16 s 188.2 vs 161.1 ms; whisper-medium 27.2 s 1661.2 vs 1652.9 ms; whisper-medium 32 s 2874.2 vs 2916.5 ms; whisper-large-v3 32 s 6312.9 vs 6543.1 ms. `append` is documented for one serial queue and re-checks `busy`.
 
 ## Blocked on human
+- **Paused at your request (2026-09-25) for an overnight test of build 7e31551+.** You said you'd test tonight and send your findings in the morning; building stopped so the app you're testing doesn't change underneath you. Resume with `/loop` plus your notes (what broke, which app, what you did); `~/Library/Logs/Utter/utter.log` has the per-dictation details. Unblocked work continues from "Next task" after your findings are fixed.
 - **G8 Utter vs Handy, side by side (10 minutes):** install Handy (https://github.com/cjpais/Handy/releases), download and select Parakeet V3 in it, and set model unloading to Never. Then run `cd "/Users/ved/Documents 2/utter-kit" && scripts/compare-handy.sh /Applications/Handy.app`. It quits and launches each app three times and writes `evidence/m7/handy_comparison.log` (time to settled memory, settled RSS, idle CPU). I didn't install or run a third-party app on your Mac without asking.
 - **Release (G7, `make dmg`):** needs your **Developer ID Application** certificate and a notarytool profile. docs/RELEASING.md has the one-time setup and the release steps. Without them, `make dmg` stops with a plain message (exit 2). Also **back up the Sparkle private key** (RELEASING.md → one-time setup, step 3): it's in your login keychain (account `dev.utter.mac`), and without it existing installs can't be updated.
 - **Licence:** Info.plist and README say MIT, and a `LICENSE` (MIT, "Utter contributors") was added in M7. Confirm or tell me the licence and copyright holder you want.
