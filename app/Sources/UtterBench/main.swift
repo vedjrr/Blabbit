@@ -212,18 +212,19 @@ func longDictation(_ entry: ModelEntry, seconds: Double) async -> [String: Any]?
     guard (try? engine.loadModel(path: path)) != nil else { return nil }
     var audio: [Float] = []
     var reference = ""
+    var index = 0
     while Double(audio.count) < seconds * 16_000 {
-        for (wav, text) in fixtures {
-            audio += (try? loadWav16kMono(path: wav.path)) ?? []
-            audio += [Float](repeating: 0, count: 12_800)
-            reference += text + " "
-        }
+        let (wav, text) = fixtures[index % fixtures.count]
+        index += 1
+        audio += (try? loadWav16kMono(path: wav.path)) ?? []
+        audio += [Float](repeating: 0, count: 12_800)
+        reference += text + " "
     }
     let options = DictationOptions(language: nil, translate: false, initialPrompt: nil)
     let t0 = nowNs()
     let oneShot = try? engine.transcribe(pcm: audio, options: options)
     let oneShotMs = ms(t0, nowNs())
-    let inc = IncrementalTranscriber(engine: engine, options: options)
+    let inc = IncrementalTranscriber(engine: engine, options: options, policy: .forModelFamily(entry.family))
     var fed = 0
     while fed < audio.count {
         let next = min(fed + 32_000, audio.count)
@@ -234,7 +235,16 @@ func longDictation(_ entry: ModelEntry, seconds: Double) async -> [String: Any]?
         while inc.isBusy, nowNs() < deadline { pause(0.005) }
     }
     let t1 = nowNs()
-    let result = try? await inc.finish(complete: audio)
+    // Like the app: segments started → finish; none → one-shot.
+    let result: IncrementalTranscriber.Result?
+    if inc.hasStarted {
+        result = try? await inc.finish(complete: audio)
+    } else {
+        result = (try? engine.transcribe(pcm: audio, options: options)).map {
+            IncrementalTranscriber.Result(text: $0.text, tailInferenceMs: $0.inferenceMs, totalInferenceMs: $0.inferenceMs,
+                                          segments: 0, skipped: $0.skipped, language: $0.language)
+        }
+    }
     let releaseMs = ms(t1, nowNs())
     return [
         "model": entry.id, "audio_s": audio.count / 16_000,
@@ -249,7 +259,7 @@ log("long dictation…")
 var longRuns: [[String: Any]] = []
 // The default model over 5 minutes, and a slow Whisper model (segments take
 // longer than the 2 s between arrivals) over 1 minute.
-let longCases: [(String, Double)] = [("parakeet-tdt-0.6b-v3", 300), ("whisper-medium", 60)]
+let longCases: [(String, Double)] = [("parakeet-tdt-0.6b-v3", 300), ("whisper-medium", 60), ("whisper-medium", 20)]
 for (id, seconds) in longCases {
     guard let entry = installed.first(where: { $0.id == id }) else { continue }
     if let run = await longDictation(entry, seconds: seconds) {
@@ -258,6 +268,46 @@ for (id, seconds) in longCases {
     }
 }
 report["long_dictation"] = longRuns
+
+// The worst case for segmenting: release right after a segment starts.
+func releaseRightAfterStart(_ entry: ModelEntry, seconds: Double) async -> [String: Any]? {
+    guard let path = await MainActor.run(body: { manager.path(for: entry.id) }) else { return nil }
+    let engine = UtterEngine()
+    defer { engine.unload() }
+    guard (try? engine.loadModel(path: path)) != nil else { return nil }
+    var audio: [Float] = []
+    var index = 0
+    while Double(audio.count) < seconds * 16_000 {
+        audio += (try? loadWav16kMono(path: fixtures[index % fixtures.count].wav.path)) ?? []
+        audio += [Float](repeating: 0, count: 12_800)
+        index += 1
+    }
+    let options = DictationOptions(language: nil, translate: false, initialPrompt: nil)
+    let t0 = nowNs()
+    _ = try? engine.transcribe(pcm: audio, options: options)
+    let oneShotMs = ms(t0, nowNs())
+    let inc = IncrementalTranscriber(engine: engine, options: options, policy: .forModelFamily(entry.family))
+    var fed = 0
+    while fed < audio.count, !inc.hasStarted {
+        let next = min(fed + 32_000, audio.count)
+        inc.append(Array(audio[fed..<next]))
+        fed = next
+    }
+    let started = inc.hasStarted
+    let t1 = nowNs()
+    if started { _ = try? await inc.finish(complete: audio) } else { _ = try? engine.transcribe(pcm: audio, options: options) }
+    return ["model": entry.id, "audio_s": round1(Double(audio.count) / 16_000), "segment_started": started,
+            "one_shot_ms": round1(oneShotMs), "release_ms": round1(ms(t1, nowNs()))]
+}
+
+log("release right after a segment starts…")
+var worst: [[String: Any]] = []
+for (id, seconds) in [("parakeet-tdt-0.6b-v3", 25.0), ("whisper-medium", 25.0), ("whisper-medium", 45.0)] {
+    guard let entry = installed.first(where: { $0.id == id }), let row = await releaseRightAfterStart(entry, seconds: seconds) else { continue }
+    worst.append(row)
+    log("  \(id) \(row["audio_s"] ?? "?") s: segment started \(row["segment_started"] ?? "?"), release \(row["release_ms"] ?? "?") ms vs one-shot \(row["one_shot_ms"] ?? "?") ms")
+}
+report["release_mid_segment"] = worst
 
 // MARK: 2. Text pipeline
 

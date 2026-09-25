@@ -124,6 +124,12 @@ func writeMarkdown(_ r: [String: Any], to url: URL, json: String) throws {
             md += "| \(d(l["model"])) | \(d(l["audio_s"])) | \(d(l["one_shot_release_ms"])) | \(d(l["incremental_release_ms"])) | \(d(l["segments"])) | \(d(l["wer_one_shot"])) | \(d(l["wer_incremental"])) |\n"
         }
     }
+    if let rows = r["release_mid_segment"] as? [[String: Any]], !rows.isEmpty {
+        md += "\nWorst case, release right after a segment starts (Whisper pads calls to 30 s, so it segments only past one window, in 20–29.5 s pieces):\n\n| Model | Audio s | Segment started | Release ms | One-shot ms |\n|---|---|---|---|---|\n"
+        for l in rows {
+            md += "| \(d(l["model"])) | \(d(l["audio_s"])) | \(d(l["segment_started"])) | \(d(l["release_ms"])) | \(d(l["one_shot_ms"])) |\n"
+        }
+    }
     let text = r["text_pipeline"] as? [String: Any] ?? [:]
     md += "\n## Text pipeline\n\nClean mode with 7 vocabulary terms: short utterance p50 \(d(text["clean_short_ms_p50"])) ms; ~900 words p50 \(d(text["clean_900_words_ms_p50"])) ms.\n"
     let insertion = r["insertion"] as? [String: Any] ?? [:]

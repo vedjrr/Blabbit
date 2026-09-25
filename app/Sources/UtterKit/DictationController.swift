@@ -17,6 +17,8 @@ public final class DictationController {
     public private(set) var state: State = .starting {
         didSet {
             if state != .recording { stopIncrementalFeed() }
+            // A recording that ended in failure leaves nothing to finish.
+            if case .failed = state { incremental = nil }
             updateOverlay(from: oldValue)
             onStateChange?(state)
             // Apply a model switch that was requested during the dictation.
@@ -355,7 +357,9 @@ public final class DictationController {
     /// Every 2 s while recording, hand new audio to the incremental transcriber.
     private func startIncremental() {
         stopIncrementalFeed()
-        let inc = IncrementalTranscriber(engine: engine, options: dictationOptions(noticeUnsupportedLanguage: false))
+        let family = loadedModelID.flatMap { models.entry($0)?.family }
+        let inc = IncrementalTranscriber(engine: engine, options: dictationOptions(noticeUnsupportedLanguage: false),
+                                         policy: .forModelFamily(family))
         incremental = inc
         let recorder = self.recorder
         let queue = audioQueue

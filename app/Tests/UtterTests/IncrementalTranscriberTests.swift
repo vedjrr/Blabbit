@@ -15,12 +15,14 @@ import UtterCore
             .filter { $0.pathExtension == "wav" }.sorted { $0.path < $1.path }
         var audio: [Float] = []
         var reference = ""
+        var index = 0
+        // Whole sentences until `seconds` is reached (not a full pass of every clip).
         while Double(audio.count) < seconds * 16_000 {
-            for wav in wavs {
-                audio += try loadWav16kMono(path: wav.path)
-                audio += [Float](repeating: 0, count: 12_800)
-                reference += (try String(contentsOf: wav.deletingPathExtension().appendingPathExtension("txt"), encoding: .utf8)) + " "
-            }
+            let wav = wavs[index % wavs.count]
+            index += 1
+            audio += try loadWav16kMono(path: wav.path)
+            audio += [Float](repeating: 0, count: 12_800)
+            reference += (try String(contentsOf: wav.deletingPathExtension().appendingPathExtension("txt"), encoding: .utf8)) + " "
         }
         if noise > 0 {
             var seed: UInt32 = 12345
@@ -32,8 +34,8 @@ import UtterCore
         return (audio, reference)
     }
 
-    static func engine() throws -> UtterEngine {
-        let model = ModelLocation.modelsDirectory.appendingPathComponent("parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf").path
+    static func engine(_ file: String = "parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf") throws -> UtterEngine {
+        let model = ModelLocation.modelsDirectory.appendingPathComponent(file).path
         try #require(FileManager.default.fileExists(atPath: model), "run `make models` first")
         let engine = UtterEngine()
         _ = try engine.loadModel(path: model)
@@ -69,7 +71,7 @@ import UtterCore
     /// than transcribing everything at once (the controller routes to `finish`).
     @Test func releaseDuringARunningSegmentIsNoSlowerThanOneShot() async throws {
         let engine = try Self.engine()
-        let (audio, _) = try Self.dictation(seconds: 16)
+        let (audio, _) = try Self.dictation(seconds: 25)
         let oneShotStart = MonoClock.nowNs()
         _ = try engine.transcribe(pcm: audio, options: Self.options)
         let oneShotMs = MonoClock.ms(from: oneShotStart, to: MonoClock.nowNs())
@@ -79,7 +81,47 @@ import UtterCore
         let released = MonoClock.nowNs()
         let result = try await inc.finish(complete: audio)
         let releaseMs = MonoClock.ms(from: released, to: MonoClock.nowNs())
-        #expect(releaseMs <= oneShotMs * 1.3 + 30, "release \(releaseMs) ms vs one-shot \(oneShotMs) ms")
+        #expect(releaseMs <= oneShotMs * 1.1 + 30, "release \(releaseMs) ms vs one-shot \(oneShotMs) ms")
+        #expect(!result.text.isEmpty)
+    }
+
+    static let whisperMedium = "whisper-medium/whisper-medium-Q8_0.gguf"
+
+    /// Whisper pads each call to 30 s: under 30 s of recording nothing is
+    /// segmented, so release costs exactly one-shot.
+    @Test func whisperNeverSegmentsUnderOneWindow() async throws {
+        let engine = try Self.engine(Self.whisperMedium)
+        let (audio, _) = try Self.dictation(seconds: 25)
+        #expect(Double(audio.count) / 16_000 < 30)
+        let inc = IncrementalTranscriber(engine: engine, options: Self.options, policy: .forModelFamily("whisper"))
+        var fed = 0
+        while fed < audio.count {
+            let next = min(fed + 32_000, audio.count)
+            inc.append(Array(audio[fed..<next]))
+            fed = next
+        }
+        #expect(!inc.hasStarted, "a segment + tail would cost two windows where one-shot costs one")
+    }
+
+    /// The worst case on a slow model: release right after a segment starts.
+    @Test func whisperReleaseRightAfterASegmentStartsIsNoSlower() async throws {
+        let engine = try Self.engine(Self.whisperMedium)
+        let (audio, _) = try Self.dictation(seconds: 45)
+        let t0 = MonoClock.nowNs()
+        _ = try engine.transcribe(pcm: audio, options: Self.options)
+        let oneShotMs = MonoClock.ms(from: t0, to: MonoClock.nowNs())
+        let inc = IncrementalTranscriber(engine: engine, options: Self.options, policy: .forModelFamily("whisper"))
+        var fed = 0
+        while fed < audio.count, !inc.hasStarted {
+            let next = min(fed + 32_000, audio.count)
+            inc.append(Array(audio[fed..<next]))
+            fed = next
+        }
+        try #require(inc.hasStarted, "a segment should start past 30 s")
+        let released = MonoClock.nowNs()
+        let result = try await inc.finish(complete: audio)
+        let releaseMs = MonoClock.ms(from: released, to: MonoClock.nowNs())
+        #expect(releaseMs <= oneShotMs * 1.1 + 50, "release \(Int(releaseMs)) ms vs one-shot \(Int(oneShotMs)) ms")
         #expect(!result.text.isEmpty)
     }
 

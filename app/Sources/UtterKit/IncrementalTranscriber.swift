@@ -7,12 +7,34 @@ import UtterCore
 /// 15.8 s, with no loss of accuracy (ADR-013). Thread-safe; segments run one
 /// at a time on a serial queue.
 public final class IncrementalTranscriber: @unchecked Sendable {
-    public static let minSegmentSeconds = 10.0
+    /// When segmenting pays off, per model family (measured, ADR-013).
+    public struct Policy: Equatable, Sendable {
+        /// A segment is at least this long.
+        public var minSegmentSeconds: Double
+        /// …and at most this long (nil: any length).
+        public var maxSegmentSeconds: Double?
+        /// No segment starts before the recording is this long.
+        public var startAfterSeconds: Double
+
+        /// Parakeet, Moonshine, SenseVoice: cost grows with length, so any
+        /// segment ≥ 10 s taken off the release is a gain.
+        public static let proportional = Policy(minSegmentSeconds: 10, maxSegmentSeconds: nil, startAfterSeconds: 0)
+        /// Whisper pads every call to a 30 s window: a segment must fit in one
+        /// window, and segmenting only starts once one-shot would need two
+        /// (otherwise segment + tail = two windows where one-shot is one).
+        public static let whisperWindow = Policy(minSegmentSeconds: 20, maxSegmentSeconds: 29.5, startAfterSeconds: 30)
+
+        public static func forModelFamily(_ family: String?) -> Policy {
+            family == "whisper" ? .whisperWindow : .proportional
+        }
+    }
+
     public static let minPauseSeconds = 0.35
-    /// How far back `findPause` looks: bounded, so a long monologue without a
-    /// pause doesn't rescan (and copy) minutes of audio every 2 s.
+    /// How far back `findPause` looks (no maximum segment): bounded, so a long
+    /// monologue without a pause doesn't rescan minutes of audio every 2 s.
     static let searchWindowSeconds = 60.0
 
+    public let policy: Policy
     private let engine: UtterEngine
     private var options: DictationOptions
     private let queue = DispatchQueue(label: "dev.utter.incremental", qos: .userInitiated)
@@ -28,9 +50,10 @@ public final class IncrementalTranscriber: @unchecked Sendable {
     private var inferenceMs = 0.0
     private var segmentCount = 0
 
-    public init(engine: UtterEngine, options: DictationOptions) {
+    public init(engine: UtterEngine, options: DictationOptions, policy: Policy = .proportional) {
         self.engine = engine
         self.options = options
+        self.policy = policy
     }
 
     /// Segments transcribed so far.
@@ -49,13 +72,21 @@ public final class IncrementalTranscriber: @unchecked Sendable {
         lock.lock()
         pending.append(contentsOf: chunk)
         received += chunk.count
-        guard !busy, !failed else { lock.unlock(); return }
-        // Search only the recent window; a cut before it is found on earlier calls.
-        let window = Int(Self.searchWindowSeconds * 16_000)
-        let offset = max(0, pending.count - window)
-        let recent = Array(pending[offset...])
+        guard !busy, !failed, Double(received) > policy.startAfterSeconds * 16_000 else { lock.unlock(); return }
+        let offset: Int
+        let recent: [Float]
+        if let maxSegment = policy.maxSegmentSeconds {
+            // Look only within the first `maxSegment` of what's pending.
+            offset = 0
+            recent = Array(pending.prefix(Int(maxSegment * 16_000)))
+        } else {
+            // Search only the recent window; a cut before it is found on earlier calls.
+            let window = Int(Self.searchWindowSeconds * 16_000)
+            offset = max(0, pending.count - window)
+            recent = Array(pending[offset...])
+        }
         lock.unlock()
-        let minSegment = max(0, Int(Self.minSegmentSeconds * 16_000) - offset)
+        let minSegment = max(0, Int(policy.minSegmentSeconds * 16_000) - offset)
         guard let cutInRecent = findPause(pcm: recent, from: 0, minSegmentSamples: UInt64(minSegment),
                                           minSilenceSamples: UInt64(Self.minPauseSeconds * 16_000)) else { return }
         let cut = offset + Int(cutInRecent)
@@ -97,6 +128,15 @@ public final class IncrementalTranscriber: @unchecked Sendable {
         public var segments: Int
         public var skipped: SkipReason?
         public var language: String?
+
+        public init(text: String, tailInferenceMs: Double, totalInferenceMs: Double, segments: Int, skipped: SkipReason?, language: String?) {
+            self.text = text
+            self.tailInferenceMs = tailInferenceMs
+            self.totalInferenceMs = totalInferenceMs
+            self.segments = segments
+            self.skipped = skipped
+            self.language = language
+        }
     }
 
     /// Call after the recording stops with its complete audio: waits for a
@@ -106,7 +146,12 @@ public final class IncrementalTranscriber: @unchecked Sendable {
             queue.async { done.resume() } // a running segment finishes first
         }
         let (from, before, doneMs, count, options) = snapshot(limit: complete.count)
-        let tail = try engine.transcribe(pcm: Array(complete[from...]), options: options)
+        // The tail runs on the transcriber's queue, not a Swift concurrency thread.
+        let engine = self.engine
+        let rest = Array(complete[from...])
+        let tail: TranscriptionResult = try await withCheckedThrowingContinuation { done in
+            queue.async { done.resume(with: Swift.Result { try engine.transcribe(pcm: rest, options: options) }) }
+        }
         let parts = (before + [tail.text]).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         return Result(text: Self.join(parts), tailInferenceMs: tail.inferenceMs,
                       totalInferenceMs: doneMs + tail.inferenceMs, segments: count,
