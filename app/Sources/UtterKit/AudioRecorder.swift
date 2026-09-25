@@ -14,6 +14,9 @@ public struct Recording: Sendable {
     public var droppedFrames: Int
     /// The input device/format changed mid-recording; audio after that point is missing.
     public var interruptedByDeviceChange = false
+    /// With `interruptedByDeviceChange`: the device capture continued on
+    /// (nil if audio after the change was lost).
+    public var continuedOnDevice: String?
     /// False if the microphone never started for this recording.
     public var didRecord = true
     public var durationMs: Double { Double(samples.count) / 16.0 }
@@ -140,6 +143,8 @@ public final class AudioRecorder: @unchecked Sendable {
     private var needsRebuild = false
     /// Set when the device changed mid-recording (reported on the Recording).
     private var interrupted = false
+    /// The device capture moved to after a mid-recording change.
+    private var continuedOn: String?
     private var configObserver: NSObjectProtocol?
     private let levelState = OSAllocatedUnfairLock(initialState: Float(0))
     private let recordingState = OSAllocatedUnfairLock(initialState: false)
@@ -162,6 +167,57 @@ public final class AudioRecorder: @unchecked Sendable {
         mixScratch?.deallocate()
     }
 
+    /// The device the graph was last built for (on `queue`).
+    public private(set) var activeDevice: AudioInputDevice?
+    /// Set when the chosen device was missing and the default was used instead.
+    public private(set) var missingPreferredDevice: String?
+    /// True while the input unit is pinned to a chosen device.
+    private var deviceOverridden = false
+    /// The chosen input device's UID; nil follows the system default. Set with `setPreferredDevice`.
+    public private(set) var preferredDeviceUID: String?
+
+    /// Chooses the input device (nil = system default). Rebuilds the graph now
+    /// unless a recording is running (then on the next start).
+    public func setPreferredDevice(uid: String?) throws {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard uid != preferredDeviceUID || sink == nil else { return }
+        preferredDeviceUID = uid
+        needsRebuild = true
+        if !isRecording { try prepare() }
+    }
+
+    /// Points the engine's input unit at the chosen device (or the default).
+    private func selectDevice() throws {
+        let preferred = preferredDeviceUID.flatMap(AudioDevices.device(uid:))
+        missingPreferredDevice = (preferredDeviceUID != nil && preferred == nil) ? preferredDeviceUID : nil
+        guard let device = preferred ?? AudioDevices.defaultInput() else { throw AudioRecorderError.noInputDevice }
+        // Following the system default: leave AVAudioEngine's own device choice
+        // alone (it may use a private aggregate device, and setting the device
+        // fires a configuration change) unless a specific device was set before.
+        let mustSet = preferred != nil || deviceOverridden
+        if mustSet, let unit = engine.inputNode.audioUnit, currentDevice(of: unit) != device.id {
+            var id = device.id
+            let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                              &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+            if status != noErr {
+                Log.error("could not select input device \(device.name) status=\(status)")
+                throw AudioRecorderError.noInputDevice
+            }
+        }
+        deviceOverridden = preferred != nil
+        activeDevice = device
+        if let missing = missingPreferredDevice {
+            Log.info("chosen input device \(missing) is not connected; using \(device.name)")
+        }
+    }
+
+    private func currentDevice(of unit: AudioUnit) -> AudioDeviceID? {
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id, &size)
+        return status == noErr ? id : nil
+    }
+
     /// Latest RMS level (0…1), for level meters. Any thread.
     public var level: Float { levelState.withLock { $0 } }
     /// Any thread.
@@ -172,6 +228,7 @@ public final class AudioRecorder: @unchecked Sendable {
         dispatchPrecondition(condition: .onQueue(queue))
         if sink != nil && !needsRebuild { return }
         teardownGraph()
+        try selectDevice()
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw AudioRecorderError.noInputDevice }
@@ -223,7 +280,7 @@ public final class AudioRecorder: @unchecked Sendable {
         self.resampler = resampler
         self.inputRate = format.sampleRate
         needsRebuild = false
-        Log.info("audio graph ready input_rate=\(Int(format.sampleRate)) channels=\(format.channelCount)")
+        Log.info("audio graph ready input_rate=\(Int(format.sampleRate)) channels=\(format.channelCount) device=\"\(activeDevice?.name ?? "?")\" bluetooth=\(activeDevice?.isBluetooth ?? false)")
     }
 
     private func teardownGraph() {
@@ -284,9 +341,10 @@ public final class AudioRecorder: @unchecked Sendable {
         let c = ring.cursor.withLock { $0 }
         let recording = Recording(samples: samples, firstSampleNs: c.firstSampleNs, firstCallbackNs: c.firstCallbackNs,
                                   lastSampleEndNs: c.lastEndNs == 0 ? nil : c.lastEndNs, droppedFrames: c.dropped,
-                                  interruptedByDeviceChange: interrupted)
+                                  interruptedByDeviceChange: interrupted, continuedOnDevice: continuedOn)
         samples = []
         interrupted = false
+        continuedOn = nil
         levelState.withLock { $0 = 0 }
         return recording
     }
@@ -325,15 +383,40 @@ public final class AudioRecorder: @unchecked Sendable {
         Log.info("audio configuration changed recording=\(isRecording)")
         needsRebuild = true
         if isRecording {
-            // Keep what was captured; the graph is rebuilt on the next start.
-            drainAndConvert()
-            interrupted = true
-            recordingState.withLock { $0 = false }
+            // Keep what was captured, then carry on with whatever device is now
+            // available (the chosen one, or the default if it went away).
             drainTimer?.cancel()
             drainTimer = nil
-            Log.error("input device changed while recording; audio after the change is lost")
+            drainAndConvert()
+            samples.append(contentsOf: resampler?.flush() ?? [])
+            interrupted = true
+            let before = ring?.cursor.withLock { $0 }
+            do {
+                try prepare()
+                if let before, let ring {
+                    ring.cursor.withLock { c in
+                        c.firstSampleNs = before.firstSampleNs
+                        c.firstCallbackNs = before.firstCallbackNs
+                        c.dropped = before.dropped
+                    }
+                }
+                try engine.start()
+                startDrainTimer()
+                continuedOn = activeDevice?.name ?? "the default microphone"
+                Log.info("input device changed while recording; continuing on \(continuedOn ?? "?") samples_so_far=\(samples.count)")
+            } catch {
+                recordingState.withLock { $0 = false }
+                continuedOn = nil
+                Log.error("input device changed while recording and no device could take over; audio after the change is lost: \(error)")
+            }
         } else {
             try? prepare()
         }
+    }
+
+    /// Test hook: what a real `AVAudioEngineConfigurationChange` triggers.
+    func simulateConfigurationChange() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        handleConfigurationChange()
     }
 }

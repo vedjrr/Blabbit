@@ -12,7 +12,7 @@ Iteration: 7
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M4: input device selection + route change/disconnect mid-recording, then short/silent/long recording behaviour checks; live overlay latency when the screen is unlocked.
+- M4: check G1 items for the gate (toggle mode + configurable hotkey, short/silent → no insertion and no popup, 5-min recording in the app path), live overlay latency when unlocked, then run the M4 critic.
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -121,6 +121,10 @@ Iteration: 7
 
 - [M4] Permission onboarding (`PermissionsOnboarding.swift`): a "Set up Utter" window with one row each for Microphone and Accessibility. Each row explains why the permission is needed, shows its status, and has one button: ask (system prompt) or, once macOS won't prompt again, a deep link to the exact Privacy pane. The window re-checks every 1 s (macOS sends no notification), and a grant takes effect at once: `permissionsChanged` starts the event tap or prepares the microphone without a relaunch. There are no system prompts at launch; the window opens instead if anything is missing, and the menu shows "Set Up Permissions…" while anything is missing. Tests: every row state, live re-check (one event per grant), offscreen render → `evidence/m4/permissions_setup.png`. App launch with both granted: no setup window, `hotkey tap started`, `audio graph ready`, `model_load … load_count=1`.
 - [M4] `make test`: Swift `Test run with 110 tests in 21 suites passed`; Rust 16 + 10 + 4.
+
+- [M4] Input device selection (`AudioDevices.swift`, CoreAudio): lists input devices (UID, name, Bluetooth transport); the "Microphone" menu offers System Default (named) or a specific device, saved by UID (`audio.inputDeviceUID`). The recorder pins its input unit to the chosen device (`kAudioOutputUnitProperty_CurrentDevice`). A chosen device that isn't connected falls back to the default with a message. Following the default leaves AVAudioEngine's own choice alone: it uses a private aggregate device (unit device 125 vs default input 88 here), and forcing it caused an extra configuration change at launch (seen in the log, now gone: one `audio graph ready` per launch). Tests on real CoreAudio: devices have unique non-empty UIDs, the default is listed, chosen device used, missing → default, back to default.
+- [M4] Device change mid-recording (AirPods connecting, USB mic unplugged): capture no longer stops. The recorder keeps the samples so far, rebuilds on the device now available, restarts, and appends (first-sample timing and drop counts carried over). The message says which device took over; if none can, it says the audio after the change was lost. `DeviceChangeTests` start a real capture, trigger the handler that `AVAudioEngineConfigurationChange` triggers, and check capture continues and samples span both sides. A real configuration change during the test run was also recovered: `input device changed while recording; continuing on MacBook Air Microphone samples_so_far=171`.
+- [M4] `make test`: Swift `Test run with 113 tests in 23 suites passed`; Rust 16 + 10 + 4.
 
 ## Blocked on human
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.

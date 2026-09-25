@@ -98,6 +98,25 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         modelMenu.addItem(manage)
         model.submenu = modelMenu
         menu.addItem(model)
+
+        let mic = NSMenuItem(title: "Microphone: \(controller.microphoneName ?? "System Default")", action: nil, keyEquivalent: "")
+        let micMenu = NSMenu()
+        let chosen = controller.preferredMicrophoneUID
+        let defaultName = AudioDevices.defaultInput()?.name
+        let followDefault = NSMenuItem(title: "System Default" + (defaultName.map { " (\($0))" } ?? ""), action: #selector(chooseMicrophone(_:)), keyEquivalent: "")
+        followDefault.target = self
+        followDefault.state = chosen == nil ? .on : .off
+        micMenu.addItem(followDefault)
+        micMenu.addItem(.separator())
+        for device in AudioDevices.inputDevices() {
+            let item = NSMenuItem(title: device.name, action: #selector(chooseMicrophone(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = device.uid
+            item.state = device.uid == chosen ? .on : .off
+            micMenu.addItem(item)
+        }
+        mic.submenu = micMenu
+        menu.addItem(mic)
         let managerItem = NSMenuItem(title: "Model Manager…", action: #selector(openModelManager), keyEquivalent: "m")
         managerItem.target = self
         menu.addItem(managerItem)
@@ -138,6 +157,10 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
 
     /// Opens the Model Manager (e.g. first launch with no model).
     public func showModelManager() { modelWindow.show() }
+    @objc private func chooseMicrophone(_ sender: NSMenuItem) {
+        controller.selectMicrophone(uid: sender.representedObject as? String)
+    }
+
     @objc private func retryHotkey() { controller.startHotkey(prompt: true) }
 
     private lazy var permissionsWindow: PermissionsWindowController = {

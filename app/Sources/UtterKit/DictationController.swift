@@ -130,24 +130,50 @@ public final class DictationController {
     private func prepareMicrophone(_ access: PermissionSnapshot.Mic) {
         switch access {
         case .granted:
-            let recorder = self.recorder
             if micProblem == Self.micDeniedMessage || micProblem == Self.micNotAskedMessage {
                 micProblem = nil
                 if case .failed = state, modelLoaded { state = .ready }
             }
-            audioQueue.async {
-                do { try recorder.prepare() } catch let error as AudioRecorderError {
-                    Task { @MainActor in
-                        self.micProblem = self.message(for: error)
-                        self.fail(self.message(for: error))
-                    }
-                } catch {}
-            }
+            applyMicrophoneChoice(UserDefaults.standard.string(forKey: AudioDevices.preferenceKey))
         case .notDetermined:
             micProblem = Self.micNotAskedMessage
         case .denied:
             micProblem = Self.micDeniedMessage
             fail(Self.micDeniedMessage)
+        }
+    }
+
+    /// The input device in use, for the menu (updated after each graph build).
+    public private(set) var microphoneName: String?
+    public var preferredMicrophoneUID: String? { UserDefaults.standard.string(forKey: AudioDevices.preferenceKey) }
+
+    /// Chooses the microphone (nil = follow the system default) and persists it.
+    public func selectMicrophone(uid: String?) {
+        UserDefaults.standard.set(uid, forKey: AudioDevices.preferenceKey)
+        applyMicrophoneChoice(uid)
+    }
+
+    private func applyMicrophoneChoice(_ uid: String?) {
+        let recorder = self.recorder
+        audioQueue.async {
+            do {
+                try recorder.setPreferredDevice(uid: uid)
+                try recorder.prepare()
+                let name = recorder.activeDevice?.name
+                let missing = recorder.missingPreferredDevice
+                Task { @MainActor in
+                    self.microphoneName = name
+                    if missing != nil, let name {
+                        self.lastMessage = "Your chosen microphone isn't connected, so Utter is using \(name)."
+                    }
+                    self.onStateChange?(self.state)
+                }
+            } catch let error as AudioRecorderError {
+                Task { @MainActor in
+                    self.micProblem = self.message(for: error)
+                    self.fail(self.message(for: error))
+                }
+            } catch {}
         }
     }
 
@@ -406,7 +432,8 @@ public final class DictationController {
             return
         }
         if recording.interruptedByDeviceChange {
-            lastMessage = "The microphone changed while you were speaking; only the part before the change was transcribed."
+            lastMessage = recording.continuedOnDevice.map { "The microphone changed while you were speaking; Utter kept listening on \($0)." }
+                ?? "The microphone changed while you were speaking; only the part before the change was transcribed."
         }
         let engine = self.engine
         let samples = recording.samples
