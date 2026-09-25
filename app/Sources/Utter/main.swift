@@ -21,6 +21,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let menu = StatusMenuController(controller: controller)
+        // Sparkle only in the real bundle (not the bench's second instance).
+        if ProcessInfo.processInfo.environment["UTTER_BENCH_SECOND_INSTANCE"] == nil {
+            menu.updates = Updates()
+        }
         controller.onNeedsModel = { [weak menu] in menu?.showModelManager() }
         controller.onNeedsPermissions = { [weak menu] in menu?.showPermissions() }
         self.menu = menu

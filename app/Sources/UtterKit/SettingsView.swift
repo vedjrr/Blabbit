@@ -50,6 +50,9 @@ public final class SettingsModel {
         }
     }
 
+    /// Sparkle (nil in tests and when run outside the app bundle).
+    var updates: Updates?
+
     /// Called when General settings that the menu bar controls change.
     var onGeneralChange: ((GeneralSettings) -> Void)?
 
@@ -182,11 +185,19 @@ struct SettingsView: View {
             Text("It always appears while you dictate. With the icon hidden, open Settings by launching Utter again.")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Open setup at launch when a permission is missing", isOn: $model.general.showSetupWhenNeeded)
-            LabeledContent("Updates") {
-                Button("Check for Updates…") { NSWorkspace.shared.open(Self.releasesURL) }
+            if let updates = model.updates {
+                Toggle("Check for updates automatically", isOn: Binding(get: { updates.automaticallyChecks },
+                                                                        set: { updates.automaticallyChecks = $0 }))
+                LabeledContent("Updates") {
+                    Button("Check for Updates…") { updates.checkForUpdates() }
+                }
+                Text("Updates come from Utter's GitHub releases and are verified with Utter's signing key before install.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                LabeledContent("Updates") {
+                    Button("Open Releases Page…") { NSWorkspace.shared.open(Self.releasesURL) }
+                }
             }
-            Text("Opens Utter's releases page. Automatic updates arrive with the signed release build.")
-                .font(.caption).foregroundStyle(.secondary)
             LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development build")
         }
         .formStyle(.grouped)
@@ -478,8 +489,9 @@ public final class SettingsWindowController {
     private let openModelManager: () -> Void
     private let changeShortcut: () -> Void
 
-    public init(controller: DictationController, openModelManager: @escaping () -> Void, changeShortcut: @escaping () -> Void) {
+    public init(controller: DictationController, updates: Updates? = nil, openModelManager: @escaping () -> Void, changeShortcut: @escaping () -> Void) {
         model = SettingsModel(controller: controller)
+        model.updates = updates
         self.openModelManager = openModelManager
         self.changeShortcut = changeShortcut
     }

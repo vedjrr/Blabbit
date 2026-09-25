@@ -8,6 +8,8 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     private let controller: DictationController
     private let modelWindow: ModelManagerWindowController
 
+    public var updates: Updates?
+
     public init(controller: DictationController) {
         self.controller = controller
         self.modelWindow = ModelManagerWindowController(manager: controller.models)
@@ -175,6 +177,11 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
+        if updates != nil {
+            let check = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+            check.target = self
+            menu.addItem(check)
+        }
         let log = NSMenuItem(title: "Open Log", action: #selector(openLog), keyEquivalent: "")
         log.target = self
         menu.addItem(log)
@@ -197,7 +204,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
 
     private lazy var historyWindow = HistoryWindowController(controller: controller)
     private lazy var settingsWindow: SettingsWindowController = {
-        let window = SettingsWindowController(controller: controller,
+        let window = SettingsWindowController(controller: controller, updates: updates,
                                               openModelManager: { [weak self] in self?.modelWindow.show() },
                                               changeShortcut: { [weak self] in self?.changeShortcut() })
         window.model.onGeneralChange = { [weak self] general in
@@ -208,6 +215,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     }()
 
     @objc private func openHistory() { historyWindow.show() }
+    @objc private func checkForUpdates() { updates?.checkForUpdates() }
 
     @objc private func copyLastDictation() {
         guard let text = controller.lastPipeline?.final else { return }

@@ -10,6 +10,8 @@
 	<string>dev.utter.mac</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleName</key>
 	<string>Utter</string>
 	<key>CFBundleDisplayName</key>
@@ -28,6 +30,10 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Utter records your voice only while you hold the dictation shortcut, and transcribes it on this Mac.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/vedjrr/Utter/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>S3w7gf/+R83bFMQ4nl70jhd/2QPKo54vt/cU7xcE6XY=</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Utter contributors. MIT License.</string>
 </dict>

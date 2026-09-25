@@ -14,6 +14,8 @@ let package = Package(
     dependencies: [
         // History (SQLite + FTS5), ADR-009. MIT.
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
+        // Updates (G7), ADR-011. MIT.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
     ],
     targets: [
         .target(
@@ -39,7 +41,7 @@ let package = Package(
         ),
         .target(
             name: "UtterKit",
-            dependencies: ["UtterCore", .product(name: "GRDB", package: "GRDB.swift")],
+            dependencies: ["UtterCore", .product(name: "GRDB", package: "GRDB.swift"), .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/UtterKit",
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
@@ -51,7 +53,9 @@ let package = Package(
         .executableTarget(
             name: "Utter",
             dependencies: ["UtterKit"],
-            path: "Sources/Utter"
+            path: "Sources/Utter",
+            // Sparkle.framework is embedded in Contents/Frameworks (see `make bundle`).
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         // `make bench`: measures the real app, models, capture and insertion (never bundled).
         .executableTarget(

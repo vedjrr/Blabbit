@@ -18,6 +18,7 @@ BUNDLE    := $(BUILD)/$(APP_NAME).app
 # SwiftPM's default "swiftbuild" backend intermittently fails under the CLT
 # ("plugin for module 'TestingMacros' not found", "unable to resolve Swift module
 # dependency"); the native backend is reliable here (ADR-001).
+SPARKLE    = $(BUNDLE)/Contents/Frameworks/Sparkle.framework/Versions/B
 SWIFT_FLAGS := -c release --arch arm64 --build-system native
 CLT_TESTING := /Library/Developer/CommandLineTools/Library/Developer
 SWIFT_TEST_FLAGS := -Xswiftc -F -Xswiftc $(CLT_TESTING)/Frameworks -Xlinker -F -Xlinker $(CLT_TESTING)/Frameworks \
@@ -51,6 +52,15 @@ bundle: app
 	mkdir -p "$(BUNDLE)/Contents/MacOS" "$(BUNDLE)/Contents/Resources"
 	install -m 755 "$(SWIFT_OUT)/$(APP_NAME)" "$(BUNDLE)/Contents/MacOS/$(APP_NAME)"
 	install -m 644 "$(APP)/Resources/Info.plist" "$(BUNDLE)/Contents/Info.plist"
+	install -m 644 "$(APP)/Resources/AppIcon.icns" "$(BUNDLE)/Contents/Resources/AppIcon.icns"
+	mkdir -p "$(BUNDLE)/Contents/Frameworks"
+	ditto "$(SWIFT_OUT)/Sparkle.framework" "$(BUNDLE)/Contents/Frameworks/Sparkle.framework"
+	@# Sign Sparkle's helpers inside-out (Sparkle's documented order), then the app.
+	codesign --force --sign "$(SIGN_ID)" --options runtime "$(SPARKLE)/XPCServices/Installer.xpc"
+	codesign --force --sign "$(SIGN_ID)" --options runtime --preserve-metadata=entitlements "$(SPARKLE)/XPCServices/Downloader.xpc"
+	codesign --force --sign "$(SIGN_ID)" --options runtime "$(SPARKLE)/Autoupdate"
+	codesign --force --sign "$(SIGN_ID)" --options runtime "$(SPARKLE)/Updater.app"
+	codesign --force --sign "$(SIGN_ID)" --options runtime "$(BUNDLE)/Contents/Frameworks/Sparkle.framework"
 	codesign --force --sign "$(SIGN_ID)" --options runtime \
 		--entitlements "$(APP)/Resources/Utter.entitlements" "$(BUNDLE)"
 	@echo "Built $(BUNDLE)"
