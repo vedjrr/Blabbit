@@ -2,8 +2,8 @@ STATUS: IN_PROGRESS
 
 # Progress (loop state — Claude owns this file)
 
-Current milestone: M6 — benchmarks & performance
-Iteration: 9
+Current milestone: M7 — distribution & polish
+Iteration: 10
 
 ## Environment (verified 2026-09-24)
 - Apple M4, 16 GB, macOS 27.0 (26A428), arm64.
@@ -12,7 +12,7 @@ Iteration: 9
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M6 gate: critic re-review #3 after fixing review #2 (Whisper window padding).
+- M7: Distribution & polish (G7) and G8 "better than Handy" numbers. Start with the original app icon + Info.plist polish, README.md, docs/RELEASING.md, uninstall instructions, Homebrew Cask draft, Sparkle 2 (EdDSA feed); `make dmg` already exists (needs Developer ID: human).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -24,6 +24,7 @@ Iteration: 9
 - [x] M3 — Model manager + all models. Critic re-review #2 `VERDICT: PASS`, zero BLOCKERs (2026-09-25); it also ran a real Hugging Face pause → segmented resume → verify of Moonshine through the shipped downloader. Its 3 MAJORs and most MINORs fixed afterwards (see Done).
 - [x] M4 — Overlay, audio robustness, permissions (automated). Critic re-review #3 `VERDICT: PASS`, zero BLOCKERs (2026-09-25). **Pending your G1 decision** (Keep Microphone Ready default; see Blocked on human). Its MAJORs and MINORs were fixed afterwards. Live checks (H) deferred.
 - [x] M5 — Processing, vocabulary, history, settings. Critic re-review #2 `VERDICT: PASS`, zero BLOCKERs (2026-09-25); its MAJORs and MINORs fixed afterwards. Ollama/Anthropic live runs are (H).
+- [x] M6 — Benchmarks & performance. Critic re-review #3 `VERDICT: PASS`, zero BLOCKERs/MAJORs (2026-09-25); its MINORs fixed afterwards. Lid-open `make bench` and the nettop log are (H).
 
 ## Done (with evidence)
 - [M0] Handy cloned read-only to `/tmp/handy-ref` (v0.9.7-6-g8f9cf53). Component map → `docs/ARCHITECTURE.md` §1.
@@ -233,6 +234,8 @@ Iteration: 9
 - [M6] Critic re-review #2 → FAIL (1 BLOCKER): on Whisper, which pads every call to a 30 s window, releasing during a segment of a 10–30 s recording cost two encoder passes against one (critic: Large v3 17 s 4229 vs 2681 ms). Fixed with a per-family policy (ADR-013): Whisper segments only past 30 s, and only in 20–29.5 s pieces. Tests with the real Whisper Medium: under 30 s nothing segments; a release right after a segment starts at 45 s is ≤ 1.1× one-shot. The Parakeet mid-segment test uses 25 s (the fixture builder had always produced 31 s; fixed) and 1.1×. `make models` now also fetches Whisper Medium. A recording that ends in failure drops its transcriber, and the tail runs on the transcriber's own queue.
 - [M6] **Bench, clean tree** (`bench/results/2026-09-25.json`, git `db768fc`): long dictation Parakeet V3 302 s 14892.7 → 305 ms after release (19 segments, WER 0.306 → 0.281); Whisper Medium 62 s 4260.4 → 1094.1 ms (WER 0.179 → 0.171); Whisper Medium 21 s: no segments. Release right after a segment starts: Parakeet 27 s 437.5 vs 459.2 ms; Whisper Medium 27 s (no segment) 1641.3 vs 1684.2 ms; Whisper Medium 47 s 3062 vs 2982.6 ms.
 - [M6] `make test`: Rust 33 + 10 + 5; Swift `Test run with 160 tests in 33 suites passed`.
+
+- [M6] Critic re-review #3 → **PASS** (its own probe: release ≤ 1.03× one-shot on Whisper Large v3 and Turbo across 17–35 s; 3/3 reruns of the incremental suite green). MINORs fixed: the worst-case rows now end the recording where the segment started and use the median of 3 runs each, with Moonshine, SenseVoice and Whisper Large added (`bench/results/2026-09-25.json`, git `32a5914`): parakeet-tdt-0.6b-v3 16 s 289.8 vs 270 ms; moonshine-base 16 s 603.9 vs 1578.5 ms; SenseVoiceSmall 16 s 188.2 vs 161.1 ms; whisper-medium 27.2 s 1661.2 vs 1652.9 ms; whisper-medium 32 s 2874.2 vs 2916.5 ms; whisper-large-v3 32 s 6312.9 vs 6543.1 ms. `append` is documented for one serial queue and re-checks `busy`.
 
 ## Blocked on human
 - **When the lid is open and the screen unlocked (5 minutes):** run `cd "/Users/ved/Documents 2/utter-kit" && make bench`. This records the parts that need a live microphone and window server: capture start cold/warm, AX insert + verify into a real text view, and the live-audio tests (`make test`). Utter stays usable during the run; a second copy starts three times for ~5 s and only listens.
