@@ -8,6 +8,15 @@ struct FakeReader: PasteboardReading {
     func readItems() -> [[(type: String, data: Data?)]]? { items }
 }
 
+/// An app that hangs while serving promised clipboard data.
+struct HangingReader: PasteboardReading {
+    var seconds: TimeInterval
+    func readItems() -> [[(type: String, data: Data?)]]? {
+        Thread.sleep(forTimeInterval: seconds)
+        return [[("public.utf8-plain-text", Data("late".utf8))]]
+    }
+}
+
 /// Uses private named pasteboards so tests never touch the user's clipboard.
 @MainActor @Suite struct ClipboardTests {
     func makePasteboard() -> NSPasteboard {
@@ -82,7 +91,7 @@ struct FakeReader: PasteboardReading {
         }
     }
 
-    @Test func noReceiptStillRestoresAfterTimeout() async {
+    @Test func noReceiptKeepsTranscriptOnClipboard() async {
         let pb = makePasteboard()
         defer { pb.releaseGlobally() }
         pb.clearContents()
@@ -91,7 +100,9 @@ struct FakeReader: PasteboardReading {
         inserter.receiptTimeout = .milliseconds(150)
         let outcome = await inserter.insert("nobody reads this")
         #expect(outcome == .pasted(receipt: false))
-        #expect(pb.string(forType: .string) == "SENTINEL")
+        // The paste never landed, so the words stay on the clipboard as plain text.
+        #expect(pb.string(forType: .string) == "nobody reads this")
+        #expect(!(pb.types ?? []).contains { PasteInserter.transientMarkers.contains($0) })
     }
 
     @Test func doesNotClobberANewerCopy() async {
@@ -182,6 +193,26 @@ struct FakeReader: PasteboardReading {
         let big = FakeReader(items: [[("public.png", Data(count: 2_000))]])
         #expect(!PasteboardSnapshot.capture(from: big, maxBytes: 1_000).readable)
         #expect(PasteboardSnapshot.capture(from: big, maxBytes: 4_000).readable)
+    }
+
+    @Test func hangingClipboardOwnerCannotStallInsertion() async {
+        let pb = makePasteboard()
+        defer { pb.releaseGlobally() }
+        pb.clearContents()
+        pb.setString("SENTINEL", forType: .string)
+        let inserter = PasteInserter(pasteboard: pb, reader: HangingReader(seconds: 3), checkSecureInput: false) {
+            _ = pb.string(forType: .string)
+            return nil
+        }
+        inserter.snapshotTimeout = 0.2
+        inserter.quietPeriod = .milliseconds(20)
+        let started = Date()
+        let outcome = await inserter.insert("not stalled")
+        #expect(Date().timeIntervalSince(started) < 1.5)
+        #expect(outcome == .pasted(receipt: true))
+        #expect(inserter.lastTiming.clipboardReadable == false)
+        // Unreadable, so never "restored": the transcript stays as plain text.
+        #expect(pb.string(forType: .string) == "not stalled")
     }
 
     @Test func declinedReadLeavesTranscriptAsPlainClipboardText() async {

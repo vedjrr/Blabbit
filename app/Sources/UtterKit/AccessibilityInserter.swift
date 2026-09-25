@@ -12,6 +12,12 @@ public protocol FocusedTextElement {
     var canSetSelectedText: Bool { get }
     /// Replaces the selection (inserts at the caret). Returns false on AX error.
     func setSelectedText(_ text: String) -> Bool
+    /// Process that owns the element (the app that will receive the text).
+    var pid: pid_t? { get }
+}
+
+extension FocusedTextElement {
+    public var pid: pid_t? { nil }
 }
 
 public enum AXInsertResult: Equatable, Sendable {

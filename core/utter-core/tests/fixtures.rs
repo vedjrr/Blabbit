@@ -28,10 +28,19 @@ fn fixtures() -> Vec<(PathBuf, String)> {
     out
 }
 
+/// Real-model tests run one at a time: they compete for the GPU and CPU, and
+/// the status-query test measures wall-clock latency.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 const PARAKEET_V3: &str = "parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf";
 
 #[test]
 fn parakeet_v3_transcribes_fixtures_with_one_load() {
+    let _serial = serial();
     let engine = Engine::new();
     engine.load_gguf(&require_model(PARAKEET_V3)).expect("load");
     let (mut errors, mut words) = (0, 0);
@@ -55,6 +64,7 @@ fn parakeet_v3_transcribes_fixtures_with_one_load() {
 
 #[test]
 fn five_minute_recording_is_not_truncated() {
+    let _serial = serial();
     let engine = Engine::new();
     engine.load_gguf(&require_model(PARAKEET_V3)).expect("load");
     // 5 min of real speech: fixtures separated by 1 s pauses, repeated.
@@ -94,6 +104,7 @@ fn five_minute_recording_is_not_truncated() {
 /// calls them on the main thread while a long load or inference is running.
 #[test]
 fn status_queries_do_not_block_during_load_or_inference() {
+    let _serial = serial();
     use std::sync::Arc;
     use std::time::{Duration, Instant};
     let engine = Arc::new(Engine::new());
@@ -101,13 +112,25 @@ fn status_queries_do_not_block_during_load_or_inference() {
 
     let e = engine.clone();
     let loader = std::thread::spawn(move || e.load_gguf(&model).map(|_| ()));
-    let mut worst = Duration::ZERO;
+    // A query that waited on the model lock would take as long as the whole
+    // load or inference (hundreds of ms). Scheduler preemption on a busy
+    // desktop can stretch a few samples, so bound the rate of slow queries and
+    // keep the worst case far below a lock wait.
+    let slow_limit = Duration::from_millis(1);
+    let (mut worst, mut slow, mut total) = (Duration::ZERO, 0u64, 0u64);
+    let mut record = |d: Duration| {
+        worst = worst.max(d);
+        total += 1;
+        if d > slow_limit {
+            slow += 1;
+        }
+    };
     while !loader.is_finished() {
         let t = Instant::now();
         let _ = engine.is_loaded();
         let _ = engine.metadata();
         let _ = engine.load_count();
-        worst = worst.max(t.elapsed());
+        record(t.elapsed());
     }
     loader.join().unwrap().expect("load");
     assert!(engine.is_loaded());
@@ -117,17 +140,23 @@ fn status_queries_do_not_block_during_load_or_inference() {
     let one = audio::load_wav_16k_mono(clip).unwrap();
     let pcm: Vec<f32> = one.iter().cycle().take(60 * audio::SAMPLE_RATE as usize).copied().collect();
     let e = engine.clone();
+    let started = Instant::now();
     let worker = std::thread::spawn(move || e.transcribe(&pcm, &TranscribeOptions::default()).map(|_| ()));
     let mut polls = 0;
     while !worker.is_finished() {
         let t = Instant::now();
         assert!(engine.is_loaded());
         assert!(engine.metadata().is_some());
-        worst = worst.max(t.elapsed());
+        record(t.elapsed());
         polls += 1;
     }
+    let inference = started.elapsed();
     worker.join().unwrap().expect("transcribe");
-    eprintln!("status polls during inference={polls} worst_query={worst:?}");
+    eprintln!(
+        "status polls during inference={polls} total_polls={total} slow_over_1ms={slow} worst_query={worst:?} inference={inference:?}"
+    );
     assert!(polls > 10, "inference finished too fast to exercise contention");
-    assert!(worst < Duration::from_millis(5), "a status query blocked for {worst:?}");
+    assert!(slow * 1000 <= total, "{slow} of {total} status queries took over 1 ms");
+    assert!(worst < Duration::from_millis(50), "a status query blocked for {worst:?}");
+    assert!(worst * 10 < inference, "worst query {worst:?} is close to the inference time {inference:?}");
 }

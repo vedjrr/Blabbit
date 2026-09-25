@@ -18,6 +18,8 @@ public final class DictationController {
         didSet { onStateChange?(state) }
     }
     public var onStateChange: ((State) -> Void)?
+    /// Fired after a dictation that was blocked or couldn't be confirmed.
+    public var onAttention: ((AttentionCue) -> Void)?
     public private(set) var modelName = ModelLocation.defaultModelName
     public private(set) var lastMessage: String?
     /// Shown while secure input is sustained (kept apart from `lastMessage`).
@@ -247,7 +249,8 @@ public final class DictationController {
             return
         }
         let transcribedNs = MonoClock.nowNs()
-        if let skipped = result.skipped {
+        let skipped = result.skipped.map { "\($0)" } ?? (TranscriptPolicy.isBlank(result.text) ? "empty" : nil)
+        if let skipped {
             logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs,
                          report: InsertReport(result: .failed("skipped_\(skipped)"), bundleID: nil))
             state = .ready
@@ -256,24 +259,16 @@ public final class DictationController {
         let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let report = await inserter.insert(result.text, bundleID: bundleID)
         logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, report: report)
-        switch report.result {
-        case .inserted, .unverified:
-            if let paste = report.paste, !paste.clipboardReadable {
-                lastMessage = "Utter could not save your clipboard first, so the transcript was left on it. To keep your clipboard, allow Utter under System Settings → Privacy & Security → Paste from Other Apps."
-            }
-            state = .ready
-        case .copiedToClipboard, .handledByScript:
-            state = .ready
-        case .blockedBySecureInput:
-            let action = SecureInputFallback.action(secureFieldFocused: report.secureFieldFocused)
-            if action.copyToClipboard { Self.putOnClipboard(result.text) }
-            lastMessage = action.message
-            state = .ready
-        case .failed(let message):
-            // Keep the words: leave them on the clipboard rather than lose them.
-            Self.putOnClipboard(result.text)
-            fail("\(SecureInputFallback.failedMessagePrefix) (\(message))")
+        let plan = InsertionOutcome.plan(for: report)
+        // Keep the words rather than lose them when they may not have gone in.
+        if plan.copyToClipboard { Self.putOnClipboard(inserter.settings.finalText(result.text)) }
+        if let failure = plan.failure {
+            fail(failure)
+            return
         }
+        if let message = plan.message { lastMessage = message }
+        state = .ready
+        if let cue = plan.cue { onAttention?(cue) }
     }
 
     private static func putOnClipboard(_ text: String) {

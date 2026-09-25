@@ -13,8 +13,32 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
-        controller.onStateChange = { [weak self] state in self?.updateIcon(for: state) }
+        controller.onStateChange = { [weak self] state in
+            self?.cueReset?.cancel()
+            self?.updateIcon(for: state)
+        }
+        controller.onAttention = { [weak self] cue in self?.showCue(cue) }
         updateIcon(for: controller.state)
+    }
+
+    private var cueReset: Task<Void, Never>?
+    /// How long the attention icon stays before the normal icon returns.
+    static let cueDuration: Duration = .seconds(4)
+
+    /// Swaps the icon for a few seconds so a blocked or unconfirmed dictation
+    /// is noticed without opening the menu; the tooltip carries the message.
+    private func showCue(_ cue: AttentionCue) {
+        let symbol = cue == .blocked ? "lock.fill" : "exclamationmark.bubble"
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: controller.lastMessage ?? "Utter")
+        image?.isTemplate = true
+        statusItem.button?.image = image
+        statusItem.button?.toolTip = controller.lastMessage
+        cueReset?.cancel()
+        cueReset = Task { @MainActor [weak self] in
+            guard (try? await Task.sleep(for: Self.cueDuration)) != nil, let self else { return }
+            self.statusItem.button?.toolTip = nil
+            self.updateIcon(for: self.controller.state)
+        }
     }
 
     private func updateIcon(for state: DictationController.State) {

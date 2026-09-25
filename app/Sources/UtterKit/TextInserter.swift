@@ -4,7 +4,9 @@ import AppKit
 public struct InsertReport: Sendable {
     public enum Result: Equatable, Sendable {
         case inserted(InsertionStrategy)
-        /// AX changed the field but not as expected; the text is probably there.
+        /// The text may or may not have gone in (AX read-back inconclusive, or
+        /// the target never read the pasted clipboard). Never retried, so no
+        /// duplicate text; the caller keeps the words on the clipboard.
         case unverified(InsertionStrategy)
         /// Secure input or a password field: nothing was inserted.
         case blockedBySecureInput
@@ -65,10 +67,12 @@ public final class TextInserter {
         self.typer = typer
     }
 
-    /// Where the target app lives on disk, for detecting Electron/Chromium apps.
-    private func bundleURL(_ bundleID: String?) -> URL? {
-        guard let bundleID else { return nil }
-        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+    /// The app that owns the focused element. It can differ from the frontmost
+    /// app (Spotlight-style non-activating panels), and its running bundle is
+    /// the copy actually in use.
+    nonisolated static func owner(of pid: pid_t?) -> (bundleID: String?, bundleURL: URL?)? {
+        guard let pid, let app = NSRunningApplication(processIdentifier: pid) else { return nil }
+        return (app.bundleIdentifier, app.bundleURL)
     }
 
     private func onAXQueue<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
@@ -78,11 +82,15 @@ public final class TextInserter {
     }
 
     public func insert(_ rawText: String, bundleID: String?) async -> InsertReport {
+        // Noise can transcribe to nothing; never paste an empty string or send a bare Enter.
+        guard !TranscriptPolicy.isBlank(rawText) else {
+            return InsertReport(result: .failed("empty transcript"), bundleID: bundleID)
+        }
         let text = settings.finalText(rawText)
         var report = await insertWithoutExtras(text, bundleID: bundleID)
         switch report.result {
         case .inserted, .unverified, .handledByScript:
-            if settings.copyToClipboard { paste.board.clearContents(); paste.board.setString(rawText, forType: .string) }
+            if settings.copyToClipboard { paste.board.clearContents(); paste.board.setString(text, forType: .string) }
             // Never submit something we couldn't verify, or text a script consumed.
             if settings.autoSubmit != .off, case .inserted = report.result {
                 keys(settings.autoSubmit)
@@ -99,7 +107,17 @@ public final class TextInserter {
         // Secure input blocks every method, including clipboard-only and scripts:
         // Utter never outputs dictated text while a password may be being typed.
         let focus = self.focus
-        let secureField = await onAXQueue { focus().map(AccessibilityInserter.isSecure) ?? false }
+        let table = self.table
+        let frontmost = bundleID
+        // One trip to the AX queue: password check, owner of the focused field,
+        // and the chain (the Electron check touches the disk, so not on main).
+        let (secureField, ownerID, chain) = await onAXQueue { () -> (Bool, String?, [InsertionStrategy]) in
+            let element = focus()
+            let owner = Self.owner(of: element?.pid)
+            let id = owner?.bundleID ?? frontmost
+            return (element.map(AccessibilityInserter.isSecure) ?? false, id, table.chain(for: id, bundleURL: owner?.bundleURL))
+        }
+        report.bundleID = ownerID
         if secureField {
             report.result = .blockedBySecureInput
             report.secureFieldFocused = true
@@ -124,7 +142,7 @@ public final class TextInserter {
             break
         }
 
-        for strategy in table.chain(for: bundleID, bundleURL: bundleURL(bundleID)) {
+        for strategy in chain {
             switch strategy {
             case .accessibility:
                 let result = await onAXQueue { AccessibilityInserter.insert(text, into: focus()) }
@@ -152,8 +170,14 @@ public final class TextInserter {
                 let outcome = await paste.insert(text)
                 report.paste = paste.lastTiming
                 switch outcome {
-                case .pasted:
+                case .pasted(receipt: true):
                     report.result = .inserted(.paste)
+                    return report
+                case .pasted(receipt: false):
+                    // Nothing read the clipboard. Don't fall through to typing: a
+                    // late read would still paste, and the text would appear twice.
+                    report.result = .unverified(.paste)
+                    report.attempts.append("paste: the app never read the clipboard")
                     return report
                 case .blockedBySecureInput:
                     report.result = .blockedBySecureInput
@@ -170,6 +194,10 @@ public final class TextInserter {
                 }
                 if let error = await typer(text) {
                     report.attempts.append("typing: \(error)")
+                    if error == TypingInserter.secureInputStoppedTyping {
+                        report.result = .blockedBySecureInput
+                        return report
+                    }
                 } else {
                     report.result = .inserted(.typing)
                     return report
@@ -216,11 +244,16 @@ public final class TextInserter {
             try? writer.close()
         }
         if exited.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
-            if exited.wait(timeout: .now() + 1) == .timedOut {
-                kill(process.processIdentifier, SIGKILL)
-                _ = exited.wait(timeout: .now() + 1)
-            }
+            // Children (e.g. `sleep` under `sh`) would outlive the shell and keep
+            // stdin open, so stop the whole tree. Collect it while the shell
+            // still exists: afterwards they are reparented to launchd.
+            let tree = [process.processIdentifier] + descendants(of: process.processIdentifier)
+            for pid in tree { kill(pid, SIGTERM) }
+            let shellExited = exited.wait(timeout: .now() + 1) == .success
+            // Anything that ignored SIGTERM (the shell or a child) goes now.
+            for pid in tree { kill(pid, SIGKILL) }
+            if !shellExited { _ = exited.wait(timeout: .now() + 1) }
+            try? writer.close()
             let seconds = Int(timeout.rounded(.up))
             return .failed("The insertion script took longer than \(seconds) second\(seconds == 1 ? "" : "s") and was stopped.")
         }
@@ -228,6 +261,21 @@ public final class TextInserter {
             return .failed("The insertion script failed (exit code \(process.terminationStatus)).")
         }
         return .handledByScript
+    }
+
+    /// All descendant PIDs of `pid` (children first found, depth-first).
+    nonisolated static func descendants(of pid: pid_t) -> [pid_t] {
+        var result: [pid_t] = []
+        var buffer = [pid_t](repeating: 0, count: 256)
+        let count = buffer.withUnsafeMutableBytes { raw in
+            proc_listchildpids(pid, raw.baseAddress, Int32(raw.count))
+        }
+        guard count > 0 else { return [] }
+        for child in buffer.prefix(Int(count)) where child > 0 {
+            result.append(child)
+            result.append(contentsOf: descendants(of: child))
+        }
+        return result
     }
 
     /// Enter / ⌃Enter / ⌘Enter after insertion (chat apps, terminals).

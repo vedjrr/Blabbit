@@ -109,6 +109,28 @@ import Testing
         #expect(report.result == .failed("The insertion script took longer than 1 second and was stopped."))
         #expect(Date().timeIntervalSince(started) < 3)
     }
+}
+
+/// Blocking script-runner tests. Not on the main actor: they block for
+/// seconds, which would stall the async main-actor tests running alongside.
+@Suite struct ScriptRunnerTests {
+    @Test func timedOutScriptTakesItsChildrenWithIt() throws {
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("utter-child-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+        let parent = try script("sleep 30 &\necho $! > '\(pidFile.path)'\nwait")
+        defer { try? FileManager.default.removeItem(at: parent) }
+        // Long enough for the shell to start and write the PID while other suites run in parallel.
+        let result = TextInserter.runScriptBlocking(path: parent.path, text: "x", timeout: 1.5)
+        #expect(result == .failed("The insertion script took longer than 2 seconds and was stopped."))
+        let child = try #require(pid_t(try String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+        // Reaped by launchd shortly after SIGKILL.
+        var alive = true
+        for _ in 0..<50 where alive {
+            alive = kill(child, 0) == 0
+            if alive { Thread.sleep(forTimeInterval: 0.02) }
+        }
+        #expect(!alive, "the script's child \(child) outlived the timeout")
+    }
 
     func script(_ body: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("utter-script-\(UUID().uuidString).sh")

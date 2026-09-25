@@ -58,6 +58,8 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     public var quietPeriod: Duration = .milliseconds(400)
     /// Give up waiting for a read after this long and restore anyway.
     public var receiptTimeout: Duration = .milliseconds(2000)
+    /// Longest the clipboard snapshot may take before it is given up on.
+    public var snapshotTimeout: TimeInterval = 1.0
     public private(set) var lastTiming = InsertTiming()
     /// The pasteboard this inserter writes to (general in the app, private in tests).
     public var board: NSPasteboard { pasteboard }
@@ -102,8 +104,21 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
         let snapshot: PasteboardSnapshot
         if access == .allowed {
             nonisolated(unsafe) let reader = self.reader
+            // The owner of promised clipboard data can hang while serving it; past
+            // the limit, treat the clipboard as unreadable (never restored).
+            let limit = snapshotTimeout
             snapshot = await withCheckedContinuation { continuation in
-                snapshotQueue.async { continuation.resume(returning: PasteboardSnapshot.capture(from: reader)) }
+                let once = OnceFlag()
+                snapshotQueue.async {
+                    let captured = PasteboardSnapshot.capture(from: reader)
+                    if once.claim() { continuation.resume(returning: captured) }
+                }
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + limit) {
+                    if once.claim() {
+                        Log.info("clipboard snapshot took longer than \(limit) s; treating it as unreadable")
+                        continuation.resume(returning: .unreadable)
+                    }
+                }
             }
         } else {
             // Reading would raise a macOS alert on every dictation (or is denied):
@@ -142,7 +157,15 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
             if elapsed < restoreDelay { try? await Task.sleep(for: restoreDelay - elapsed) }
         }
         let receipt = receiptCount > 0
-        restoreIfUnchanged(snapshot, ourChangeCount)
+        if receipt {
+            restoreIfUnchanged(snapshot, ourChangeCount)
+        } else {
+            // Nothing read the clipboard, so the text almost certainly did not go
+            // in (paste blocked, no text focus, a VM or remote desktop). Keep the
+            // transcript on the clipboard rather than restore it away.
+            leaveTranscriptIfUnchanged(ourChangeCount)
+            Log.info("paste not read by the target within \(receiptTimeout); transcript left on clipboard")
+        }
         return .pasted(receipt: receipt)
     }
 
@@ -186,13 +209,19 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
         }
         if snapshot.readable {
             snapshot.restore(to: pasteboard)
+            lastTiming.restoredNs = MonoClock.nowNs()
         } else {
-            // Nothing to put back: leave this transcript as plain clipboard text
-            // rather than a promise whose provider will serve the next dictation.
-            pasteboard.clearContents()
-            pasteboard.setString(pendingText, forType: .string)
+            leaveTranscriptIfUnchanged(ourChangeCount)
             Log.info("clipboard not restored (access=\(lastTiming.clipboardAccess)); transcript left on clipboard")
         }
+    }
+
+    /// Replaces our promise with the transcript as plain clipboard text (no
+    /// transient markers), so it neither vanishes nor serves the next dictation.
+    private func leaveTranscriptIfUnchanged(_ ourChangeCount: Int) {
+        guard pasteboard.changeCount == ourChangeCount else { return }
+        pasteboard.clearContents()
+        pasteboard.setString(pendingText, forType: .string)
         lastTiming.restoredNs = MonoClock.nowNs()
     }
 
@@ -228,4 +257,16 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     }
 
     public nonisolated func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {}
+}
+
+/// Lets exactly one of several racing callbacks win.
+final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if claimed { return false }
+        claimed = true
+        return true
+    }
 }

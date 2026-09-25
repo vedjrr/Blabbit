@@ -1,0 +1,8 @@
+# Rust real-model tests under CPU load: 8× 'yes > /dev/null' running (load average reached 14.34), 3 consecutive runs, 2026-09-25 10:40
+$ cargo test --release -p utter-core --test fixtures -- --nocapture   # ×3
+status polls during inference=7244350 total_polls=13237970 slow_over_1ms=98 worst_query=7.689958ms inference=5.380477625s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 44.18s
+status polls during inference=13244231 total_polls=19890339 slow_over_1ms=125 worst_query=15.281458ms inference=9.604777959s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 45.49s
+status polls during inference=7825892 total_polls=17132898 slow_over_1ms=147 worst_query=22.607834ms inference=6.8203715s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 50.74s

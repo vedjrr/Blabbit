@@ -27,6 +27,7 @@ Registry JSON, resumable downloader with SHA-256, UI, switching with unload, ada
 
 ## M4 — Overlay, audio robustness, permissions
 NSPanel overlay, device selection, route-change/disconnect handling, silence/short/long recordings, onboarding.
+- Carried from M2: the G2 "subtle overlay notice" for blocked (secure input) and unverified insertions moves into the overlay. Until then, M2 shows it as a 4 s menu bar icon change with the message as tooltip and in the menu (`InsertionOutcome`/`AttentionCue`).
 - **Gate:** G1 + G5 overlay/permissions/audio items pass.
 
 ## M5 — Processing, vocabulary, history, settings

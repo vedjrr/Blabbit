@@ -3,7 +3,7 @@ STATUS: IN_PROGRESS
 # Progress (loop state — Claude owns this file)
 
 Current milestone: M2 — insertion reliability
-Iteration: 4
+Iteration: 5
 
 ## Environment (verified 2026-09-24)
 - Apple M4, 16 GB, macOS 27.0 (26A428), arm64.
@@ -12,7 +12,7 @@ Iteration: 4
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M2 gate: critic re-review after fixing review #1 (4 BLOCKERs). Then merge branch `m3` (downloader + catalog + all 8 G3 models verified, already built in isolation) and continue M3 (FFI + Model Manager window).
+- M2 gate: critic re-review #3 after fixing review #2 (2 BLOCKERs). Then merge branch `m3` (downloader + catalog + all 8 G3 models verified, already built in isolation) and continue M3 (FFI + Model Manager window).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -80,6 +80,13 @@ Iteration: 4
 - [M2] Tests: Swift 79 in 15 suites (3 AX integration tests skipped: screen locked); Rust 14 + 3. The real-AppKit AX integration tests (`AXIntegrationTests`, helper `UtterAXHost` with a real NSTextView/NSSecureTextField) are **skipped while the screen is locked** (`CGSSessionScreenIsLocked=1`; the window server then exposes no window contents to AX). Three attempts confirmed this, then I changed approach to an explicit skip. They run automatically in an unlocked session.
 - [M2] Pre-re-review hardening: Carbon recordings ignore key state (Carbon sends its own key-up; key state may be unreadable under secure input), only the 10-min cap applies; apps not in the table that ship `Electron Framework.framework` or `Chromium Embedded Framework.framework` get paste-first (async AX tree → possible late write); secure input re-checked right before typing; paste delays clamped to 0–5000 ms; an AX-detected password field sets `secureFieldFocused`. Tests: `unlistedChromiumAppsPasteFirst`, `secureInputTurningOnBeforeTypingBlocksTyping`, Carbon watchdog cases.
 - [M2] **Real-AppKit AX integration tests now run and pass** (screen unlocked): `make test` → Rust 14 + 3 ok; Swift `Test run with 81 tests in 15 suites passed`, `Suite AXIntegrationTests passed` (insert at caret into NSTextView, NSSecureTextField detected + refused, production `AXFocusedElement.current()` path) → `evidence/m2/make_test_unlocked.log`. 3/3 consecutive runs green. Fix needed: macOS activation is cooperative, so the test brings the host forward (`AXFrontmost` + `NSRunningApplication.activate`) before reading system-wide focus.
+- [M2] Critic review #2 → FAIL (2 BLOCKERs, 4 MAJORs, 8 MINORs; the 4 review-#1 BLOCKERs confirmed fixed). All fixed:
+  (BLOCKER) Rust `status_queries_do_not_block…` flaked under load (worst 41 ms against a 5 ms bound; it ran alongside the other real-model tests). Real-model tests now run one at a time (a shared `Mutex`), and the test checks that ≤ 0.1 % of queries take over 1 ms, worst < 50 ms, and worst < inference/10 (a lock wait would take the whole inference). Under 8× `yes` (load average 14.34), 3/3 runs green: worst 7.7–22.6 ms, 98–147 slow out of 13–20 M, inference 5.4–9.6 s → `evidence/m2/status_queries_under_load.log`.
+  (BLOCKER) A paste nothing reads is no longer reported as success: `.pasted(receipt: false)` becomes `.unverified(.paste)`. The transcript stays on the clipboard as plain text (not restored away), no auto-submit, no typing fallback (a late read would duplicate), and the user sees a notice.
+  (MAJOR) Blank or whitespace-only transcripts are skipped (`skipped_empty`), never pasted, and never followed by a bare Enter. (MAJOR) Every `unverified` result keeps the words on the clipboard with a notice (`InsertionOutcome.plan`, a pure function with tests). (MAJOR) Visible cue: the menu bar icon becomes a lock (blocked) or a bubble (unverified) for 4 s, with the message as its tooltip. The overlay version is an M4 item in `docs/MILESTONES.md`, and ADR-006 was updated.
+  MINORs: ADR-006 names the residual >150 ms late-AX-write risk. A timed-out script's whole process tree is killed (`proc_listchildpids`, TERM then KILL; a test checks the child is gone). The chain is chosen by the focused element's owner (pid → `NSRunningApplication`, off main), so non-activating panels get their own chain. `copyToClipboard` copies the final text. Typing re-checks secure input before every chunk. The clipboard snapshot has a 1 s limit (a hanging owner = unreadable). Clipboard-replacing messages say so. ADR-008 watchdog text corrected.
+  Also fixed a test-only stall: blocking script tests ran on the main actor next to async ones; they moved to `ScriptRunnerTests`.
+- [M2] `make test` after review #2 fixes: Rust 14 + 3 ok; Swift `Test run with 89 tests in 16 suites passed`, AX integration tests executed and passed → `evidence/m2/make_test_unlocked.log`; 3/3 consecutive full runs green. `make build` → `Built …/build/Utter.app`.
 - [M2] `docs/TEST_CHECKLIST.md`: an expected strategy per app, how to read the `dictation` log line, a secure-keyboard-entry check, and a verified `defaults write` override recipe. PARITY: 15 rows now **Built**.
 
 ## Blocked on human

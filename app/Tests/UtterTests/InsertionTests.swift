@@ -326,6 +326,69 @@ final class FakeElement: FocusedTextElement, @unchecked Sendable {
         #expect(pb.string(forType: .string) == "SENTINEL")
     }
 
+    @Test func unreadPasteIsUnverifiedKeptAndNotSubmitted() async {
+        let pb = makePasteboard(); defer { pb.releaseGlobally() }
+        pb.clearContents(); pb.setString("SENTINEL", forType: .string)
+        var settings = InsertionSettings(); settings.autoSubmit = .enter
+        var submitted = false, typed = false
+        // The target never reads the clipboard (paste blocked, no focus, a VM).
+        let paste = PasteInserter(pasteboard: pb, checkSecureInput: false) { nil }
+        paste.receiptTimeout = .milliseconds(100)
+        let ins = TextInserter(settings: settings, paste: paste, keys: { _ in submitted = true }, checkSecureInput: false,
+                               focus: { nil }, typer: { _ in typed = true; return nil })
+        let report = await ins.insert("lost words", bundleID: "com.apple.Terminal")
+        #expect(report.result == .unverified(.paste))
+        #expect(report.attempts == ["paste: the app never read the clipboard"])
+        #expect(!submitted, "Enter could submit the user's own draft")
+        #expect(!typed, "typing after a possibly-late paste could duplicate the text")
+        #expect(pb.string(forType: .string) == "lost words")
+        let plan = InsertionOutcome.plan(for: report)
+        #expect(plan.cue == .unconfirmed && plan.message == InsertionOutcome.unconfirmedMessage)
+        #expect(!plan.copyToClipboard) // already there; a newer user copy must win
+    }
+
+    @Test(arguments: ["", "   ", "\n\t "])
+    func blankTranscriptIsNeverInserted(text: String) async {
+        let pb = makePasteboard(); defer { pb.releaseGlobally() }
+        pb.clearContents(); pb.setString("SENTINEL", forType: .string)
+        let field = FakeElement()
+        var settings = InsertionSettings(); settings.autoSubmit = .enter
+        var submitted = false
+        let paste = PasteInserter(pasteboard: pb, checkSecureInput: false) { nil }
+        nonisolated(unsafe) let f = field
+        let ins = TextInserter(settings: settings, paste: paste, keys: { _ in submitted = true }, checkSecureInput: false,
+                               focus: { f }, typer: { _ in nil })
+        let report = await ins.insert(text, bundleID: "com.apple.TextEdit")
+        #expect(report.result == .failed("empty transcript"))
+        #expect(field.writes == 0 && !submitted)
+        #expect(pb.string(forType: .string) == "SENTINEL")
+        #expect(TranscriptPolicy.isBlank(text))
+    }
+
+    @Test func copyToClipboardKeepsTheInsertedText() async {
+        let pb = makePasteboard(); defer { pb.releaseGlobally() }
+        var settings = InsertionSettings(); settings.copyToClipboard = true; settings.appendTrailingSpace = true
+        let paste = PasteInserter(pasteboard: pb, checkSecureInput: false) { nil }
+        let field = FakeElement()
+        nonisolated(unsafe) let f = field
+        let ins = TextInserter(settings: settings, paste: paste, checkSecureInput: false, focus: { f }, typer: { _ in nil })
+        let report = await ins.insert("hi", bundleID: "com.apple.TextEdit")
+        #expect(report.result == .inserted(.accessibility))
+        #expect(pb.string(forType: .string) == "hi ")
+    }
+
+    @Test func secureInputDuringTypingIsBlocked() async {
+        let pb = makePasteboard(); defer { pb.releaseGlobally() }
+        let paste = PasteInserter(pasteboard: pb, checkSecureInput: false) { nil }
+        let ins = TextInserter(paste: paste, checkSecureInput: false, focus: { nil },
+                               typer: { _ in TypingInserter.secureInputStoppedTyping })
+        ins.table.overrides["com.example.app"] = [.typing]
+        let report = await ins.insert("secret", bundleID: "com.example.app")
+        #expect(report.result == .blockedBySecureInput)
+        // And the real typer checks before every piece (returns before posting any event).
+        #expect(await TypingInserter.type("never typed", secureInputActive: { true }) == TypingInserter.secureInputStoppedTyping)
+    }
+
     @Test func autoSubmitSkippedWhenUnverified() async {
         let pb = makePasteboard(); defer { pb.releaseGlobally() }
         let field = FakeElement(); field.onWrite = .mangle
@@ -361,6 +424,36 @@ final class FakeElement: FocusedTextElement, @unchecked Sendable {
         }
         #expect(checks == 0)
         #expect(WatchdogPolicy.releaseReason(elapsed: 600, maxSeconds: 600, source: .carbon, keyDown: true, secureInput: true, keyUpChecks: &checks) == "max_length")
+    }
+
+    @Test func outcomePlans() {
+        func plan(_ result: InsertReport.Result, secureField: Bool = false, readable: Bool = true) -> InsertionOutcome.Plan {
+            var report = InsertReport(result: result, bundleID: nil)
+            report.secureFieldFocused = secureField
+            var timing = InsertTiming(); timing.clipboardReadable = readable
+            report.paste = timing
+            return InsertionOutcome.plan(for: report)
+        }
+        #expect(plan(.inserted(.accessibility)) == InsertionOutcome.Plan())
+        #expect(plan(.inserted(.paste), readable: false).message == InsertionOutcome.clipboardUnreadableMessage)
+        let axUnverified = plan(.unverified(.accessibility))
+        #expect(axUnverified.copyToClipboard && axUnverified.cue == .unconfirmed && axUnverified.failure == nil)
+        let blocked = plan(.blockedBySecureInput)
+        #expect(blocked.copyToClipboard && blocked.cue == .blocked)
+        let password = plan(.blockedBySecureInput, secureField: true)
+        #expect(!password.copyToClipboard && password.cue == .blocked)
+        let failed = plan(.failed("x"))
+        #expect(failed.copyToClipboard && failed.failure?.hasSuffix("(x)") == true)
+        #expect(plan(.copiedToClipboard) == InsertionOutcome.Plan())
+        #expect(plan(.handledByScript) == InsertionOutcome.Plan())
+    }
+
+    @Test func focusedElementOwnerIsResolved() throws {
+        #expect(TextInserter.owner(of: nil) == nil)
+        let finder = try #require(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first)
+        let owner = try #require(TextInserter.owner(of: finder.processIdentifier))
+        #expect(owner.bundleID == "com.apple.finder")
+        #expect(owner.bundleURL?.lastPathComponent == "Finder.app")
     }
 
     @Test func secureInputFallback() {

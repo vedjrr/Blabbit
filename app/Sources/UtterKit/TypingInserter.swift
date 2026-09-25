@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
 
@@ -46,15 +47,19 @@ public enum TypingInserter {
         return result
     }
 
+    public static let secureInputStoppedTyping = "Secure input turned on while typing, so Utter stopped."
+
     /// Posts the pieces. Returns an error message or nil.
     @MainActor
-    public static func type(_ text: String) async -> String? {
+    public static func type(_ text: String, secureInputActive: () -> Bool = { IsSecureEventInputEnabled() }) async -> String? {
         guard let source = CGEventSource(stateID: .combinedSessionState) else { return "Could not create keyboard events." }
         // Keys the user is still releasing must not merge with the typed text.
         source.setLocalEventsFilterDuringSuppressionState([.permitLocalMouseEvents, .permitSystemDefinedEvents],
                                                           state: .eventSuppressionStateSuppressionInterval)
         source.localEventsSuppressionInterval = 0.05
         for piece in pieces(for: text) {
+            // A long transcript takes a while to type; stop if a password field takes focus.
+            if secureInputActive() { return secureInputStoppedTyping }
             switch piece {
             case .newline:
                 guard let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
