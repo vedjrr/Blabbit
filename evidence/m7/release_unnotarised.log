@@ -1,0 +1,18 @@
+$ scripts/make-release.sh  (2026-09-25, git 20ae4e2)
+total 17800
+-rw-r--r--@ 1 ved  staff  8063160 Sep 25 23:16 Utter-0.1.0.dmg
+-rw-r--r--@ 1 ved  staff      863 Sep 25 23:16 appcast.xml
+$ codesign --verify --strict --deep (app inside the DMG)
+/var/folders/tw/0s43rxd11lj7zn3_69swkyzw0000gn/T/tmp.0pkaiGm6EH/Utter.app: valid on disk
+/var/folders/tw/0s43rxd11lj7zn3_69swkyzw0000gn/T/tmp.0pkaiGm6EH/Utter.app: satisfies its Designated Requirement
+Identifier=dev.utter.mac
+CodeDirectory v=20500 size=31481 flags=0x10000(runtime) hashes=973+7 location=embedded
+Authority=Apple Development: vedjr02@gmail.com (DH85TM4PS7)
+Authority=Apple Worldwide Developer Relations Certification Authority
+Authority=Apple Root CA
+TeamIdentifier=76CAQWCWR7
+$ codesign -d -r- (designated requirement: stable across versions, so TCC grants survive updates)
+designated => identifier "dev.utter.mac" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: vedjr02@gmail.com (DH85TM4PS7)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */
+$ spctl -a -vv (quarantined copy, as downloaded)
+/private/tmp/claude-501/-Users-ved-Documents-2-utter-kit/a3c14af9-64fa-4109-85b6-4a35a2802f4b/scratchpad/q/Utter.app: rejected
+origin=Apple Development: vedjr02@gmail.com (DH85TM4PS7)

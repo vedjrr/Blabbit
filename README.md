@@ -13,12 +13,17 @@ Local-first dictation for macOS. Hold a shortcut, speak, release: your words app
 ## Install
 
 1. Download `Utter-<version>.dmg` from [Releases](https://github.com/vedjrr/Utter/releases), open it, and drag **Utter** to **Applications**.
-   Or, once the cask is published: `brew install --cask utter`.
-2. Open Utter. A waveform icon appears in the menu bar and the setup window asks for:
+2. **First open only.** Utter is signed but not notarised by Apple (that needs a paid Apple Developer account), so macOS blocks the first launch:
+   - Open Utter. When macOS says it "can't verify" Utter, click **Done**.
+   - Open **System Settings → Privacy & Security**, scroll down to "Utter was blocked…", click **Open Anyway**, and confirm.
+
+   Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/Utter.app`, then open it normally.
+   Updates install from inside the app (Sparkle, signature-checked) and don't need this again.
+3. A waveform icon appears in the menu bar and the setup window asks for:
    - **Microphone**: to hear you while you hold the shortcut.
    - **Accessibility**: to see the shortcut in every app and put text at your cursor.
-3. The Model Manager opens if no model is installed. **Parakeet V3** (740 MB) is recommended.
-4. Click into any text field, hold **⌥ Space**, speak, release.
+4. The Models page opens if no model is installed. **Parakeet V3** (740 MB) is recommended; every model shows measured accuracy and speed scores.
+5. Click into any text field, hold **⌥ Space**, speak, release.
 
 Requirements: macOS 14 or later on Apple Silicon.
 
@@ -26,12 +31,12 @@ Requirements: macOS 14 or later on Apple Silicon.
 
 | | |
 |---|---|
-| Dictate | Hold ⌥ Space (or your shortcut), speak, release. Or choose **Press to Start and Stop** in the menu → Shortcut. |
-| Change the shortcut | Menu → Shortcut → Change Shortcut… |
-| Pick a mode | Menu → Mode (Exact, Clean, Code, Professional, Custom) |
-| Pick a microphone | Menu → Microphone. **Keep Microphone Ready** makes recording start instantly. |
-| Vocabulary, insertion, language, privacy | Menu → Settings… (⌘,) |
-| Past dictations | Menu → History… (⌘Y) |
+| Dictate | Hold ⌥ Space (or your shortcut), speak, release. Or click the menu bar icon → **Start Dictation**. |
+| Quick switches | Click the menu bar icon: model, mode (Exact, Clean, Code, Professional, Custom), microphone, last dictation. Right-click for the full menu. |
+| Change the shortcut | Settings → General → Dictation shortcut |
+| Models | Settings → Models: download, switch, verify, delete; accuracy and speed out of 100 |
+| Vocabulary, insertion, language, privacy | Settings |
+| Past dictations | Settings → History, or the History button in the menu bar panel |
 
 ## Privacy
 

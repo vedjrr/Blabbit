@@ -29,7 +29,7 @@ SWIFT_OUT = $(shell cd "$(APP)" && swift build $(SWIFT_FLAGS) --show-bin-path)
 # requirement stable so macOS privacy grants survive rebuilds; else ad-hoc.
 SIGN_ID ?= $(or $(UTTER_SIGN_IDENTITY),$(shell security find-identity -v -p codesigning 2>/dev/null | grep -m1 -o '"Apple Development[^"]*"' | tr -d '"'),-)
 
-.PHONY: build core bindings app bundle test test-rust test-swift bench models dmg dmg-preflight clean
+.PHONY: build core bindings app bundle test test-rust test-swift bench models dmg dmg-preflight release clean
 
 build: bundle
 
@@ -92,6 +92,10 @@ dmg-preflight:
 
 dmg: dmg-preflight bundle
 	./scripts/make-dmg.sh
+
+# GitHub release without a Developer ID (not notarised): docs/RELEASING.md.
+release: build
+	./scripts/make-release.sh
 
 clean:
 	cd "$(CORE)" && cargo clean

@@ -1,10 +1,12 @@
-# Homebrew Cask draft (G7). To publish: fill in the version and sha256 of the
-# notarised DMG from `make dmg`, then open a PR against Homebrew/homebrew-cask
-# (or host it in a tap: vedjrr/homebrew-utter). Check with:
-#   brew audit --new --cask utter && brew style --fix utter.rb
+# Homebrew Cask for a tap (G7): github.com/vedjrr/homebrew-tap, Casks/utter.rb.
+# The main homebrew/cask repository only takes notarised apps, so Utter's
+# un-notarised release lives in its own tap:
+#   brew install --cask vedjrr/tap/utter
+# Each release: set version and sha256 (printed by `make release`). Check with:
+#   brew audit --cask vedjrr/tap/utter && brew style --fix utter.rb
 cask "utter" do
   version "0.1.0"
-  sha256 "REPLACE_WITH_SHA256_OF_Utter-#{version}.dmg" # shasum -a 256 build/updates/Utter-0.1.0.dmg
+  sha256 "REPLACE_WITH_SHA256_OF_Utter-#{version}.dmg" # printed by make release
 
   url "https://github.com/vedjrr/Utter/releases/download/v#{version}/Utter-#{version}.dmg"
   name "Utter"
@@ -21,6 +23,12 @@ cask "utter" do
   depends_on arch: :arm64
 
   app "Utter.app"
+
+  # Not notarised (no paid Apple Developer account): Gatekeeper asks once.
+  caveats <<~EOS
+    Utter is signed but not notarised. If macOS blocks the first launch, open
+    System Settings → Privacy & Security and click "Open Anyway".
+  EOS
 
   uninstall quit: "dev.utter.mac"
 
