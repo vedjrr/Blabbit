@@ -19,6 +19,8 @@ public final class DictationController {
             if state != .recording { stopIncrementalFeed() }
             // Esc cancels only while there is a dictation to cancel.
             hotkey.cancelArmed = state == .recording || state == .transcribing
+            // Other audio comes back the moment recording ends, however it ends.
+            if state != .recording { muter.restore() }
             // A recording that ended in failure leaves nothing to finish.
             if case .failed = state { incremental = nil }
             updateOverlay(from: oldValue)
@@ -277,8 +279,10 @@ public final class DictationController {
         }
         // First CoreAudio enumeration and listener setup off the main thread.
         audioQueue.async { _ = AudioDeviceCache.shared }
-        recorder.onDeviceReady = { [weak self] name in
+        recorder.onDeviceReady = { [weak self, recorder] name in
+            let channels = recorder.activeChannelCount
             Task { @MainActor in
+                self?.microphoneChannels = channels
                 self?.microphoneName = name
                 self?.onStateChange?(self?.state ?? .ready)
             }
@@ -470,6 +474,50 @@ public final class DictationController {
         feedTimer = nil
     }
 
+    // MARK: Sounds, mute, capture options (PARITY A9 A10 A13 A14 A15 A17 A22 F21)
+
+    public var soundSettings = SoundSettings.load() {
+        didSet {
+            soundSettings.save()
+            if !soundSettings.muteWhileRecording { muter.restore() }
+        }
+    }
+    public var captureSettings = CaptureSettings.load() {
+        didSet {
+            captureSettings.save()
+            if Permissions.microphoneStatus == .authorized { applyMicrophoneChoice(preferredMicrophoneUID) }
+        }
+    }
+    private let feedback = FeedbackPlayer()
+    private let muter = OutputMuter()
+
+    /// Settings → Audio → Play (works with sounds off).
+    public func playTestSound(_ cue: SoundCue = .start) {
+        feedback.play(cue, settings: soundSettings, force: true)
+    }
+
+    /// Channels of the microphone in use (for the channel picker).
+    public private(set) var microphoneChannels = 0
+
+    /// Called when Utter quits: never leave the user's output muted.
+    public func shutdown() {
+        muter.restore()
+    }
+
+    /// Start sound, then (after it has played) mute other audio if asked.
+    private func startCues(serial: Int) {
+        let sounds = soundSettings
+        feedback.play(.start, settings: sounds)
+        guard sounds.muteWhileRecording else { return }
+        let wait = sounds.enabled ? FeedbackPlayer.duration(sounds, .start) + 0.05 : 0
+        Task { @MainActor [weak self] in
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            // Only if this recording is still going: a quick one must not strand the mute.
+            guard let self, self.state == .recording, self.dictationSerial == serial else { return }
+            if self.muter.mute() { Log.info("output muted while recording") }
+        }
+    }
+
     public nonisolated static let keepMicReadyKey = "audio.keepMicrophoneReady"
     public var keepMicrophoneReady: Bool { UserDefaults.standard.bool(forKey: Self.keepMicReadyKey) }
 
@@ -498,15 +546,21 @@ public final class DictationController {
 
     private func applyMicrophoneChoice(_ uid: String?) {
         let recorder = self.recorder
+        let capture = captureSettings
         audioQueue.async {
             do {
                 try recorder.setPreferredDevice(uid: uid)
+                try recorder.setClamshellDevice(uid: capture.clamshellDeviceUID)
+                try recorder.setInputChannel(capture.inputChannel)
+                recorder.setLinger(seconds: capture.lazyClose ? AudioRecorder.lazyCloseSeconds : 0)
                 try recorder.prepare()
                 try recorder.setKeepReady(UserDefaults.standard.bool(forKey: Self.keepMicReadyKey))
                 let name = recorder.activeDevice?.name
                 let missing = recorder.missingPreferredDevice
+                let channels = recorder.activeChannelCount
                 Task { @MainActor in
                     self.microphoneName = name
+                    self.microphoneChannels = channels
                     if missing != nil, let name {
                         self.lastMessage = "Your chosen microphone isn't connected, so Utter is using \(name)."
                     }
@@ -694,6 +748,7 @@ public final class DictationController {
             recordingSource = timing.source
             startWatchdog()
             startIncremental()
+            startCues(serial: dictationSerial)
         }
         audioQueue.async {
             do {
@@ -763,11 +818,18 @@ public final class DictationController {
         guard state == .recording, let press else { return }
         stopWatchdog()
         stopIncrementalFeed()
-        state = .transcribing
+        state = .transcribing // also restores muted output
         let recorder = self.recorder
+        let feedback = self.feedback
+        let sounds = soundSettings
         let serial = dictationSerial
-        audioQueue.async {
-            let recording = recorder.stop(releaseNs: timing.callbackNs)
+        // Extra buffer: keep capturing a little past the release (the trailing word).
+        let extraMs = captureSettings.extraBufferMs
+        let stopAtNs = timing.callbackNs + UInt64(extraMs) * 1_000_000
+        audioQueue.asyncAfter(deadline: .now() + .milliseconds(extraMs)) {
+            let recording = recorder.stop(releaseNs: stopAtNs)
+            // After capture has stopped, so the beep isn't in the recording.
+            feedback.play(.stop, settings: sounds)
             Task { @MainActor in await self.finish(recording, press: press, release: timing, serial: serial) }
         }
     }
@@ -944,6 +1006,7 @@ public final class DictationController {
             ("keydown_to_overlay_ms", overlayShownNs == 0 ? "n/a" : ms(press.callbackNs, overlayShownNs)),
             // Keep Microphone Ready: audio from before the key-down included in the recording.
             ("pre_roll_ms", String(format: "%.0f", rec.preRollMs)),
+            ("extra_buffer_ms", "\(captureSettings.extraBufferMs)"),
             ("device_changed", "\(rec.interruptedByDeviceChange)"),
             ("keydown_to_first_sample_ms", ms(press.callbackNs, rec.firstSampleNs)),
             ("keydown_to_first_callback_ms", ms(press.callbackNs, rec.firstCallbackNs)),

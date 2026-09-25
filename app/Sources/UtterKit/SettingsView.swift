@@ -15,6 +15,8 @@ public final class SettingsModel {
     var overrides: [String: [InsertionStrategy]] { didSet { if !reloading { controller.insertionOverrides = overrides } } }
     var processing: ProcessorSettings { didSet { if !reloading { controller.processorSettings = processing } } }
     var privacy: PrivacySettings { didSet { if !reloading { controller.privacySettings = privacy } } }
+    var sounds: SoundSettings { didSet { if !reloading { controller.soundSettings = sounds } } }
+    var capture: CaptureSettings { didSet { if !reloading { controller.captureSettings = capture } } }
     var launchAtLogin = LaunchAtLogin.isEnabled
     var message: String?
     var newTerm = ""
@@ -45,6 +47,8 @@ public final class SettingsModel {
         overrides = controller.insertionOverrides
         processing = controller.processorSettings
         privacy = controller.privacySettings
+        sounds = controller.soundSettings
+        capture = controller.captureSettings
         launchAtLogin = LaunchAtLogin.isEnabled
         refreshShortcuts()
         refreshAPIKeyState()
@@ -82,6 +86,8 @@ public final class SettingsModel {
         overrides = controller.insertionOverrides
         processing = controller.processorSettings
         privacy = controller.privacySettings
+        sounds = controller.soundSettings
+        capture = controller.captureSettings
         refreshShortcuts()
         shortcutObserver = NotificationCenter.default.addObserver(forName: DictationController.shortcutsChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshShortcuts() }
@@ -94,6 +100,16 @@ public final class SettingsModel {
         general.save()
         if general.appearance != old.appearance { general.applyAppearance() }
         onGeneralChange?(general)
+    }
+
+    /// Picks a sound file for the Custom theme.
+    func chooseSound(_ cue: SoundCue) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]
+        panel.allowsMultipleSelection = false
+        panel.message = cue == .start ? "Sound when recording starts" : "Sound when recording stops"
+        guard panel.runModal() == .OK, let path = panel.url?.path else { return }
+        if cue == .start { sounds.customStartPath = path } else { sounds.customStopPath = path }
     }
 
     func setLaunchAtLogin(_ on: Bool) {
@@ -337,16 +353,79 @@ struct SettingsView: View {
 
     private var audio: some View {
         Form {
-            Picker("Input device", selection: Binding(get: { model.controller.preferredMicrophoneUID ?? "" },
-                                                      set: { model.controller.selectMicrophone(uid: $0.isEmpty ? nil : $0) })) {
-                Text("System Default").tag("")
-                ForEach(AudioDeviceCache.shared.devices, id: \.uid) { Text($0.name).tag($0.uid) }
+            Section("Microphone") {
+                Picker("Input device", selection: Binding(get: { model.controller.preferredMicrophoneUID ?? "" },
+                                                          set: { model.controller.selectMicrophone(uid: $0.isEmpty ? nil : $0) })) {
+                    Text("System Default").tag("")
+                    ForEach(AudioDeviceCache.shared.devices, id: \.uid) { Text($0.name).tag($0.uid) }
+                }
+                LabeledContent("In use", value: model.controller.microphoneName ?? "—")
+                if model.controller.microphoneChannels > 1 || model.capture.inputChannel != nil {
+                    Picker("Channel", selection: $model.capture.inputChannel) {
+                        Text("All channels (mixed)").tag(Int?.none)
+                        ForEach(0..<max(model.controller.microphoneChannels, (model.capture.inputChannel ?? 0) + 1), id: \.self) {
+                            Text("Channel \($0 + 1)").tag(Int?.some($0))
+                        }
+                    }
+                }
+                if Clamshell.isLaptop {
+                    Picker("With the lid closed, use", selection: $model.capture.clamshellDeviceUID) {
+                        Text("The same microphone").tag(String?.none)
+                        ForEach(AudioDeviceCache.shared.devices, id: \.uid) { Text($0.name).tag(String?.some($0.uid)) }
+                    }
+                }
             }
-            LabeledContent("In use", value: model.controller.microphoneName ?? "—")
-            Toggle("Keep the microphone ready (instant start)", isOn: Binding(get: { model.controller.keepMicrophoneReady },
-                                                                             set: { model.controller.setKeepMicrophoneReady($0) }))
-            Text("Recording starts instantly and includes the moment before you press the shortcut. macOS shows the microphone indicator the whole time, and a Bluetooth headset stays in call mode. Audio is never stored unless you keep audio in History.")
-                .font(.caption).foregroundStyle(.secondary)
+            Section("Recording") {
+                Toggle("Keep the microphone ready (instant start)", isOn: Binding(get: { model.controller.keepMicrophoneReady },
+                                                                                 set: { model.controller.setKeepMicrophoneReady($0) }))
+                Text("Recording starts instantly and includes the moment before you press the shortcut. macOS shows the microphone indicator the whole time, and a Bluetooth headset stays in call mode. Audio is never stored unless you keep audio in History.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Keep the microphone open for 30 s after dictating", isOn: $model.capture.lazyClose)
+                    .disabled(model.controller.keepMicrophoneReady)
+                Text("Back-to-back dictations start instantly; the microphone indicator stays on for those 30 s.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Stepper(value: $model.capture.extraBufferMs, in: CaptureSettings.extraBufferRange, step: 50) {
+                    LabeledContent("Keep recording after release", value: model.capture.extraBufferMs == 0 ? "Off" : "\(model.capture.extraBufferMs) ms")
+                }
+                Toggle("Remove long silences before transcribing", isOn: $model.capture.trimSilence)
+            }
+            Section("Sounds") {
+                Toggle("Play a sound when recording starts and stops", isOn: $model.sounds.enabled)
+                Picker("Sound", selection: $model.sounds.theme) {
+                    ForEach(SoundSettings.Theme.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                if model.sounds.theme == .custom {
+                    LabeledContent("Start") {
+                        HStack {
+                            Text(model.sounds.customStartPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Not chosen")
+                                .lineLimit(1).truncationMode(.middle)
+                            Button("Choose…") { model.chooseSound(.start) }
+                        }
+                    }
+                    LabeledContent("Stop") {
+                        HStack {
+                            Text(model.sounds.customStopPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Not chosen")
+                                .lineLimit(1).truncationMode(.middle)
+                            Button("Choose…") { model.chooseSound(.stop) }
+                        }
+                    }
+                }
+                Slider(value: $model.sounds.volume, in: 0...1) { Text("Volume") }
+                Picker("Play on", selection: $model.sounds.outputDeviceUID) {
+                    Text("System Output").tag(String?.none)
+                    ForEach(AudioDevices.outputDevices(), id: \.uid) { Text($0.name).tag(String?.some($0.uid)) }
+                }
+                HStack {
+                    Spacer()
+                    Button("Play Start") { model.controller.playTestSound(.start) }
+                    Button("Play Stop") { model.controller.playTestSound(.stop) }
+                }
+            }
+            Section("Other audio") {
+                Toggle("Mute other audio while recording", isOn: $model.sounds.muteWhileRecording)
+                Text("Music and videos go quiet while you speak and come back as it was when you stop.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

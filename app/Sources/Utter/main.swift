@@ -17,6 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private let controller = DictationController(models: ModelManager())
+
+    func applicationWillTerminate(_ notification: Notification) {
+        controller.shutdown()
+    }
     private var menu: StatusMenuController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {

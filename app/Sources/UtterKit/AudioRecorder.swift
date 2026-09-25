@@ -128,6 +128,45 @@ final class SampleRing: @unchecked Sendable {
     }
 }
 
+/// Realtime downmix of one IO buffer into mono (no allocation, no locks).
+enum ChannelMixer {
+    /// Writes `frames` mono samples into `out`: the average of all channels, or
+    /// only `channel` when one is chosen and exists (PARITY A13).
+    static func mix(_ abl: UnsafeMutableAudioBufferListPointer, frames: Int, channels: Int, channel: Int?,
+                    into out: UnsafeMutablePointer<Float>) {
+        for i in 0..<frames { out[i] = 0 }
+        guard frames > 0, !abl.isEmpty, channels > 0 else { return }
+        // Non-interleaved float: one buffer per channel. Interleaved: one buffer, stride = channels.
+        let interleaved = abl.count == 1 && channels > 1
+        let only = channel.flatMap { $0 >= 0 && $0 < channels ? $0 : nil }
+        if interleaved {
+            guard let data = abl[0].mData?.assumingMemoryBound(to: Float.self) else { return }
+            if let only {
+                for i in 0..<frames { out[i] = data[i * channels + only] }
+                return
+            }
+            let gain = 1 / Float(channels)
+            for i in 0..<frames {
+                var sum: Float = 0
+                for c in 0..<channels { sum += data[i * channels + c] }
+                out[i] = sum * gain
+            }
+        } else {
+            if let only {
+                guard only < abl.count, let data = abl[only].mData?.assumingMemoryBound(to: Float.self) else { return }
+                for i in 0..<frames { out[i] = data[i] }
+                return
+            }
+            let used = min(channels, abl.count)
+            let gain = 1 / Float(used)
+            for c in 0..<used {
+                guard let data = abl[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
+                for i in 0..<frames { out[i] += data[i] * gain }
+            }
+        }
+    }
+}
+
 /// Captures the default input device with AVAudioEngine through an
 /// `AVAudioSinkNode`, which delivers IO-sized buffers (~10 ms) rather than the
 /// 100–400 ms chunks of an input tap. The realtime callback only downmixes and
@@ -203,7 +242,7 @@ public final class AudioRecorder: @unchecked Sendable {
         if on {
             try prepare()
             try runWarmIfIdle()
-        } else if !isRecording {
+        } else if !isRecording, !lingering {
             stopIdle()
             engine.pause()
             preRoll.removeAll()
@@ -212,7 +251,7 @@ public final class AudioRecorder: @unchecked Sendable {
 
     /// Starts the input for warm idling (not recording). No-op unless `keepReady`.
     private func runWarmIfIdle() throws {
-        guard keepReady, !isRecording, sink != nil else { return }
+        guard idlesWarm, !isRecording, sink != nil else { return }
         if !engine.isRunning { try engine.start() }
         ring?.reset()
         guard idleTimer == nil else { return }
@@ -242,6 +281,86 @@ public final class AudioRecorder: @unchecked Sendable {
     /// Capture timing from before a device change, if the rebuild failed.
     private var cursorBeforeChange: SampleRing.Cursor?
 
+    // MARK: Channel, clamshell, lazy close (PARITY A13, A14, F21)
+
+    /// Input channel to record (0-based); nil averages all channels.
+    public private(set) var inputChannel: Int?
+    /// Channels of the device the graph was built for.
+    public private(set) var activeChannelCount = 0
+
+    public func setInputChannel(_ channel: Int?) throws {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard channel != inputChannel else { return }
+        inputChannel = channel
+        needsRebuild = true
+        if !isRecording { try prepare() }
+    }
+
+    /// Microphone to use while the lid is closed (nil: same as usual).
+    public private(set) var clamshellDeviceUID: String?
+    /// Replaceable in tests.
+    var lidIsClosed: () -> Bool = Clamshell.isClosed
+    /// The preferred UID the graph was last built for.
+    private var builtForUID: String?
+
+    public func setClamshellDevice(uid: String?) throws {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard uid != clamshellDeviceUID else { return }
+        clamshellDeviceUID = uid
+        if effectivePreferredUID != builtForUID { needsRebuild = true }
+        if !isRecording { try prepare() }
+    }
+
+    /// The chosen device, or the clamshell one while the lid is closed.
+    var effectivePreferredUID: String? {
+        if let clamshellDeviceUID, lidIsClosed() { return clamshellDeviceUID }
+        return preferredDeviceUID
+    }
+
+    /// Seconds the input stays open after a dictation, so the next one starts
+    /// warm (Handy's lazy stream close uses 30 s). 0 closes it at once.
+    public private(set) var lingerSeconds: Double = 0
+    public static let lazyCloseSeconds: Double = 30
+    private var lingerTimer: DispatchSourceTimer?
+    /// True while the input is open only because of `lingerSeconds`.
+    private var lingering = false
+
+    public func setLinger(seconds: Double) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        lingerSeconds = max(0, seconds)
+        if lingerSeconds == 0, lingering { endLinger() }
+    }
+
+    private func startLinger() {
+        lingering = true
+        do { try runWarmIfIdle() } catch {
+            Log.error("lazy close: input could not stay open: \(error)")
+            endLinger()
+            return
+        }
+        lingerTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + lingerSeconds)
+        timer.setEventHandler { [weak self] in self?.endLinger() }
+        timer.resume()
+        lingerTimer = timer
+    }
+
+    private func endLinger() {
+        lingerTimer?.cancel()
+        lingerTimer = nil
+        guard lingering else { return }
+        lingering = false
+        guard !isRecording, !keepReady else { return }
+        stopIdle()
+        engine.pause()
+        preRoll.removeAll()
+        Log.info("lazy close: input closed after \(Int(lingerSeconds)) s idle")
+    }
+
+    /// Input is kept running between dictations (Keep Microphone Ready or lazy close).
+    private var idlesWarm: Bool { keepReady || lingering }
+
     /// True while the input unit is pinned to a chosen device.
     private var deviceOverridden = false
     /// The chosen input device's UID; nil follows the system default. Set with `setPreferredDevice`.
@@ -259,8 +378,10 @@ public final class AudioRecorder: @unchecked Sendable {
 
     /// Points the engine's input unit at the chosen device (or the default).
     private func selectDevice() throws {
-        let preferred = preferredDeviceUID.flatMap(lookupDevice)
-        missingPreferredDevice = (preferredDeviceUID != nil && preferred == nil) ? preferredDeviceUID : nil
+        let wanted = effectivePreferredUID
+        builtForUID = wanted
+        let preferred = wanted.flatMap(lookupDevice)
+        missingPreferredDevice = (wanted != nil && preferred == nil) ? wanted : nil
         guard let device = preferred ?? defaultDevice() else { throw AudioRecorderError.noInputDevice }
         // Following the system default: leave AVAudioEngine's own device choice
         // alone (it may use a private aggregate device, and setting the device
@@ -321,6 +442,7 @@ public final class AudioRecorder: @unchecked Sendable {
         let mixCapacity = self.mixCapacity
         let rate = format.sampleRate
         let channels = Int(format.channelCount)
+        let channel = inputChannel
 
         let sink = AVAudioSinkNode { timestamp, frameCount, bufferList -> OSStatus in
             let now = MonoClock.nowNs()
@@ -328,23 +450,7 @@ public final class AudioRecorder: @unchecked Sendable {
             ring.noteDropped(Int(frameCount) - frames)
             let abl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferList))
             guard frames > 0, !abl.isEmpty else { return noErr }
-            // Non-interleaved float: one buffer per channel. Interleaved: one buffer, stride = channels.
-            let interleaved = abl.count == 1 && channels > 1
-            let gain = 1 / Float(channels)
-            for i in 0..<frames { scratch[i] = 0 }
-            if interleaved {
-                guard let data = abl[0].mData?.assumingMemoryBound(to: Float.self) else { return noErr }
-                for i in 0..<frames {
-                    var sum: Float = 0
-                    for c in 0..<channels { sum += data[i * channels + c] }
-                    scratch[i] = sum * gain
-                }
-            } else {
-                for c in 0..<min(channels, abl.count) {
-                    guard let data = abl[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
-                    for i in 0..<frames { scratch[i] += data[i] * gain }
-                }
-            }
+            ChannelMixer.mix(abl, frames: frames, channels: channels, channel: channel, into: scratch)
             let ts = timestamp.pointee
             let hostNs = ts.mFlags.contains(.hostTimeValid) ? MonoClock.ns(fromHostTime: ts.mHostTime) : now
             let endNs = hostNs + UInt64(Double(frames) / rate * 1_000_000_000)
@@ -358,9 +464,10 @@ public final class AudioRecorder: @unchecked Sendable {
         self.ring = ring
         self.resampler = resampler
         self.inputRate = format.sampleRate
+        activeChannelCount = channels
         needsRebuild = false
         onDeviceReady?(activeDevice?.name)
-        Log.info("audio graph ready input_rate=\(Int(format.sampleRate)) channels=\(format.channelCount) device=\"\(activeDevice?.name ?? "?")\" bluetooth=\(activeDevice?.isBluetooth ?? false)")
+        Log.info("audio graph ready input_rate=\(Int(format.sampleRate)) channels=\(format.channelCount) channel=\(channel.map(String.init) ?? "mix") device=\"\(activeDevice?.name ?? "?")\" bluetooth=\(activeDevice?.isBluetooth ?? false)")
     }
 
     private func teardownGraph() {
@@ -381,6 +488,13 @@ public final class AudioRecorder: @unchecked Sendable {
         // Warm only if input was already running before this call: `prepare()`
         // may cold-start it (after a failed rebuild), which is not warm.
         let wasRunning = engine.isRunning && sink != nil
+        // The lid opened or closed since the last build: use the right microphone.
+        if effectivePreferredUID != builtForUID {
+            Log.info("clamshell microphone: lid \(lidIsClosed() ? "closed" : "open"), switching input")
+            needsRebuild = true
+        }
+        lingerTimer?.cancel()
+        lingerTimer = nil
         try prepare()
         samples.removeAll(keepingCapacity: true)
         samples.reserveCapacity(16_000 * 60)
@@ -391,7 +505,7 @@ public final class AudioRecorder: @unchecked Sendable {
         resampler?.reset()
         stopIdle()
         drainIdle()
-        if keepReady, wasRunning, engine.isRunning, !preRoll.isEmpty, let ring {
+        if idlesWarm, wasRunning, engine.isRunning, !preRoll.isEmpty, let ring {
             // Warm: audio is already flowing. Take the pre-roll, then keep going.
             let now = MonoClock.nowNs()
             ring.cursor.withLock { c in
@@ -452,7 +566,8 @@ public final class AudioRecorder: @unchecked Sendable {
                 _ = ring.tailArrived.wait(timeout: .now() + .milliseconds(150))
             }
         }
-        if !keepReady { engine.pause() }
+        let linger = !keepReady && lingerSeconds > 0
+        if !keepReady, !linger { engine.pause() }
         recordingState.withLock { $0 = false }
         drainTimer?.cancel()
         drainTimer = nil
@@ -473,7 +588,7 @@ public final class AudioRecorder: @unchecked Sendable {
         if needsRebuild {
             do { try buildGraph() } catch { Log.error("rebuild after recording failed: \(error)") }
         }
-        rewarm()
+        if linger { startLinger() } else { lingering = false; rewarm() }
         return recording
     }
 
@@ -558,7 +673,7 @@ public final class AudioRecorder: @unchecked Sendable {
     /// Restarts warm idling after a recording or a rebuild. A failure is logged
     /// and reported (the next start is cold); the next graph build retries.
     private func rewarm() {
-        guard keepReady else { return }
+        guard idlesWarm else { return }
         do { try runWarmIfIdle() } catch {
             Log.error("keep microphone ready: could not restart input: \(error)")
             onKeepReadyFailed?("\(error)")

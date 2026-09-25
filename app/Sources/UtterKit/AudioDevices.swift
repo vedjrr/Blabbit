@@ -1,4 +1,5 @@
 import CoreAudio
+import IOKit
 import Foundation
 
 /// An audio input device as the Microphone menu shows it.
@@ -15,7 +16,16 @@ public enum AudioDevices {
     /// The chosen input device's UID; nil means "follow the system default".
     public static let preferenceKey = "audio.inputDeviceUID"
 
-    public static func inputDevices() -> [AudioInputDevice] {
+    public static func inputDevices() -> [AudioInputDevice] { devices(scope: kAudioDevicePropertyScopeInput) }
+
+    /// Devices that can play sound (for feedback sounds, PARITY A15).
+    public static func outputDevices() -> [AudioInputDevice] { devices(scope: kAudioDevicePropertyScopeOutput) }
+
+    public static func outputDevice(uid: String) -> AudioInputDevice? {
+        outputDevices().first { $0.uid == uid }
+    }
+
+    private static func devices(scope: AudioObjectPropertyScope) -> [AudioInputDevice] {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
                                                  mScope: kAudioObjectPropertyScopeGlobal,
                                                  mElement: kAudioObjectPropertyElementMain)
@@ -24,7 +34,7 @@ public enum AudioDevices {
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return [] }
         return ids.compactMap { id in
-            guard inputChannelCount(id) > 0, let uid = string(id, kAudioDevicePropertyDeviceUID),
+            guard channelCount(id, scope: scope) > 0, let uid = string(id, kAudioDevicePropertyDeviceUID),
                   let name = string(id, kAudioObjectPropertyName) else { return nil }
             let transport = uint32(id, kAudioDevicePropertyTransportType)
             let bluetooth = transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
@@ -52,9 +62,9 @@ public enum AudioDevices {
         inputDevices().first { $0.uid == uid }
     }
 
-    private static func inputChannelCount(_ id: AudioDeviceID) -> Int {
+    private static func channelCount(_ id: AudioDeviceID, scope: AudioObjectPropertyScope) -> Int {
         var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration,
-                                                 mScope: kAudioDevicePropertyScopeInput,
+                                                 mScope: scope,
                                                  mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size) == noErr, size > 0 else { return 0 }
@@ -122,3 +132,23 @@ public final class AudioDeviceCache: @unchecked Sendable {
     }
 }
 
+
+/// Whether a laptop's lid is closed (IOKit `AppleClamshellState`). PARITY A14.
+public enum Clamshell {
+    public static func isClosed() -> Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return false }
+        defer { IOObjectRelease(root) }
+        let value = IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue()
+        return (value as? Bool) ?? false
+    }
+
+    /// Desktops have no clamshell state at all.
+    public static var isLaptop: Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return false }
+        defer { IOObjectRelease(root) }
+        return IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0) != nil
+    }
+}
