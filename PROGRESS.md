@@ -34,6 +34,7 @@ M7 is not done: the gate critic (review #1, 2026-09-25) returned **FAIL**. Work 
 - [x] M6 — Benchmarks & performance. Critic re-review #3 `VERDICT: PASS`, zero BLOCKERs/MAJORs (2026-09-25); its MINORs fixed afterwards. Lid-open `make bench` and the nettop log are (H).
 
 ## Done (with evidence)
+- [M7] **Human-found bug (2026-09-25): Hold to Talk stopped after 0.5 s.** Log: `watchdog released recording reason=key_not_down source=tap`, audio_ms=458, twice, shortcut ⌥/. Cause: the watchdog read `CGEventSource.keyState(.combinedSessionState)`, and the session state never sees a key the tap swallows. A probe showed a swallowed held key reads `combinedSession=false hidSystem=true`. Fix: HID state (98ee30f). `aHeldShortcutReadsAsDownWhileTheTapSwallowsIt` holds F13 through the real tap for 1.2 s. It fails 6× on the old code and passes on the fix. The pure watchdog tests had missed this because they never read a live key. Live Text is now the default overlay (Handy's macOS default). The human's running copy was replaced with the 98ee30f build (launch log: tap ⌥/, model loaded once).
 - [M0] Handy cloned read-only to `/tmp/handy-ref` (v0.9.7-6-g8f9cf53). Component map → `docs/ARCHITECTURE.md` §1.
 - [M0] `docs/PARITY.md` written: 92 feature rows across dictation, insertion, models, post-processing, history, app shell, plus the G8 "does Handy already have it" table. Sources are file paths, `S.field` settings or Tauri command names; "—" marks Utter-only rows.
 - [M0] Licences checked (HF API + GitHub API + crates.io) → `docs/ARCHITECTURE.md` §3.
