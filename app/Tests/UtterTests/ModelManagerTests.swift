@@ -231,3 +231,20 @@ import UtterCore
         try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
     }
 }
+
+/// PARITY C11: the compute device choice persists and asks for a reload.
+@MainActor @Suite struct ComputeDeviceTests {
+    @Test func choicePersistsAndReloads() throws {
+        let suite = "dev.utter.test.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let m = ModelManager(modelsDirectory: ModelLocation.modelsDirectory, defaults: defaults)
+        #expect(m.computeDevice == .auto)
+        var reloads = 0
+        m.onComputeDeviceChange = { reloads += 1 }
+        m.computeDevice = .cpu
+        m.computeDevice = .cpu
+        #expect(reloads == 1, "no reload when nothing changed")
+        #expect(ModelManager(modelsDirectory: ModelLocation.modelsDirectory, defaults: defaults).computeDevice == .cpu)
+    }
+}

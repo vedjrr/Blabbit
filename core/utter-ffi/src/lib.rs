@@ -97,6 +97,13 @@ pub struct UtterEngine {
     inner: Engine,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ComputeDevice {
+    Auto,
+    Gpu,
+    Cpu,
+}
+
 #[uniffi::export]
 impl UtterEngine {
     #[uniffi::constructor]
@@ -106,7 +113,17 @@ impl UtterEngine {
 
     /// Loads and warms a GGUF model; blocks, so call off the main thread.
     pub fn load_model(&self, path: String) -> Result<LoadInfo, CoreError> {
-        let s = self.inner.load_gguf(Path::new(&path))?;
+        self.load_model_on(path, ComputeDevice::Auto)
+    }
+
+    /// Same, on a chosen compute device (PARITY C11).
+    pub fn load_model_on(&self, path: String, device: ComputeDevice) -> Result<LoadInfo, CoreError> {
+        let accelerator = match device {
+            ComputeDevice::Auto => utter_core::Accelerator::Auto,
+            ComputeDevice::Gpu => utter_core::Accelerator::Gpu,
+            ComputeDevice::Cpu => utter_core::Accelerator::Cpu,
+        };
+        let s = self.inner.load_gguf_with(Path::new(&path), accelerator)?;
         Ok(LoadInfo {
             load_ms: s.load_ms,
             warmup_ms: s.warmup_ms,

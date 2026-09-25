@@ -232,6 +232,10 @@ public final class DictationController {
     public init(models: ModelManager) {
         self.models = models
         models.onDefaultModelChange = { [weak self] id in self?.loadModel(id: id) }
+        models.onComputeDeviceChange = { [weak self] in
+            guard let self, let id = self.loadedModelID ?? Optional(self.models.defaultModelID) else { return }
+            self.loadModel(id: id)
+        }
     }
 
     /// Only an idle controller accepts a new dictation; presses during
@@ -782,6 +786,7 @@ public final class DictationController {
         let engine = self.engine
         let loadTicket = self.loadTicket
         let loadQueue = self.loadQueue
+        let device = models.computeDevice
         Task {
             // SHA-256 once per file before its first load; a damaged file is
             // caught here instead of failing (or mis-transcribing) later.
@@ -801,12 +806,13 @@ public final class DictationController {
                 loadQueue.async {
                     // Superseded while queued: skip the load entirely.
                     guard loadTicket.isCurrent(ticket) else { return continuation.resume(returning: nil) }
-                    continuation.resume(returning: Result { try engine.loadModel(path: path) })
+                    continuation.resume(returning: Result { try engine.loadModelOn(path: path, device: device) })
                 }
             }
             guard let outcome else { return }
             switch outcome {
             case .success(let info):
+                Log.info("model_load device=\(ModelManager.name(device)) backend=\(engine.modelInfo()?.backend ?? "?")")
                 Log.info(String(format: "model_load model=%@ load_ms=%.0f warmup_ms=%.0f footprint_before_mb=%.0f footprint_mb=%.0f total_ms=%.0f load_count=%llu",
                                 id, info.loadMs, info.warmupMs, Double(before) / 1_048_576,
                                 Double(info.footprintAfterBytes) / 1_048_576,

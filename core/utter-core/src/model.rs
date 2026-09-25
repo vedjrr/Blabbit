@@ -82,15 +82,40 @@ struct Loaded {
 }
 
 /// Any GGUF model transcribe.cpp understands (Parakeet, Whisper, Moonshine, SenseVoice, …).
+/// Where inference runs (PARITY C11). Auto is Metal on Apple silicon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Accelerator {
+    #[default]
+    Auto,
+    Gpu,
+    /// CPU with Accelerate/AMX: for debugging a GPU problem, or to keep the GPU free.
+    Cpu,
+}
+
+impl Accelerator {
+    fn backend(self) -> transcribe_cpp::Backend {
+        match self {
+            Accelerator::Auto => transcribe_cpp::Backend::Auto,
+            Accelerator::Gpu => transcribe_cpp::Backend::Metal,
+            Accelerator::Cpu => transcribe_cpp::Backend::CpuAccel,
+        }
+    }
+}
+
 pub struct GgufModel {
     path: PathBuf,
+    accelerator: Accelerator,
     loaded: Option<Loaded>,
     measured_load_bytes: u64,
 }
 
 impl GgufModel {
     pub fn new(path: impl AsRef<Path>) -> Self {
-        GgufModel { path: path.as_ref().to_path_buf(), loaded: None, measured_load_bytes: 0 }
+        Self::with_accelerator(path, Accelerator::Auto)
+    }
+
+    pub fn with_accelerator(path: impl AsRef<Path>, accelerator: Accelerator) -> Self {
+        GgufModel { path: path.as_ref().to_path_buf(), accelerator, loaded: None, measured_load_bytes: 0 }
     }
 }
 
@@ -104,7 +129,8 @@ impl SpeechModel for GgufModel {
         self.unload();
         let before = process_memory();
         let started = Instant::now();
-        let model = transcribe_cpp::Model::load(&self.path)?;
+        let options = transcribe_cpp::ModelOptions { backend: self.accelerator.backend(), device: None };
+        let model = transcribe_cpp::Model::load_with(&self.path, &options)?;
         let caps = model.capabilities();
         let metadata = ModelMetadata {
             path: self.path.clone(),

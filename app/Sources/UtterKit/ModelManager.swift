@@ -33,6 +33,25 @@ public final class ModelManager {
     /// so the ~1 s/GB check runs once per file, not on every launch.
     private var verifiedStamps: [String: String]
 
+    /// Where models run (PARITY C11). Changing it reloads the current model.
+    public var computeDevice: ComputeDevice {
+        didSet {
+            guard computeDevice != oldValue else { return }
+            defaults.set(Self.name(computeDevice), forKey: Self.computeDeviceKey)
+            onComputeDeviceChange?()
+        }
+    }
+    public var onComputeDeviceChange: (() -> Void)?
+    public static let computeDeviceKey = "model.computeDevice"
+
+    static func name(_ device: ComputeDevice) -> String {
+        switch device { case .auto: "auto"; case .gpu: "gpu"; case .cpu: "cpu" }
+    }
+
+    static func computeDevice(named name: String?) -> ComputeDevice {
+        switch name { case "gpu": .gpu; case "cpu": .cpu; default: .auto }
+    }
+
     public static let defaultModelKey = "model.default"
     public static let acceptedLicensesKey = "model.acceptedLicenses"
     public static let verifiedStampsKey = "model.verifiedStamps"
@@ -50,6 +69,7 @@ public final class ModelManager {
         defaultModelID = defaults.string(forKey: Self.defaultModelKey) ?? recommended
         acceptedLicenses = Set(defaults.stringArray(forKey: Self.acceptedLicensesKey) ?? [])
         verifiedStamps = defaults.dictionary(forKey: Self.verifiedStampsKey) as? [String: String] ?? [:]
+        computeDevice = Self.computeDevice(named: defaults.string(forKey: Self.computeDeviceKey))
         refresh()
         // A saved choice that is no longer in the catalog falls back to the recommended model.
         if entry(defaultModelID) == nil { defaultModelID = recommended }

@@ -1,0 +1,10 @@
+$ cargo test --release -p utter-core --test fixtures cpu_accelerator -- --nocapture (2026-09-25)
+accelerator=Gpu backend=MTL0 load_ms=449 infer_ms=79
+accelerator=Cpu backend=CPU load_ms=241 infer_ms=236
+test result: ok (CPU and Metal text WER < 0.15)
+
+App, defaults model.computeDevice=cpu then removed:
+2026-09-25T22:48:48.164Z INFO model_load device=cpu backend=CPU
+2026-09-25T22:48:48.164Z INFO model_load model=parakeet-tdt-0.6b-v2 load_ms=482 warmup_ms=89 footprint_before_mb=17 footprint_mb=1126 total_ms=571 load_count=1
+2026-09-25T22:48:54.715Z INFO model_load device=auto backend=MTL0
+2026-09-25T22:48:54.715Z INFO model_load model=parakeet-tdt-0.6b-v2 load_ms=245 warmup_ms=53 footprint_before_mb=17 footprint_mb=841 total_ms=299 load_count=1

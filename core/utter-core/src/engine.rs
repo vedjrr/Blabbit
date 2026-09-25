@@ -2,7 +2,7 @@
 //! dictation until the user switches models.
 use crate::audio::skip_reason;
 use crate::error::{Result, UtterError};
-use crate::model::{GgufModel, LoadStats, MemoryRequirements, ModelMetadata, SpeechModel, TranscribeOptions, Transcription};
+use crate::model::{Accelerator, GgufModel, LoadStats, MemoryRequirements, ModelMetadata, SpeechModel, TranscribeOptions, Transcription};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, RwLock, TryLockError};
@@ -68,6 +68,10 @@ impl Engine {
     /// Loads (and warms) a GGUF model, unloading any previous one first so two
     /// models are never resident at once.
     pub fn load_gguf(&self, path: &Path) -> Result<LoadStats> {
+        self.load_gguf_with(path, Accelerator::Auto)
+    }
+
+    pub fn load_gguf_with(&self, path: &Path, accelerator: Accelerator) -> Result<LoadStats> {
         self.loaded.store(false, Ordering::Release);
         self.set_info(None);
         let mut slot = self.guard();
@@ -75,7 +79,7 @@ impl Engine {
             old.unload();
         }
         *slot = None;
-        let mut model: Box<dyn SpeechModel> = Box::new(GgufModel::new(path));
+        let mut model: Box<dyn SpeechModel> = Box::new(GgufModel::with_accelerator(path, accelerator));
         let stats = model.load()?;
         if let Some(meta) = model.metadata() {
             self.set_info(Some((meta, model.memory_requirements())));

@@ -359,3 +359,26 @@ fn previews_stay_out_of_the_way_of_real_transcriptions() {
     assert!(worst_extra <= preview_ms + 60.0, "waited {worst_extra:.0} ms for a {preview_ms:.0} ms preview");
     assert_eq!(engine.load_count(), 1);
 }
+
+/// PARITY C11: the same model on the CPU (Accelerate) instead of Metal, for real.
+#[test]
+fn cpu_accelerator_transcribes_like_metal() {
+    let _serial = serial();
+    let path = require_model(PARAKEET_V3);
+    let (wav, _) = &fixtures()[0];
+    let clip = audio::load_wav_16k_mono(wav).unwrap();
+    let mut out = Vec::new();
+    for accel in [utter_core::Accelerator::Gpu, utter_core::Accelerator::Cpu] {
+        let engine = Engine::new();
+        let stats = engine.load_gguf_with(&path, accel).unwrap();
+        let started = std::time::Instant::now();
+        let t = engine.transcribe(&clip, &TranscribeOptions::default()).unwrap();
+        let ms = started.elapsed().as_secs_f64() * 1e3;
+        let backend = engine.metadata().map(|m| m.backend).unwrap_or_default();
+        println!("accelerator={accel:?} backend={backend} load_ms={:.0} infer_ms={ms:.0}", stats.load_ms);
+        out.push((backend, t.text));
+    }
+    assert_ne!(out[0].0, out[1].0, "CPU must not run on the same backend as Metal");
+    let differ = wer::wer(&out[0].1, &out[1].1);
+    assert!(differ < 0.15, "CPU and Metal disagree: WER {differ}");
+}

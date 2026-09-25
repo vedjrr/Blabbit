@@ -54,6 +54,17 @@ public struct ModelManagerView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Run models on").foregroundStyle(.primary)
+                Picker("Run models on", selection: $manager.computeDevice) {
+                    Text("Automatic (GPU)").tag(ComputeDevice.auto)
+                    Text("GPU (Metal)").tag(ComputeDevice.gpu)
+                    Text("CPU").tag(ComputeDevice.cpu)
+                }
+                .labelsHidden().fixedSize()
+                Text("CPU is about 3× slower; use it to keep the GPU free or if the GPU misbehaves.")
+            }
+            .padding(.bottom, 6)
             Text("Accuracy is the share of words right on Utter's spoken test clips; speed comes from the time to transcribe them. Both were measured on an Apple M4. Every model is faster on newer chips, but the order stays the same.")
             HStack {
                 Text("Installed: \(manager.installedEntries.count) of \(manager.entries.count)")

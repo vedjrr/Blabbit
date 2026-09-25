@@ -65,7 +65,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | C8 | Speed / accuracy scores, recommended flag | catalog `speed_score`, `accuracy_score` | static scores | Show **our measured** RTF + WER on this Mac | M3 | Built (measured WER + p50 on this Mac, Recommended badge) | **Better**: measured, not static |
 | C9 | Model unload after idle timeout | `S.model_unload_timeout` | never / immediately / 2 min … 1 h | Same | — | Not planned: hard rule 3 keeps the model resident; the memory it frees is measured instead (G3) | — |
 | C10 | Manual unload from tray | `H/src-tauri/src/tray.rs:549` | — | Same | — | Not planned: same reason as C9 (switching models unloads the old one) | — |
-| C11 | Accelerator / GPU device selection | `S.transcribe_accelerator`, `S.transcribe_gpu_device` | — | Auto / Metal / CPU | M7 | Missing (Metal is always used; a CPU fallback switch is retargeted) | — |
+| C11 | Accelerator / GPU device selection | `S.transcribe_accelerator`, `S.transcribe_gpu_device` | — | Auto / Metal / CPU | M7 | Matched (2026-09-25): Models → Run models on Automatic (GPU) / GPU (Metal) / CPU (Accelerate); switching reloads the model; real test: Parakeet V3 79 ms on Metal vs 236 ms on CPU, same text; app log `backend=CPU` then `backend=MTL0` (`evidence/m7/compute_device.log`) | — |
 | C12 | Parakeet TDT 0.6B V3 | catalog | GGUF Q8_0 | Verify with fixtures | M1 | Built (verified, `evidence/m3/model_verification.log`) | — |
 | C13 | Parakeet TDT 0.6B V2 | catalog | GGUF Q8_0 | Verify | M3 | Built (verified) | — |
 | C14 | Whisper Small / Medium / Large-v3 / Large-v3-Turbo | catalog | GGUF | Verify each | M3 | Built (all four verified) | — |
