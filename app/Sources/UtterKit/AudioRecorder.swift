@@ -171,6 +171,67 @@ public final class AudioRecorder: @unchecked Sendable {
     public private(set) var activeDevice: AudioInputDevice?
     /// Set when the chosen device was missing and the default was used instead.
     public private(set) var missingPreferredDevice: String?
+    // MARK: Keep the microphone ready (PARITY A11)
+    //
+    // Starting the input device takes 40–65 ms on this Mac (AVAudioEngine and a
+    // bare AUHAL measure the same), so key-down → first audio can't be under
+    // 50 ms from cold. With `keepReady`, input keeps running between dictations
+    // and only the last `preRollSeconds` are kept, so a recording starts with
+    // audio already in hand, including the moment just before the key-down.
+    // macOS shows the microphone-in-use indicator the whole time.
+
+    public private(set) var keepReady = false
+    /// Capture stopped mid-recording and no device could take over (called on `queue`).
+    public var onCaptureLost: (@Sendable () -> Void)?
+    /// A graph was built for this device (called on `queue`), e.g. for the menu.
+    public var onDeviceReady: (@Sendable (String?) -> Void)?
+    public static let preRollSeconds = 0.15
+    /// Input-rate mono samples from just before a recording starts.
+    private var preRoll: [Float] = []
+    private var idleTimer: DispatchSourceTimer?
+    /// Whether the current recording began with a warm input.
+    public private(set) var startedWarm = false
+
+    public func setKeepReady(_ on: Bool) throws {
+        dispatchPrecondition(condition: .onQueue(queue))
+        keepReady = on
+        Log.info("keep microphone ready \(on)")
+        if on {
+            try prepare()
+            try runWarmIfIdle()
+        } else if !isRecording {
+            stopIdle()
+            engine.pause()
+            preRoll.removeAll()
+        }
+    }
+
+    /// Starts the input for warm idling (not recording). No-op unless `keepReady`.
+    private func runWarmIfIdle() throws {
+        guard keepReady, !isRecording, sink != nil else { return }
+        if !engine.isRunning { try engine.start() }
+        ring?.reset()
+        guard idleTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + .milliseconds(50), repeating: .milliseconds(50), leeway: .milliseconds(10))
+        timer.setEventHandler { [weak self] in self?.drainIdle() }
+        timer.resume()
+        idleTimer = timer
+    }
+
+    private func stopIdle() {
+        idleTimer?.cancel()
+        idleTimer = nil
+    }
+
+    /// Keeps only the newest `preRollSeconds` of idle audio.
+    private func drainIdle() {
+        guard let ring, !isRecording else { return }
+        ring.drain(into: &preRoll)
+        let keep = Int(inputRate * Self.preRollSeconds)
+        if preRoll.count > keep { preRoll.removeFirst(preRoll.count - keep) }
+    }
+
     /// Device lookups (replaceable in tests to simulate a device that vanished).
     var lookupDevice: (String) -> AudioInputDevice? = AudioDevices.device(uid:)
     var defaultDevice: () -> AudioInputDevice? = AudioDevices.defaultInput
@@ -236,6 +297,7 @@ public final class AudioRecorder: @unchecked Sendable {
         // menu mid-dictation): the change applies on the next start.
         guard !isRecording else { return }
         try buildGraph()
+        try runWarmIfIdle()
     }
 
     private func buildGraph() throws {
@@ -293,10 +355,13 @@ public final class AudioRecorder: @unchecked Sendable {
         self.resampler = resampler
         self.inputRate = format.sampleRate
         needsRebuild = false
+        onDeviceReady?(activeDevice?.name)
         Log.info("audio graph ready input_rate=\(Int(format.sampleRate)) channels=\(format.channelCount) device=\"\(activeDevice?.name ?? "?")\" bluetooth=\(activeDevice?.isBluetooth ?? false)")
     }
 
     private func teardownGraph() {
+        stopIdle()
+        preRoll.removeAll()
         if engine.isRunning { engine.stop() }
         if let sink {
             engine.disconnectNodeInput(sink)
@@ -310,14 +375,34 @@ public final class AudioRecorder: @unchecked Sendable {
     public func start() throws {
         dispatchPrecondition(condition: .onQueue(queue))
         try prepare()
-        ring?.reset()
-        resampler?.reset()
         samples.removeAll(keepingCapacity: true)
         samples.reserveCapacity(16_000 * 60)
         interrupted = false
         continuedOn = nil
         cursorBeforeChange = nil
         levelState.withLock { $0 = 0 }
+        resampler?.reset()
+        if keepReady, engine.isRunning, let ring {
+            // Warm: audio is already flowing. Take the pre-roll, then keep going.
+            stopIdle()
+            drainIdle()
+            let now = MonoClock.nowNs()
+            ring.cursor.withLock { c in
+                c.dropped = 0
+                c.waitUntilNs = nil
+                // Audio is in hand from before this instant (the pre-roll).
+                c.firstSampleNs = now
+                c.firstCallbackNs = now
+            }
+            recordingState.withLock { $0 = true }
+            startedWarm = true
+            convertIntoSamples(preRoll)
+            preRoll.removeAll(keepingCapacity: true)
+            startDrainTimer()
+            return
+        }
+        startedWarm = false
+        ring?.reset()
         do {
             try engine.start()
         } catch {
@@ -348,7 +433,7 @@ public final class AudioRecorder: @unchecked Sendable {
                 _ = ring.tailArrived.wait(timeout: .now() + .milliseconds(150))
             }
         }
-        engine.pause()
+        if !keepReady { engine.pause() }
         recordingState.withLock { $0 = false }
         drainTimer?.cancel()
         drainTimer = nil
@@ -365,6 +450,9 @@ public final class AudioRecorder: @unchecked Sendable {
         continuedOn = nil
         cursorBeforeChange = nil
         levelState.withLock { $0 = 0 }
+        // Apply a device chosen mid-recording now, not on the next key-down.
+        if needsRebuild { try? buildGraph() }
+        if keepReady { try? runWarmIfIdle() }
         return recording
     }
 
@@ -377,10 +465,15 @@ public final class AudioRecorder: @unchecked Sendable {
     }
 
     private func drainAndConvert() {
-        guard let ring, let resampler else { return }
+        guard let ring else { return }
         var raw: [Float] = []
         ring.drain(into: &raw)
-        guard !raw.isEmpty,
+        convertIntoSamples(raw)
+    }
+
+    /// Resamples input-rate mono audio to 16 kHz, appends it, updates the level.
+    private func convertIntoSamples(_ raw: [Float]) {
+        guard let resampler, !raw.isEmpty,
               let buffer = AVAudioPCMBuffer(pcmFormat: resampler.inputFormat, frameCapacity: AVAudioFrameCount(raw.count))
         else { return }
         buffer.frameLength = AVAudioFrameCount(raw.count)
@@ -427,11 +520,14 @@ public final class AudioRecorder: @unchecked Sendable {
                 Log.info("input device changed while recording; continuing on \(continuedOn ?? "?") samples_so_far=\(samples.count)")
             } catch {
                 recordingState.withLock { $0 = false }
+                levelState.withLock { $0 = 0 }
                 continuedOn = nil
+                onCaptureLost?()
                 Log.error("input device changed while recording and no device could take over; audio after the change is lost: \(error)")
             }
         } else {
             try? buildGraph()
+            try? runWarmIfIdle()
         }
     }
 

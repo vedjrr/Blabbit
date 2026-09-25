@@ -97,8 +97,21 @@ fn payload(len: usize) -> (Vec<u8>, String) {
     (data, sha)
 }
 
+fn sweep_old_temp_dirs() {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else { return };
+    for entry in entries.flatten() {
+        let old = entry.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > Duration::from_secs(600));
+        if old && entry.file_name().to_string_lossy().starts_with("utter-dl-") {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 fn temp_dest(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("utter-dl-{name}"));
+    // Per process, so concurrent `cargo test` runs don't share files; folders
+    // left by earlier runs (over 10 minutes old) are swept here.
+    sweep_old_temp_dirs();
+    let dir = std::env::temp_dir().join(format!("utter-dl-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir.join("model.gguf")

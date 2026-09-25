@@ -4,7 +4,7 @@ import Darwin
 /// (and therefore `AVAudioTime.hostTime`), so latencies can span subsystems.
 /// Pure arithmetic: safe to call from the realtime audio thread.
 public enum MonoClock {
-    private static let timebase: (numer: UInt64, denom: UInt64) = {
+    static let timebase: (numer: UInt64, denom: UInt64) = {
         var info = mach_timebase_info_data_t()
         mach_timebase_info(&info)
         return (UInt64(info.numer), UInt64(info.denom))

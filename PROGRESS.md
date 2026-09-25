@@ -12,7 +12,7 @@ Iteration: 7
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M4 gate: critic re-review #2 after fixing review #1 (2 BLOCKERs).
+- M4 gate: critic re-review #3 after fixing review #2 (1 BLOCKER: cold mic start; answered with Keep Microphone Ready + proposed goal change).
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -149,6 +149,13 @@ Iteration: 7
   6. 5-minute recording: ✅ core (`five_minute_recording_is_not_truncated`: 300000 ms, tail present); the recorder has no size limit below the 10-minute cap. **(H)** a 5-minute dictation through the app.
 - [M4] `make test`: Swift `Test run with 123 tests in 24 suites passed`; Rust 16 + 10 + 4.
 
+- [M4] Critic re-review #2 → FAIL (1 new BLOCKER: G1 key-down → first audio). Measured: the mic hardware start dominates (AVAudioEngine 47–65 ms, bare AUHAL 40–57 ms, same probe; so switching API doesn't help). Fixed as far as physics allows:
+  - **"Keep Microphone Ready"** (PARITY A11; Microphone menu; off by default). Input keeps running between dictations with a 150 ms pre-roll; `start()` just marks the ring. `CaptureStartLatencyTests` (real hardware, all audio-hardware suites serialised so parallel captures can't keep the device warm) logs `capture_start_latency_ms cold(block/first_sample)=34.0/32.5 37.2/34.6 37.9/36.1 42.8/39.8 41.0/37.4 warm=0.3/0.0 0.4/0.1 0.2/0.0 0.1/0.0 0.4/0.0`, and asserts warm < 10 ms and the pre-roll is included. Cold-start numbers and the proposal are under Proposed goal changes.
+  - (MAJOR) Losing the mic mid-recording is now visible and handled: the recorder zeroes the level and calls `onCaptureLost`, and the controller stops the dictation at once (so toggle mode can't talk into nothing) and transcribes what was captured. At the end, a device-change message is shown in the overlay (failed icon if audio was lost, bubble if it continued).
+  - (MAJOR) PARITY rows updated: A2, A11, A12, F8, F11 Built; A4 and F6 partly built (modifier-only / fn shortcuts and the overlay position setting retargeted to M5).
+  - MINORs: a device chosen mid-recording is rebuilt in `stop()` (not on the next key-down), and the menu's microphone name refreshes after every graph build (`onDeviceReady`); the mid-recording choice test uses a device other than the active one; the mach-ticks branch of `eventNs` is tested; the permission watch always runs and is kept in sync with the setup window; `askedAccessibility` persists; Change Shortcut first stops a running toggle recording; the Microphone menu reads a device cache kept current by CoreAudio listeners on a background queue (no HAL call on main); Rust download tests use per-process temp folders and sweep ones over 10 minutes old. Not done: `firstShowAfterPrewarmIsWithinOneFrame` still runs in a process where AppKit/SwiftUI are already warm (a fresh-process measurement would need a helper app; the critic's standalone probe measured 4.4–4.7 ms after prewarm vs 8–20 ms without).
+- [M4] `make test`: Swift `Test run with 124 tests in 26 suites passed`; Rust 16 + 10 + 4. App launch: `keep microphone ready false`, one `audio graph ready`, `load_count=1`.
+
 ## Blocked on human
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.
 - **Deferred to the end (by your choice): live dictation into TextEdit** (needs your voice). Utter (build 01a38e5) is **already running**: its log shows the shortcut active (Accessibility is granted) and the microphone graph ready. If it isn't running: `cd "/Users/ved/Documents 2/utter-kit" && make build && open build/Utter.app`. A waveform icon appears in the menu bar.
@@ -165,6 +172,7 @@ Iteration: 7
 - (optional) Install Xcode.app if you want Instruments profiling in M6; the build does not need it.
 
 ## Proposed goal changes
+- **G1 "Hold hotkey → recording starts in < 50 ms"**: measured, the microphone hardware itself takes **30–65 ms to start** on this Mac. Numbers: AVAudioEngine 47–65 ms and a bare AUHAL unit 40–57 ms (first sample, fresh processes, `scratchpad/lat` probe); inside the test suite 32–40 ms (`CaptureStartLatencyTests`); the critic measured 53–64 ms. No capture API avoids this. The only way under 50 ms is keeping the input running: the new **"Keep Microphone Ready"** option (Microphone menu) starts in **0.0–0.1 ms**, and the recording even includes 150 ms from before the key-down, but macOS then shows the microphone indicator all the time. Proposal: keep the option **off by default** (privacy), and read G1 as "< 50 ms with Keep Microphone Ready on; cold start measured and logged (`keydown_to_first_sample_ms`)". Alternatively, turn it on by default. Your call.
 - G2 says secure input → "subtle **overlay** notice". The overlay is built in M4. Until then M2 gives a visible cue: the menu bar icon becomes a lock for 4 s, with the message as its tooltip and in the menu. I moved the overlay version to M4 (`docs/MILESTONES.md`) and left the G2 box **unchecked** until M4 delivers it. Please confirm this interim behaviour is acceptable.
 - CLAUDE.md says `make test` = `cargo test` + `xcodebuild test`. Xcode is not installed, so `make test` runs `swift test` (Swift Testing) instead. Same coverage, and it works with or without Xcode. (ADR-001)
 

@@ -20,6 +20,13 @@ import Testing
         #expect(MonoClock.eventNs(0, before: callback) == nil)                         // synthetic events
         #expect(MonoClock.eventNs(callback - 2_000_000, before: callback) == callback - 2_000_000) // already ns
         #expect(MonoClock.eventNs(callback + 5, before: callback) == nil)              // from the future
+        // Mach ticks (24 MHz on Apple silicon): converted onto the ns clock.
+        let (numer, denom) = MonoClock.timebase
+        let ticks = (callback - 3_000_000) / numer * denom
+        let mapped = MonoClock.eventNs(ticks, before: callback)
+        if numer != denom {
+            #expect(mapped != nil && callback - mapped! < 3_100_000 && callback - mapped! >= 2_900_000, "mapped \(String(describing: mapped))")
+        }
     }
 
     @Test func toggleRecordingsAreNotCutByTheKeyWatchdog() {

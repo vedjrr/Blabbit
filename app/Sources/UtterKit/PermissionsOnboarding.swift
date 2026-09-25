@@ -79,7 +79,9 @@ public struct PermissionRow: Equatable, Sendable {
 @MainActor @Observable
 public final class PermissionsModel {
     public private(set) var snapshot: PermissionSnapshot
-    public private(set) var askedAccessibility = false
+    /// macOS shows its Accessibility prompt only once per app; remember that we
+    /// asked, so after a relaunch the row offers the Settings link instead.
+    public private(set) var askedAccessibility = UserDefaults.standard.bool(forKey: "permissions.askedAccessibility")
     /// Called when a permission becomes granted (the controller starts the
     /// shortcut or the microphone without a relaunch).
     public var onChange: ((PermissionSnapshot) -> Void)?
@@ -129,6 +131,7 @@ public final class PermissionsModel {
             }
         case .requestAccessibility:
             askedAccessibility = true
+            UserDefaults.standard.set(true, forKey: "permissions.askedAccessibility")
             Permissions.requestAccessibility()
         case .openSettings(let url):
             NSWorkspace.shared.open(url)

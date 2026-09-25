@@ -143,14 +143,22 @@ public final class DictationController {
         // permission and asks when the user clicks.
         // Build and draw the overlay once now, so the first key-down doesn't pay for it.
         overlay.prewarm()
+        recorder.onCaptureLost = { [weak self] in
+            Task { @MainActor in self?.captureLost() }
+        }
+        recorder.onDeviceReady = { [weak self] name in
+            Task { @MainActor in
+                self?.microphoneName = name
+                self?.onStateChange?(self?.state ?? .ready)
+            }
+        }
         let permissions = PermissionSnapshot.current()
         startHotkey()
         prepareMicrophone(permissions.microphone)
         loadModel(id: models.defaultModelID)
-        if !permissions.allGranted {
-            onNeedsPermissions?()
-            startPermissionWatch()
-        }
+        if !permissions.allGranted { onNeedsPermissions?() }
+        // Always: a permission revoked and granted again later must be noticed too.
+        startPermissionWatch()
     }
 
     /// While a permission is missing, re-check every 2 s even with the setup
@@ -168,10 +176,7 @@ public final class DictationController {
                     self.lastPermissions = now
                     self.permissionsChanged(now)
                 }
-                if now.allGranted {
-                    self.permissionWatch?.invalidate()
-                    self.permissionWatch = nil
-                }
+
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -181,6 +186,7 @@ public final class DictationController {
     /// Called by the setup window when a permission changes, so a grant takes
     /// effect without relaunching Utter.
     public func permissionsChanged(_ snapshot: PermissionSnapshot) {
+        lastPermissions = snapshot
         if snapshot.accessibility, !hotkey.isRunning { startHotkey() }
         prepareMicrophone(snapshot.microphone)
         onStateChange?(state)
@@ -202,6 +208,31 @@ public final class DictationController {
         }
     }
 
+    /// The microphone went away mid-recording and none could take over: stop
+    /// now (in toggle mode the user might otherwise talk into nothing) and
+    /// transcribe what was captured.
+    private func captureLost() {
+        guard state == .recording else { return }
+        Log.error("capture lost mid-recording; stopping the dictation")
+        released(KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0, source: recordingSource))
+    }
+
+    public static let keepMicReadyKey = "audio.keepMicrophoneReady"
+    public var keepMicrophoneReady: Bool { UserDefaults.standard.bool(forKey: Self.keepMicReadyKey) }
+
+    /// Keeps the input running between dictations for an instant start (the
+    /// microphone indicator stays on). Off by default.
+    public func setKeepMicrophoneReady(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Self.keepMicReadyKey)
+        guard Permissions.microphoneStatus == .authorized else { return }
+        let recorder = self.recorder
+        audioQueue.async {
+            do { try recorder.setKeepReady(on) } catch let error as AudioRecorderError {
+                Task { @MainActor in self.lastMessage = self.message(for: error) }
+            } catch {}
+        }
+    }
+
     /// The input device in use, for the menu (updated after each graph build).
     public private(set) var microphoneName: String?
     public var preferredMicrophoneUID: String? { UserDefaults.standard.string(forKey: AudioDevices.preferenceKey) }
@@ -218,6 +249,7 @@ public final class DictationController {
             do {
                 try recorder.setPreferredDevice(uid: uid)
                 try recorder.prepare()
+                try recorder.setKeepReady(UserDefaults.standard.bool(forKey: Self.keepMicReadyKey))
                 let name = recorder.activeDevice?.name
                 let missing = recorder.missingPreferredDevice
                 Task { @MainActor in
@@ -553,6 +585,9 @@ public final class DictationController {
         if let cue = plan.cue {
             onAttention?(cue)
             if let message = plan.message { overlay.show(.notice(message, cue)) }
+        } else if recording.interruptedByDeviceChange, let message = lastMessage {
+            // Say where the user is looking that the microphone changed.
+            overlay.show(.notice(message, recording.continuedOnDevice == nil ? .failed : .unconfirmed))
         }
     }
 

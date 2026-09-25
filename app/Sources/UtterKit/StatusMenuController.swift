@@ -115,9 +115,8 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         let mic = NSMenuItem(title: "Microphone: \(controller.microphoneName ?? "System Default")", action: nil, keyEquivalent: "")
         let micMenu = NSMenu()
         let chosen = controller.preferredMicrophoneUID
-        let devices = AudioDevices.inputDevices() // one CoreAudio enumeration per menu open
-        let defaultID = AudioDevices.defaultInputID()
-        let defaultName = devices.first { $0.id == defaultID }?.name
+        let devices = AudioDeviceCache.shared.devices // kept current off main; no HAL call here
+        let defaultName = AudioDeviceCache.shared.defaultDevice?.name
         let followDefault = NSMenuItem(title: "System Default" + (defaultName.map { " (\($0))" } ?? ""), action: #selector(chooseMicrophone(_:)), keyEquivalent: "")
         followDefault.target = self
         followDefault.state = chosen == nil ? .on : .off
@@ -130,6 +129,12 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
             item.state = device.uid == chosen ? .on : .off
             micMenu.addItem(item)
         }
+        micMenu.addItem(.separator())
+        let ready = NSMenuItem(title: "Keep Microphone Ready (instant start)", action: #selector(toggleKeepReady), keyEquivalent: "")
+        ready.target = self
+        ready.state = controller.keepMicrophoneReady ? .on : .off
+        ready.toolTip = "Keeps the microphone running between dictations so recording starts instantly and catches the first syllable. macOS shows the microphone indicator the whole time. Audio is never stored or sent."
+        micMenu.addItem(ready)
         mic.submenu = micMenu
         menu.addItem(mic)
         let managerItem = NSMenuItem(title: "Model Manager…", action: #selector(openModelManager), keyEquivalent: "m")
@@ -180,12 +185,16 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func changeShortcut() {
         if shortcutWindow.isOpen { shortcutWindow.bringToFront(); return }
+        // A toggle-mode recording would have no way to stop while the tap is paused.
+        if controller.state == .recording { controller.toggleFromMenu() }
         // The event tap would otherwise catch the current shortcut while recording a new one.
         controller.hotkey.stop()
         shortcutWindow.show(current: controller.hotkey.shortcut,
                             onSave: { [weak self] in self?.controller.setShortcut($0) },
                             onClose: { [weak self] in self?.controller.startHotkey() })
     }
+
+    @objc private func toggleKeepReady() { controller.setKeepMicrophoneReady(!controller.keepMicrophoneReady) }
 
     @objc private func chooseMicrophone(_ sender: NSMenuItem) {
         controller.selectMicrophone(uid: sender.representedObject as? String)

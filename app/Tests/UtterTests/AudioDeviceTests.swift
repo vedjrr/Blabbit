@@ -2,8 +2,13 @@ import Foundation
 import Testing
 @testable import UtterKit
 
+/// Everything that touches the real audio hardware runs one test at a time
+/// (nested suites inherit `.serialized`): parallel captures keep the device
+/// running and would falsify the start-latency numbers.
+@Suite(.serialized) enum AudioHardwareTests {}
+
 /// Real CoreAudio devices on this Mac (no capture is started).
-@Suite(.serialized) struct AudioDeviceTests {
+extension AudioHardwareTests { @Suite struct AudioDeviceTests {
     @Test func listsInputDevicesWithStableIDs() throws {
         let devices = AudioDevices.inputDevices()
         try #require(!devices.isEmpty, "no audio input device on this Mac")
@@ -35,9 +40,11 @@ import Testing
     }
 }
 
+}
+
 /// A device change mid-recording (AirPods connecting, a USB mic unplugged)
 /// triggers the same handler as `AVAudioEngineConfigurationChange`.
-@Suite(.serialized) struct DeviceChangeTests {
+extension AudioHardwareTests { @Suite struct DeviceChangeTests {
     @Test func recordingContinuesAcrossADeviceChange() throws {
         let queue = DispatchQueue(label: "dev.utter.test.audio-change")
         let recorder = AudioRecorder(queue: queue)
@@ -97,7 +104,13 @@ import Testing
             return
         }
         Thread.sleep(forTimeInterval: 0.3)
-        let other = try #require(AudioDevices.inputDevices().last)
+        // A device other than the one capturing now, so the deferral is real.
+        let current = queue.sync { recorder.activeDevice?.uid }
+        guard let other = AudioDevices.inputDevices().first(where: { $0.uid != current }) else {
+            withKnownIssue("only one input device on this Mac") { Issue.record("needs two input devices") }
+            _ = queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }
+            return
+        }
         try queue.sync {
             try recorder.setPreferredDevice(uid: other.uid)
             try recorder.prepare() // what the menu handler calls: must not stop the capture
@@ -110,4 +123,54 @@ import Testing
         try queue.sync { try recorder.prepare() } // applied now, between recordings
         #expect(recorder.activeDevice?.uid == other.uid)
     }
+}
+
+}
+
+/// G1 "key-down → recording < 50 ms": what the recorder itself costs, cold and warm.
+extension AudioHardwareTests { @Suite struct CaptureStartLatencyTests {
+    func startLatencies(recorder: AudioRecorder, queue: DispatchQueue, runs: Int) throws -> [(block: Double, firstSample: Double)] {
+        var out: [(Double, Double)] = []
+        for _ in 0..<runs {
+            let (t0, t1): (UInt64, UInt64) = try queue.sync {
+                let t0 = MonoClock.nowNs()
+                try recorder.start()
+                return (t0, MonoClock.nowNs())
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+            let recording = queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }
+            let first = recording.firstSampleNs.map { MonoClock.ms(from: t0, to: $0) } ?? .infinity
+            out.append((MonoClock.ms(from: t0, to: t1), first))
+            Thread.sleep(forTimeInterval: 1.0) // let the device go idle again
+        }
+        return out
+    }
+
+    @Test func coldStartIsMeasuredAndWarmStartIsInstant() throws {
+        let queue = DispatchQueue(label: "dev.utter.test.latency")
+        let recorder = AudioRecorder(queue: queue)
+        do { try queue.sync { try recorder.prepare() } } catch {
+            withKnownIssue("capture unavailable to the test runner: \(error)") { throw error }
+            return
+        }
+        let cold = try startLatencies(recorder: recorder, queue: queue, runs: 5)
+        try queue.sync { try recorder.setKeepReady(true) }
+        Thread.sleep(forTimeInterval: 0.5) // let the pre-roll fill
+        let warm = try startLatencies(recorder: recorder, queue: queue, runs: 5)
+        let preRollCheck: Recording = try queue.sync {
+            try recorder.start()
+            return recorder.stop(releaseNs: MonoClock.nowNs())
+        }
+        try queue.sync { try recorder.setKeepReady(false) }
+        let fmt = { (xs: [(block: Double, firstSample: Double)]) in xs.map { String(format: "%.1f/%.1f", $0.block, $0.firstSample) }.joined(separator: " ") }
+        Log.info("capture_start_latency_ms cold(block/first_sample)=\(fmt(cold)) warm=\(fmt(warm))")
+        print("capture_start_latency_ms cold(block/first_sample)=\(fmt(cold)) warm=\(fmt(warm))")
+        // Cold: the device start (~40–65 ms here) is recorded, not asserted.
+        #expect(cold.allSatisfy { $0.firstSample < 500 })
+        // Warm: audio is in hand at once, far inside the 50 ms budget.
+        #expect(warm.allSatisfy { $0.block < 10 && $0.firstSample < 10 }, "warm \(fmt(warm))")
+        // The pre-roll (0.15 s before the start) is part of the recording.
+        #expect(preRollCheck.samples.count >= Int(16_000 * AudioRecorder.preRollSeconds * 0.8), "pre-roll samples \(preRollCheck.samples.count)")
+    }
+}
 }

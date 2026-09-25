@@ -12,17 +12,17 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | # | Feature | Handy source | How Handy does it | Utter plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
 | A1 | Push-to-talk (hold to record, release to transcribe) | `H/src-tauri/src/shortcut/mod.rs`, `S.shortcut_activation` | handy-keys CGEventTap or Tauri global-shortcut | Active CGEventTap, swallow matching events (ADR-005) | M1 | Built (M1: CGEventTap PTT + watchdog; `ShortcutMatcherTests`) | Measure key-down → first buffer (< 50 ms target) |
-| A2 | Toggle mode | `S.shortcut_activation = Toggle` | tap to start, tap to stop | Same | M4 | Missing | — |
+| A2 | Toggle mode | `S.shortcut_activation = Toggle` | tap to start, tap to stop | Same | M4 | Built (Shortcut → Press to Start and Stop; `HotkeyPolicy`, `HotkeyModeTests`) | — |
 | A3 | Hold-or-toggle hybrid with `hold_threshold_ms` | `S.hold_threshold_ms`, `HoldOrToggle` | short tap toggles, long hold is PTT | Same | M4 | Missing | — |
-| A4 | Configurable shortcut incl. modifier-only and fn/Globe | `H/src-tauri/src/shortcut/handy_keys.rs:412` | handy-keys validation | Native shortcut recorder, modifier-only + fn, conflict detection with system shortcuts | M4 | Missing | Native recorder + conflict warning |
+| A4 | Configurable shortcut incl. modifier-only and fn/Globe | `H/src-tauri/src/shortcut/handy_keys.rs:412` | handy-keys validation | Native shortcut recorder, modifier-only + fn, conflict detection with system shortcuts | M4 | Partly built (recorder + validation + system-shortcut conflicts, layout-aware names; modifier-only and fn/Globe not yet, retargeted to M5) | Native recorder + conflict warning |
 | A5 | Default shortcut `⌥ Space` on macOS | `H/src-tauri/src/settings.rs:862` | — | Same default | M1 | Built (`Shortcut.optionSpace`) | — |
 | A6 | Cancel shortcut (Esc) while recording | `S.bindings["cancel"]` | registered only while recording | Same, swallowed only while recording | M4 | Missing | — |
 | A7 | Separate "transcribe with post-processing" shortcut | `S.bindings["transcribe_with_post_process"]` | second binding | Second binding that forces the selected LLM mode | M5 | Missing | — |
 | A8 | Secure-input shortcut fallback + tray warning | `H/src-tauri/src/secure_input.rs` | polls `IsSecureEventInputEnabled`, shadow-registers Carbon hotkeys | Same idea, own code (ADR-005) | M2 | Built (Carbon fallback while secure input is sustained; typing stays blocked, text goes to the clipboard with a notice; `WatchdogPolicy`/`SecureInputFallback`/`globalSecureInputBlocksEveryMethod` tests; live check pending) | Show culprit app name in overlay |
 | A9 | Audio feedback sounds (start/stop), themes, custom, volume | `S.audio_feedback`, `S.sound_theme`, `S.audio_feedback_volume`, `H/src-tauri/src/audio_feedback.rs` | bundled WAVs | Own sounds (original, generated), `NSSound`/AVAudioPlayer | M4 | Missing | — |
 | A10 | Mute system output while recording | `S.mute_while_recording` | — | Core Audio default-output mute + restore | M4 | Missing | — |
-| A11 | Always-on microphone | `S.always_on_microphone` | stream kept open | "Keep microphone warm" option (ADR-004) | M4 | Missing | Measure latency difference |
-| A12 | Microphone selection | `S.selected_microphone` | cpal device | Core Audio device picker | M4 | Missing | — |
+| A11 | Always-on microphone | `S.always_on_microphone` | stream kept open | "Keep microphone warm" option (ADR-004) | M4 | Built ("Keep Microphone Ready": warm input + 150 ms pre-roll; start 0.0–0.1 ms vs cold 30–57 ms, `CaptureStartLatencyTests`) | Measure latency difference |
+| A12 | Microphone selection | `S.selected_microphone` | cpal device | Core Audio device picker | M4 | Built (Microphone menu, UID-persisted, fallback, continue across device change; `AudioHardwareTests`) | — |
 | A13 | Input channel selection | `S.selected_channel` | pick one channel | Channel picker for multi-channel interfaces | M4 | Missing | — |
 | A14 | Clamshell microphone (alternate mic when lid closed) | `S.clamshell_microphone`, `H/src-tauri/src/helpers/clamshell.rs` | IOKit clamshell state | Same via IOKit `AppleClamshellState` | M4 | Missing | — |
 | A15 | Output device for feedback sounds | `S.selected_output_device` | — | Output device picker | M4 | Missing | — |
@@ -110,12 +110,12 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | F3 | Show / hide tray icon | `S.show_tray_icon` | — | Same (app reachable by relaunch) | M5 | Missing | — |
 | F4 | Start hidden | `S.start_hidden` | — | Menu-bar app never opens a window on launch unless onboarding | M5 | Missing | — |
 | F5 | Launch at login | `S.autostart_enabled` | tauri-plugin-autostart | `SMAppService.mainApp` | M5 | Missing | — |
-| F6 | Recording overlay, position top/bottom/none | `S.overlay_position`, `H/src-tauri/src/overlay.rs` | webview NSPanel | Native non-activating NSPanel | M4 | Missing | **Better**: native, measure time-to-visible |
+| F6 | Recording overlay, position top/bottom/none | `S.overlay_position`, `H/src-tauri/src/overlay.rs` | webview NSPanel | Native non-activating NSPanel | M4 | Partly built (native non-activating NSPanel, bottom centre; first show < 16.7 ms after prewarm. Position setting (top/bottom/none) retargeted to M5) | **Better**: native, measure time-to-visible |
 | F7 | Overlay style none / minimal / live | `S.overlay_style` | — | Same | M4 | Missing | — |
-| F8 | Level meter in overlay | `emit_levels` in `overlay.rs:730` | web canvas | Core Animation bars | M4 | Missing | — |
+| F8 | Level meter in overlay | `emit_levels` in `overlay.rs:730` | web canvas | Core Animation bars | M4 | Built (16-bar log-scale meter, 30 Hz) | — |
 | F9 | Theme light / dark / system | `S.theme` | CSS | Follows system (native); explicit override | M5 | Missing | — |
 | F10 | UI localisation (27 locales) and app-language picker | `H/src/i18n/locales/`, `S.app_language` | i18next | English at 1.0 using `String(localized:)` so locales can be added; other locales **N/A for 1.0** | M5 | Missing | — |
-| F11 | Onboarding (mic + accessibility permissions) | `H/src/components/onboarding/` | — | Native onboarding with deep links + live re-check | M4 | Missing | — |
+| F11 | Onboarding (mic + accessibility permissions) | `H/src/components/onboarding/` | — | Native onboarding with deep links + live re-check | M4 | Built (setup window, deep links, 1 s / 2 s live re-check) | — |
 | F12 | Update checks + "What's new" | `S.update_checks_enabled`, `S.show_whats_new_on_update` | tauri-plugin-updater | Sparkle 2 (release notes shown by Sparkle) | M7 | Missing | — |
 | F13 | Debug mode (⌘⇧D), log level, keyboard diagnostic | `S.debug_mode`, `S.log_level`, `secure_input.rs` diagnostic | — | Debug pane: log level, open logs, latency breakdown of last dictation | M5 | Missing | Per-stage latency view |
 | F14 | CLI remote control: `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--start-hidden`, `--no-tray`, `--debug` | README "CLI Parameters" | single-instance plugin | Same flags forwarded to running instance via `NSDistributedNotificationCenter`; also `utter://` URL scheme | M5 | Missing | URL scheme for Shortcuts/Raycast |

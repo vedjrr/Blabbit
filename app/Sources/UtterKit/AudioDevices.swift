@@ -83,3 +83,42 @@ public enum AudioDevices {
         return value
     }
 }
+
+/// The device list for the menu, kept current by CoreAudio notifications on a
+/// background queue, so opening the menu never waits on the HAL (which can
+/// stall while a Bluetooth device connects).
+public final class AudioDeviceCache: @unchecked Sendable {
+    public static let shared = AudioDeviceCache()
+
+    private let lock = NSLock()
+    private var _devices: [AudioInputDevice] = []
+    private var _defaultID: AudioDeviceID?
+    private let queue = DispatchQueue(label: "dev.utter.audio-devices", qos: .utility)
+
+    private init() {
+        refresh()
+        for selector in [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice] {
+            var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
+                                                     mElement: kAudioObjectPropertyElementMain)
+            AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, queue) { [weak self] _, _ in
+                self?.refresh()
+            }
+        }
+    }
+
+    private func refresh() {
+        let devices = AudioDevices.inputDevices()
+        let defaultID = AudioDevices.defaultInputID()
+        lock.lock()
+        _devices = devices
+        _defaultID = defaultID
+        lock.unlock()
+    }
+
+    public var devices: [AudioInputDevice] { lock.lock(); defer { lock.unlock() }; return _devices }
+    public var defaultDevice: AudioInputDevice? {
+        lock.lock(); defer { lock.unlock() }
+        return _devices.first { $0.id == _defaultID }
+    }
+}
+
