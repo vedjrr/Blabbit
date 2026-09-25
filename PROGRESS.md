@@ -12,7 +12,7 @@ Iteration: 10
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M7: G8 "better than Handy" side-by-side numbers (idle RAM, launch; insertion/vocabulary/modes/history comparison in PARITY), then the M7 gate critic and the final review.
+- M7 gate: critic review (G7 + G8 evidence), then the final critic review (G6), then STATUS per the Completion rule.
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -238,6 +238,7 @@ Iteration: 10
 - [M6] Critic re-review #3 → **PASS** (its own probe: release ≤ 1.03× one-shot on Whisper Large v3 and Turbo across 17–35 s; 3/3 reruns of the incremental suite green). MINORs fixed: the worst-case rows now end the recording where the segment started and use the median of 3 runs each, with Moonshine, SenseVoice and Whisper Large added (`bench/results/2026-09-25.json`, git `32a5914`): parakeet-tdt-0.6b-v3 16 s 289.8 vs 270 ms; moonshine-base 16 s 603.9 vs 1578.5 ms; SenseVoiceSmall 16 s 188.2 vs 161.1 ms; whisper-medium 27.2 s 1661.2 vs 1652.9 ms; whisper-medium 32 s 2874.2 vs 2916.5 ms; whisper-large-v3 32 s 6312.9 vs 6543.1 ms. `append` is documented for one serial queue and re-checks `busy`.
 
 ## Blocked on human
+- **G8 Utter vs Handy, side by side (10 minutes):** install Handy (https://github.com/cjpais/Handy/releases), download and select Parakeet V3 in it, and set model unloading to Never. Then run `cd "/Users/ved/Documents 2/utter-kit" && scripts/compare-handy.sh /Applications/Handy.app`. It quits and launches each app three times and writes `evidence/m7/handy_comparison.log` (time to settled memory, settled RSS, idle CPU). I didn't install or run a third-party app on your Mac without asking.
 - **Release (G7, `make dmg`):** needs your **Developer ID Application** certificate and a notarytool profile. docs/RELEASING.md has the one-time setup and the release steps. Without them, `make dmg` stops with a plain message (exit 2). Also **back up the Sparkle private key** (RELEASING.md → one-time setup, step 3): it's in your login keychain (account `dev.utter.mac`), and without it existing installs can't be updated.
 - **Licence:** Info.plist and README say MIT, and a `LICENSE` (MIT, "Utter contributors") was added in M7. Confirm or tell me the licence and copyright holder you want.
 - **When the lid is open and the screen unlocked (5 minutes):** run `cd "/Users/ved/Documents 2/utter-kit" && make bench`. This records the parts that need a live microphone and window server: capture start cold/warm, AX insert + verify into a real text view, and the live-audio tests (`make test`). Utter stays usable during the run; a second copy starts three times for ~5 s and only listens.
@@ -267,6 +268,8 @@ Iteration: 10
 - [M7] **EdDSA feed proven locally** → `evidence/m7/sparkle_appcast_dry_run.log`: a DMG of the dev build → `generate_appcast` → entry with `sparkle:edSignature` → `sign_update --verify` succeeds; the keychain public key equals Info.plist's. `make dmg` was rewritten: inside-out Developer ID signing with timestamps, notarise, staple, then appcast. Without credentials it exits 2 with "Cannot make a release DMG: set UTTER_DEVELOPER_ID…".
 - [M7] Docs: a user-facing `README.md` (install, use, privacy, uninstall, build; the kit how-to moved to `docs/KIT.md`); `docs/RELEASING.md`; `scripts/uninstall.sh` (lists what it removes and asks first); Homebrew Cask draft `packaging/homebrew/utter.rb` (`ruby -c` OK; livecheck via the Sparkle feed; zap paths); `LICENSE` (MIT; confirm).
 - [M7] Hygiene: the tests had left 823 empty `dev.utter.test.*.plist` files in `~/Library/Preferences` (macOS keeps the file after `removePersistentDomain`). They are deleted, and `make test` / `make bench` now sweep them.
+
+- [M7] G8: `scripts/compare-handy.sh` measures both apps identically (smoke-tested with Utter on both sides: ~900 ms to settled memory, ~930 MB, idle CPU 0.3 %). PARITY "G8 results" records each G8 item with evidence. Measured wins: incremental transcription, Keep Microphone Ready, capture continuing across device changes, vocabulary WER. Architecture/capability wins: native UI, AX + per-app insertion + full clipboard restore, searchable history. The side-by-side RAM/launch run needs Handy installed (Blocked on human).
 
 ## Notes / decisions log
 - 2026-09-24: Handy moved nearly every model to GGUF via transcribe-cpp; we follow (ADR-002) after measuring it ourselves.

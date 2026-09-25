@@ -142,3 +142,14 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | Full clipboard restore (all types) | **No** (text, or image only if no text) | `H/src-tauri/src/clipboard.rs:63-106` |
 | Searchable history | **No** search command | `H/src-tauri/src/commands/history.rs` (get/delete/save/retry only) |
 | Native (non-web) UI | **No** (Tauri webview) | `H/src-tauri/Cargo.toml` |
+
+## G8 results: where Utter is better, with evidence (M7)
+
+| G8 item | Utter | Handy | Evidence | Status |
+|---|---|---|---|---|
+| Lower idle RAM, faster launch (side by side) | Launch → model ready ~490 ms (warm), RSS ~930 MB with Parakeet V3 resident (`docs/BENCHMARKS.md`) | not yet measured | `scripts/compare-handy.sh` measures both the same way (time to settled memory, settled RSS, idle CPU from CPU-time deltas) | **(H)**: needs Handy installed with Parakeet V3 selected (PROGRESS → Blocked on human) |
+| Native settings, overlay, menu (no web view) | SwiftUI/AppKit throughout: `SettingsView`, `OverlayPanel` (`.nonactivatingPanel`), `NSStatusItem` menu | Tauri webview (`H/src-tauri/Cargo.toml`) | `evidence/m4/overlay_*.png`, `evidence/m5/settings_*.png`; `OverlayTests` (never takes focus) | **Better** (architecture, verified in code) |
+| Smarter insertion | Per-app strategy table (AX → paste → type), full clipboard restore (all items × types), secure-field detection, receipt-verified paste | one global paste method; text-only restore; no AX | `InsertionTests`, `ClipboardTests`, `AXIntegrationTests`; Handy: `clipboard.rs:63-106`, 0 `AXUIElement` hits | Better in capability; **(H)** per-app live comparison (`docs/TEST_CHECKLIST.md`) |
+| Vocabulary + modes | Jaro-Winkler + Double Metaphone with false-positive guards; Exact/Clean/Code/Professional/Custom; Whisper sentence prompt | fuzzy custom words; filler toggle; LLM prompts; no Code mode | `evidence/m5/vocabulary_wer.log` (e.g. Whisper Large v3 0.114 → 0.000 with prompt + correction) | **Better** (Code mode, measured WER gains); vocabulary itself: both have it |
+| Searchable history, raw vs final side by side | FTS5 prefix search over raw and final; detail shows both | list only, no search | `HistoryTests`, `evidence/m5/history.png`; Handy `commands/history.rs` | **Better** |
+| Other measured improvements | Incremental transcription at pauses: 5 min dictation 14.9 s → 0.3 s after release; Keep Microphone Ready: capture start 0.0–0.1 ms vs 30–65 ms cold; recording continues across a device change | transcribes after release; mic starts per recording | `docs/BENCHMARKS.md`, ADR-013, `CaptureStartLatencyTests`, `DeviceChangeTests` | **Better** (measured) |
