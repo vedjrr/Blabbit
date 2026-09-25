@@ -248,3 +248,43 @@ import UtterCore
         #expect(ModelManager(modelsDirectory: ModelLocation.modelsDirectory, defaults: defaults).computeDevice == .cpu)
     }
 }
+
+/// PARITY C7: your own GGUF file, added, listed, and transcribing for real.
+@MainActor @Suite struct CustomModelTests {
+    @Test func addedFileIsListedAndTranscribes() throws {
+        let source = ModelLocation.modelsDirectory.appendingPathComponent("moonshine-base/moonshine-base-Q8_0.gguf")
+        try #require(FileManager.default.fileExists(atPath: source.path), "run make models")
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("utter-custom-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let suite = "dev.utter.test.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let m = ModelManager(modelsDirectory: dir, defaults: defaults)
+        let catalogCount = m.entries.count
+
+        // Not a model: refused with a plain message, nothing added.
+        let text = dir.appendingPathComponent("notes.gguf")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("hello".utf8).write(to: text)
+        #expect(m.addModelFile(text)?.contains("isn't a GGUF model") == true)
+        #expect(m.entries.count == catalogCount)
+
+        #expect(m.addModelFile(source) == nil)
+        let id = "custom:moonshine-base-Q8_0.gguf"
+        let entry = try #require(m.entry(id))
+        #expect(entry.family == "moonshine" && entry.measuredRtf == 0)
+        #expect(m.status[id] == .installed && m.isVerified(id))
+        #expect(m.installedEntries.contains(entry))
+        #expect(m.addModelFile(source)?.contains("already added") == true)
+
+        // It really runs.
+        let engine = UtterEngine()
+        _ = try engine.loadModel(path: try #require(m.path(for: id)))
+        let wav = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../fixtures/audio/tts_01.wav").standardized
+        let clip = try loadWav16kMono(path: wav.path)
+        let result = try engine.transcribe(pcm: clip, options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false))
+        #expect(result.text.split(separator: " ").count > 3, "\(result.text)")
+        // A new manager (next launch) finds it in the Custom folder.
+        #expect(ModelManager(modelsDirectory: dir, defaults: defaults).entry(id) != nil)
+    }
+}

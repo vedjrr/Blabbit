@@ -612,6 +612,7 @@ struct SettingsView: View {
 
     static func languages(for entry: ModelEntry?) -> [String] {
         var codes = entry?.languages ?? ["en"]
+        if codes.isEmpty { codes = ["en"] } // a custom file: languages unknown
         // Chinese comes as a choice of script (PARITY D7).
         if let i = codes.firstIndex(of: "zh") { codes.replaceSubrange(i...i, with: ChineseScript.allCases.map(\.rawValue)) }
         return codes.sorted {

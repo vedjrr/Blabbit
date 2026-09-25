@@ -15,7 +15,9 @@ public final class ModelManager {
         case failed(String)
     }
 
-    public let entries: [ModelEntry]
+    /// The catalog plus the user's own model files (PARITY C7).
+    public private(set) var entries: [ModelEntry]
+    private let catalog: [ModelEntry]
     public private(set) var status: [String: Status] = [:]
     public private(set) var defaultModelID: String
     /// Models whose licence the user accepted (persisted), for licences that require it.
@@ -61,11 +63,13 @@ public final class ModelManager {
 
     public init(modelsDirectory: URL = ModelLocation.modelsDirectory, defaults: UserDefaults = .standard,
                 hubEndpoint: String? = ProcessInfo.processInfo.environment["HF_ENDPOINT"]) {
-        entries = catalogEntries()
+        let catalog = catalogEntries()
+        self.catalog = catalog
+        entries = catalog
         self.hubEndpoint = hubEndpoint
         modelsDir = modelsDirectory.path
         self.defaults = defaults
-        let recommended = entries.first(where: \.recommended)?.id ?? ModelLocation.defaultModelID
+        let recommended = catalog.first(where: \.recommended)?.id ?? ModelLocation.defaultModelID
         defaultModelID = defaults.string(forKey: Self.defaultModelKey) ?? recommended
         acceptedLicenses = Set(defaults.stringArray(forKey: Self.acceptedLicensesKey) ?? [])
         verifiedStamps = defaults.dictionary(forKey: Self.verifiedStampsKey) as? [String: String] ?? [:]
@@ -79,13 +83,69 @@ public final class ModelManager {
 
     public var defaultEntry: ModelEntry? { entry(defaultModelID) }
 
-    public func path(for id: String) -> String? { try? modelPath(modelsDir: modelsDir, id: id) }
+    public func path(for id: String) -> String? {
+        if let file = Self.customFileName(id) { return customDirectory.appendingPathComponent(file).path }
+        return try? modelPath(modelsDir: modelsDir, id: id)
+    }
+
+    // MARK: Your own model files (PARITY C7)
+
+    static let customPrefix = "custom:"
+    /// Models → Custom: any GGUF file here is listed (Add Model File… copies into it).
+    public var customDirectory: URL { URL(fileURLWithPath: modelsDir).appendingPathComponent("Custom", isDirectory: true) }
+
+    public static func isCustom(_ id: String) -> Bool { id.hasPrefix(customPrefix) }
+    static func customFileName(_ id: String) -> String? { isCustom(id) ? String(id.dropFirst(customPrefix.count)) : nil }
+
+    /// A GGUF file starts with the bytes "GGUF".
+    static func isGGUF(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        return (try? handle.read(upToCount: 4)) == Data("GGUF".utf8)
+    }
+
+    private func customEntries() -> [ModelEntry] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: customDirectory, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        return files.filter { $0.pathExtension.lowercased() == "gguf" }.sorted { $0.lastPathComponent < $1.lastPathComponent }.map { url in
+            let name = url.deletingPathExtension().lastPathComponent
+            let lower = name.lowercased()
+            // The family decides extras such as Whisper's vocabulary prompt.
+            let family = ["whisper", "parakeet", "moonshine", "sensevoice"].first { lower.contains($0) } ?? "custom"
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(UInt64.init) ?? 0
+            return ModelEntry(id: Self.customPrefix + url.lastPathComponent, name: name, family: family,
+                              description: "Your own model file. Not measured by Utter, so there are no scores.",
+                              languages: [], sizeBytes: size, license: "Your file", licenseUrl: url.deletingLastPathComponent().absoluteString,
+                              licenseRequiresAcceptance: false, recommended: false,
+                              measuredWer: 0, measuredRtf: 0, measuredP50Ms: 0, measuredFootprintMb: 0)
+        }
+    }
+
+    /// Copies a GGUF model file into the Custom folder. Returns a problem, or nil.
+    @discardableResult
+    public func addModelFile(_ url: URL) -> String? {
+        guard Self.isGGUF(url) else { return "That file isn't a GGUF model. Utter runs .gguf files made for transcribe.cpp." }
+        let dest = customDirectory.appendingPathComponent(url.lastPathComponent)
+        do {
+            try FileManager.default.createDirectory(at: customDirectory, withIntermediateDirectories: true)
+            if FileManager.default.fileExists(atPath: dest.path) { return "A model file with that name is already added." }
+            try FileManager.default.copyItem(at: url, to: dest) // an APFS clone: instant, no extra space
+        } catch {
+            Log.error("add model file failed: \(error)")
+            return "The model file couldn't be copied into Utter's models folder."
+        }
+        Log.info("custom model added file=\(url.lastPathComponent)")
+        refresh()
+        return nil
+    }
 
     public var installedEntries: [ModelEntry] { entries.filter { status[$0.id] == .installed } }
 
     /// Re-reads install state from disk (cheap: size checks only).
     public func refresh() {
-        for entry in entries where downloads[entry.id] == nil && !verifying.contains(entry.id) {
+        let custom = customEntries()
+        entries = catalog + custom
+        for entry in custom { status[entry.id] = .installed }
+        for entry in catalog where downloads[entry.id] == nil && !verifying.contains(entry.id) {
             switch try? modelState(modelsDir: modelsDir, id: entry.id) {
             case .installed:
                 status[entry.id] = damaged[entry.id].map { .failed($0) } ?? .installed
@@ -111,6 +171,7 @@ public final class ModelManager {
 
     /// True if this exact file (same size and modification time) passed a SHA-256 check.
     public func isVerified(_ id: String) -> Bool {
+        if Self.isCustom(id) { return true } // no pinned hash to check against
         guard let current = stamp(id) else { return false }
         return verifiedStamps[id] == current
     }
@@ -133,7 +194,7 @@ public final class ModelManager {
     /// damaged (error + Re-download in the UI).
     @discardableResult
     public func verify(_ id: String) async -> VerifyResult {
-        guard let entry = entry(id), downloads[id] == nil, !verifying.contains(id) else { return .notChecked }
+        guard let entry = entry(id), downloads[id] == nil, !verifying.contains(id), !Self.isCustom(id) else { return .notChecked }
         verifying.insert(id)
         status[id] = .verifying
         let dir = modelsDir
@@ -211,6 +272,17 @@ public final class ModelManager {
     /// Deletes a model. The default model can't be deleted while it is the default.
     public func delete(_ id: String) {
         guard id != defaultModelID else { return }
+        if let path = path(for: id), Self.isCustom(id) {
+            // The user's own file goes to the Trash, so it can be put back.
+            do { try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil) } catch {
+                status[id] = .failed("The model file couldn't be moved to the Trash.")
+                return
+            }
+            status[id] = nil
+            refresh()
+            Log.info("custom model removed model=\(id)")
+            return
+        }
         downloads[id]?.cancel()
         do {
             try deleteModel(modelsDir: modelsDir, id: id)

@@ -9,6 +9,7 @@ import UtterCore
 @MainActor @Observable
 final class ModelManagerViewState {
     var licensePrompt: ModelEntry?
+    var addProblem: String?
 }
 
 public struct ModelManagerView: View {
@@ -32,6 +33,9 @@ public struct ModelManagerView: View {
                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .strokeBorder(entry.id == manager.defaultModelID ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.08),
                                           lineWidth: entry.id == manager.defaultModelID ? 1.5 : 1))
+                }
+                if let problem = viewState.addProblem {
+                    Text(problem).font(.caption).foregroundStyle(.red).onTapGesture { viewState.addProblem = nil }
                 }
                 footer
             }
@@ -69,6 +73,7 @@ public struct ModelManagerView: View {
             HStack {
                 Text("Installed: \(manager.installedEntries.count) of \(manager.entries.count)")
                 Spacer()
+                Button("Add Model File…") { addModelFile() }.buttonStyle(.link)
                 Button("Show Models Folder") {
                     try? FileManager.default.createDirectory(at: ModelLocation.modelsDirectory, withIntermediateDirectories: true)
                     NSWorkspace.shared.open(ModelLocation.modelsDirectory)
@@ -79,6 +84,16 @@ public struct ModelManagerView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.top, 4)
+    }
+
+    /// A GGUF file of your own (PARITY C7); it is copied into Models/Custom.
+    private func addModelFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.data]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a .gguf speech model made for transcribe.cpp. Files you put in the Custom folder are listed too."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        viewState.addProblem = manager.addModelFile(url)
     }
 
     private func handle(_ action: ModelRow.Action, _ entry: ModelEntry) {
@@ -135,7 +150,13 @@ struct ModelRow: View {
         }
     }
 
-    private var scores: some View {
+    @ViewBuilder private var scores: some View {
+        if entry.measuredRtf > 0 { measuredScores } else {
+            Text("Not measured").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    private var measuredScores: some View {
         let score = ModelScores(entry)
         return VStack(spacing: 6) {
             ScoreBar(label: "Accuracy", value: score.accuracy, tint: .green)
@@ -188,11 +209,11 @@ struct ModelRow: View {
             case .installed:
                 if isDefault {
                     Text("Default model").font(.caption).foregroundStyle(.secondary)
-                    Button("Verify") { action(.verify) }.buttonStyle(.link).font(.caption)
+                    if !ModelManager.isCustom(entry.id) { Button("Verify") { action(.verify) }.buttonStyle(.link).font(.caption) }
                 } else {
                     Button("Use This Model") { action(.setDefault) }
                     HStack {
-                        Button("Verify") { action(.verify) }.buttonStyle(.link).font(.caption)
+                        if !ModelManager.isCustom(entry.id) { Button("Verify") { action(.verify) }.buttonStyle(.link).font(.caption) }
                         Button("Delete", role: .destructive) { action(.delete) }
                             .buttonStyle(.borderless)
                             .foregroundStyle(.red)
