@@ -17,6 +17,8 @@ public final class DictationController {
     public private(set) var state: State = .starting {
         didSet {
             if state != .recording { stopIncrementalFeed() }
+            // Esc cancels only while there is a dictation to cancel.
+            hotkey.cancelArmed = state == .recording || state == .transcribing
             // A recording that ended in failure leaves nothing to finish.
             if case .failed = state { incremental = nil }
             updateOverlay(from: oldValue)
@@ -42,23 +44,66 @@ public final class DictationController {
     /// Set when the background load completes; never queried from Rust on main.
     public private(set) var modelLoaded = false
 
-    public let hotkey = HotkeyMonitor(shortcut: Shortcut.load())
+    public let hotkey = HotkeyMonitor(shortcut: Shortcut.load(), processShortcut: Shortcut.loadOptional(key: Shortcut.processDefaultsKey))
     public private(set) var mode = DictationMode.load()
+    /// Hold-or-toggle: a press shorter than this keeps recording until the next press.
+    public private(set) var holdThresholdMs = DictationMode.holdThresholdMs()
+
+    /// Posted when the mode or a shortcut changes (Settings mirrors them).
+    public static let shortcutsChanged = Notification.Name("dev.utter.shortcutsChanged")
 
     public func setMode(_ newMode: DictationMode) {
+        guard newMode != mode else { return }
         mode = newMode
         newMode.save()
         Log.info("dictation mode \(newMode.rawValue)")
+        NotificationCenter.default.post(name: Self.shortcutsChanged, object: self)
+    }
+
+    public func setHoldThreshold(ms: Int) {
+        holdThresholdMs = min(max(ms, DictationMode.holdThresholdRange.lowerBound), DictationMode.holdThresholdRange.upperBound)
+        UserDefaults.standard.set(holdThresholdMs, forKey: DictationMode.holdThresholdKey)
     }
 
     /// Changes the shortcut (validated) and saves it.
     public func setShortcut(_ shortcut: Shortcut) {
-        guard shortcut.problem == nil else { return }
+        guard shortcut.problem == nil, shortcut != hotkey.processShortcut else { return }
         hotkey.shortcut = shortcut
         shortcut.save()
         Log.info("shortcut changed to \(shortcut.displayString)")
+        NotificationCenter.default.post(name: Self.shortcutsChanged, object: self)
         onStateChange?(state)
     }
+
+    /// The second shortcut: dictate, then run `processMode` (nil removes it).
+    public func setProcessShortcut(_ shortcut: Shortcut?) {
+        if let shortcut {
+            guard shortcut.problem == nil, shortcut != hotkey.shortcut else { return }
+            shortcut.save(key: Shortcut.processDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Shortcut.processDefaultsKey)
+        }
+        hotkey.processShortcut = shortcut
+        Log.info("AI shortcut changed to \(shortcut?.displayString ?? "none")")
+        NotificationCenter.default.post(name: Self.shortcutsChanged, object: self)
+        onStateChange?(state)
+    }
+
+    public static let processModeKey = "hotkey.processMode"
+    /// The AI mode the second shortcut uses, whatever the everyday mode is.
+    public var processMode: TextPipelineSettings.Mode {
+        get {
+            UserDefaults.standard.string(forKey: Self.processModeKey)
+                .flatMap(TextPipelineSettings.Mode.init(rawValue:)).flatMap { $0.usesProcessor ? $0 : nil } ?? .professional
+        }
+        set {
+            guard newValue.usesProcessor else { return }
+            UserDefaults.standard.set(newValue.rawValue, forKey: Self.processModeKey)
+        }
+    }
+
+    /// Restores ⌥Space.
+    public func resetShortcut() { setShortcut(.optionSpace) }
 
     /// `make bench` launches a second copy next to the user's: it measures
     /// start-up only and must never act on the shortcut.
@@ -66,17 +111,54 @@ public final class DictationController {
 
     private func hotkeyEvent(keyDown: Bool, _ timing: KeyTiming) {
         guard !Self.benchInstance else { return }
-        switch HotkeyPolicy.decide(keyDown: keyDown, mode: mode, recording: state == .recording) {
+        let recording = state == .recording
+        // One dictation at a time: the other shortcut can't stop or restart it.
+        if recording, timing.binding != recordingBinding, recordingSource != .menu { return }
+        let heldMs = press.map { MonoClock.ms(from: $0.callbackNs, to: timing.callbackNs) } ?? 0
+        switch HotkeyPolicy.decide(keyDown: keyDown, mode: mode, recording: recording, heldMs: heldMs, thresholdMs: holdThresholdMs) {
         case .start:
             var timing = timing
             if mode == .toggle { timing.source = .toggle }
             pressed(timing)
         case .stop:
             released(timing)
+        case .latch:
+            // A tap: nothing is held any more, so the watchdog must not look for the key.
+            if recordingSource == .tap { recordingSource = .toggle }
+            Log.info("hold-or-toggle: tap of \(Int(heldMs)) ms, recording until the next press")
         case .ignore:
             break
         }
     }
+
+    /// Esc while recording or transcribing: drop this dictation, insert nothing.
+    public func cancelDictation(reason: String = "esc") {
+        switch state {
+        case .recording:
+            stopWatchdog()
+            stopIncrementalFeed()
+            incremental = nil
+            cancelledSerial = dictationSerial
+            let recorder = self.recorder
+            audioQueue.async { _ = recorder.stop(releaseNs: MonoClock.nowNs()) }
+        case .transcribing:
+            cancelledSerial = dictationSerial
+        default:
+            return
+        }
+        hotkey.forceRelease()
+        Log.info("dictation cancelled reason=\(reason) serial=\(dictationSerial)")
+        state = micProblem.map { .failed($0) } ?? .ready
+        if reason == "esc" { overlay.show(.notice("Dictation cancelled.", .unconfirmed)) }
+    }
+
+    /// Counts dictations; a cancelled one's late result is dropped by serial.
+    private var dictationSerial = 0
+    private var cancelledSerial = -1
+    /// The text mode this dictation used (the AI shortcut overrides the setting).
+    private var dictationTextMode: TextPipelineSettings.Mode = .clean
+    /// Which shortcut started the current recording.
+    private var recordingBinding: ShortcutBinding = .dictate
     /// Mic start/stop and resampling run here so neither the event-tap thread
     /// nor the main thread blocks on audio.
     private let audioQueue = DispatchQueue(label: "dev.utter.audio", qos: .userInteractive)
@@ -158,6 +240,16 @@ public final class DictationController {
         }
         hotkey.onRelease = { [weak self] timing in
             Task { @MainActor in self?.hotkeyEvent(keyDown: false, timing) }
+        }
+        hotkey.onCancel = { [weak self] in
+            Task { @MainActor in self?.cancelDictation() }
+        }
+        hotkey.onAbort = { [weak self] in
+            // fn (or right ⌥…) was the start of a combo, not a dictation.
+            Task { @MainActor in
+                guard let self, self.state == .recording, self.recordingSource == .tap else { return }
+                self.cancelDictation(reason: "combo")
+            }
         }
         hotkey.onShortcutConflict = { [weak self] error in
             self?.lastMessage = error.userMessage
@@ -308,7 +400,7 @@ public final class DictationController {
     private func recordHistory(_ pipeline: PipelineResult, recording: Recording, app: String?) {
         guard privacySettings.historyEnabled else { return }
         let entry = HistoryEntry(durationMs: recording.durationMs, model: loadedModelID ?? "unknown",
-                                 mode: textSettings.mode.rawValue, raw: pipeline.raw, final: pipeline.final, app: app)
+                                 mode: dictationTextMode.rawValue, raw: pipeline.raw, final: pipeline.final, app: app)
         let audio = HistoryPolicy.audioToKeep(recording.samples, privacy: privacySettings)
         let store = historyStore
         historyQueue.async {
@@ -590,6 +682,8 @@ public final class DictationController {
             return
         }
         press = timing
+        dictationSerial += 1
+        recordingBinding = timing.binding
         recordStartedNs = 0
         // A notice belongs to the dictation that caused it.
         lastMessage = nil
@@ -636,15 +730,16 @@ public final class DictationController {
     private func startWatchdog() {
         stopWatchdog()
         let started = Date()
-        let keyCode = CGKeyCode(hotkey.shortcut.keyCode)
-        let source = recordingSource
+        let key = (recordingBinding == .process ? hotkey.processShortcut : nil) ?? hotkey.shortcut
         var keyUpChecks = 0
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.state == .recording else { return }
+                // Read each time: a hold-or-toggle tap turns a tap recording into a toggle one.
+                let source = self.recordingSource
                 guard let reason = WatchdogPolicy.releaseReason(
                     elapsed: Date().timeIntervalSince(started), maxSeconds: Self.maxRecordingSeconds, source: source,
-                    keyDown: CGEventSource.keyState(.combinedSessionState, key: keyCode),
+                    keyDown: key.isPhysicallyDown(),
                     secureInput: PasteInserter.secureInputActive, keyUpChecks: &keyUpChecks)
                 else { return }
                 if reason == "max_length" {
@@ -670,9 +765,10 @@ public final class DictationController {
         stopIncrementalFeed()
         state = .transcribing
         let recorder = self.recorder
+        let serial = dictationSerial
         audioQueue.async {
             let recording = recorder.stop(releaseNs: timing.callbackNs)
-            Task { @MainActor in await self.finish(recording, press: press, release: timing) }
+            Task { @MainActor in await self.finish(recording, press: press, release: timing, serial: serial) }
         }
     }
 
@@ -682,7 +778,7 @@ public final class DictationController {
         if state == .recording { released(now) } else { pressed(now) }
     }
 
-    private func finish(_ recording: Recording, press: KeyTiming, release: KeyTiming) async {
+    private func finish(_ recording: Recording, press: KeyTiming, release: KeyTiming, serial: Int) async {
         guard recording.didRecord else {
             // The microphone never started (the failure is already shown); keep that state.
             if state == .transcribing { state = micProblem.map { .failed($0) } ?? .ready }
@@ -693,9 +789,13 @@ public final class DictationController {
                 ?? UserMessages.microphoneDisconnected
             Log.info("dictation device change continued_on=\(recording.continuedOnDevice ?? "none") samples=\(recording.samples.count)")
         }
+        guard cancelledSerial != serial else { return }
         let engine = self.engine
         let samples = recording.samples
-        let text = textSettings
+        var text = textSettings
+        // The AI shortcut runs its mode whatever the everyday mode is.
+        if recordingBinding == .process { text.mode = processMode }
+        dictationTextMode = text.mode
         let options = dictationOptions(noticeUnsupportedLanguage: true)
         let incremental = self.incremental
         self.incremental = nil
@@ -716,6 +816,7 @@ public final class DictationController {
             }.value
         } catch let error as CoreError {
             Log.error("transcribe failed: \(error.logDetail)")
+            guard cancelledSerial != serial else { return }
             fail(error.userMessage)
             if case .InferenceFailed = error, let id = loadedModelID {
                 // A damaged file can load and warm up yet fail every inference.
@@ -736,9 +837,12 @@ public final class DictationController {
             }
             return
         } catch {
+            guard cancelledSerial != serial else { return }
             fail("Transcription failed. Please try again.")
             return
         }
+        // Esc during transcription: the words are dropped, nothing is typed.
+        guard cancelledSerial != serial else { return }
         let transcribedNs = MonoClock.nowNs()
         // Raw transcript → local stages → optional AI processor → final text.
         // Local-only mode (the default) allows only processors on this Mac.
@@ -755,6 +859,7 @@ public final class DictationController {
         }
         let pipeline = TextPipeline(settings: text, processor: processor)
         let processed = result.skipped == nil ? await pipeline.run(result.text) : PipelineResult(raw: result.text, final: "", changes: [])
+        guard cancelledSerial != serial else { return }
         currentPipeline = processed
         processedNs = MonoClock.nowNs()
         // A lone "um" cleans up to nothing: skip it like silence.
@@ -844,7 +949,8 @@ public final class DictationController {
             ("keydown_to_first_callback_ms", ms(press.callbackNs, rec.firstCallbackNs)),
             ("release_to_last_sample_end_ms", ms(release.callbackNs, rec.lastSampleEndNs)),
             ("release_to_transcribed_ms", ms(release.callbackNs, transcribedNs)),
-            ("text_mode", textSettings.mode.rawValue),
+            ("text_mode", dictationTextMode.rawValue),
+            ("shortcut", recordingBinding == .process ? "ai" : "dictate"),
             ("processing_ms", processedNs >= transcribedNs ? ms(transcribedNs, processedNs) : "n/a"),
             ("text_changes", "\(currentPipeline?.changes.count ?? 0)"),
             ("processor", currentPipeline?.processor.map { "\"\($0)\"" } ?? "none"),

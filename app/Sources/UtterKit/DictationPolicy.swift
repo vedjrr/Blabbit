@@ -18,14 +18,36 @@ public enum DictationMode: String, Codable, CaseIterable, Sendable {
     case pushToTalk
     /// Press to start, press again to stop.
     case toggle
+    /// Hold to talk, or tap to keep recording until the next press; decided by
+    /// how long the key was held (`holdThresholdMs`).
+    case holdOrToggle
 
     public static let defaultsKey = "dictation.mode"
+    public static let holdThresholdKey = "dictation.holdThresholdMs"
+    /// Same default as Handy (`default_hold_threshold_ms`).
+    public static let defaultHoldThresholdMs = 300
+    public static let holdThresholdRange = 100...1000
 
     public var title: String {
         switch self {
         case .pushToTalk: "Hold to Talk"
         case .toggle: "Press to Start and Stop"
+        case .holdOrToggle: "Hold to Talk, or Tap to Start and Stop"
         }
+    }
+
+    /// Word for the menu's "Shortcut: hold ⌥Space" line.
+    public var verb: String {
+        switch self {
+        case .pushToTalk: "hold"
+        case .toggle: "press"
+        case .holdOrToggle: "hold or tap"
+        }
+    }
+
+    public static func holdThresholdMs(from defaults: UserDefaults = .standard) -> Int {
+        let saved = defaults.integer(forKey: holdThresholdKey)
+        return saved == 0 ? defaultHoldThresholdMs : min(max(saved, holdThresholdRange.lowerBound), holdThresholdRange.upperBound)
     }
 
     public static func load(from defaults: UserDefaults = .standard) -> DictationMode {
@@ -39,14 +61,21 @@ public enum DictationMode: String, Codable, CaseIterable, Sendable {
 
 /// What a shortcut key event does, given the mode and whether a recording runs.
 public enum HotkeyPolicy {
-    public enum Decision: Equatable, Sendable { case start, stop, ignore }
+    /// `latch`: a short tap in hold-or-toggle mode; keep recording until the next press.
+    public enum Decision: Equatable, Sendable { case start, stop, latch, ignore }
 
-    public static func decide(keyDown: Bool, mode: DictationMode, recording: Bool) -> Decision {
+    /// `heldMs`: how long the key was down, for a key-up (hold-or-toggle only).
+    public static func decide(keyDown: Bool, mode: DictationMode, recording: Bool,
+                              heldMs: Double = 0, thresholdMs: Int = DictationMode.defaultHoldThresholdMs) -> Decision {
         switch (mode, keyDown) {
         case (.pushToTalk, true): return recording ? .ignore : .start
         case (.pushToTalk, false): return recording ? .stop : .ignore
         case (.toggle, true): return recording ? .stop : .start
         case (.toggle, false): return .ignore
+        case (.holdOrToggle, true): return recording ? .stop : .start
+        case (.holdOrToggle, false):
+            guard recording else { return .ignore }
+            return heldMs >= Double(thresholdMs) ? .stop : .latch
         }
     }
 }

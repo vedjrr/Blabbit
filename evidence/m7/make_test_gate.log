@@ -1,0 +1,601 @@
+./scripts/fetch-models.sh
+ok       parakeet-tdt-0.6b-v3
+ok       whisper-small
+ok       whisper-large-v3-turbo
+ok       moonshine-base
+ok       whisper-medium
+cd "/Users/ved/Documents 2/utter-kit/core" && cargo test --release --workspace
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.28s
+     Running unittests src/main.rs (target/release/deps/uniffi_bindgen-ff5893d8b788a99e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/release/deps/utter_cli-8c5e24ae6a51ce3d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/utter_core-d60d315e833c594b)
+
+running 33 tests
+test audio::tests::rms_of_silence_and_square_wave ... ok
+test audio::tests::downmix_averages_channels ... ok
+test engine::tests::short_and_silent_audio_is_skipped_without_a_model ... ok
+test engine::tests::missing_model_file_maps_to_model_missing ... ok
+test engine::tests::transcribe_without_model_is_a_clear_error ... ok
+test audio::tests::skips_short_and_silent_recordings ... ok
+test catalog::tests::catalog_lists_every_g3_model_with_pinned_urls ... ok
+test tests::runtime_reports_version ... ok
+test text::tests::capitalisation_and_punctuation ... ok
+test segment::tests::trailing_silence_is_not_a_cut ... ok
+test text::tests::fillers_and_stutters ... ok
+test engine::tests::garbage_file_maps_to_model_corrupt ... ok
+test audio::tests::loads_int16_stereo_and_rejects_wrong_rate ... ok
+test text::tests::options_switch_stages_off ... ok
+test text::tests::scores ... ok
+test catalog::tests::install_state_and_delete ... ok
+test segment::tests::works_with_a_quiet_microphone_and_background_noise ... ok
+test segment::tests::no_cut_without_a_long_enough_pause_or_after_the_start_point ... ok
+test text::tests::spacing ... ok
+test text::tests::spoken_commands ... ok
+test text::tests::short_and_symbol_terms_do_not_spread ... ok
+test text::tests::whisper_prompt_lists_terms ... ok
+test text::tests::modes ... ok
+test wer::tests::counts_each_edit_kind ... ok
+test wer::tests::empty_cases ... ok
+test segment::tests::cuts_in_the_last_pause_after_the_minimum ... ok
+test wer::tests::identical_after_normalisation_is_zero ... ok
+test text::tests::vocabulary_leaves_ordinary_words_alone ... ok
+test text::tests::vocabulary_fixes_real_mishearings ... ok
+test memory::tests::reports_nonzero_and_tracks_allocation ... ok
+test text::tests::unicode_never_panics_in_any_mode ... ok
+test text::tests::long_dictation_with_a_big_vocabulary_is_fast ... ok
+test tests::metal_backend_is_compiled_in ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/download.rs (target/release/deps/download-ef7211009df1dace)
+
+running 10 tests
+test verify_file_detects_truncation_and_bit_flips ... ok
+test checksum_mismatch_deletes_partial_and_reports_corrupt ... ok
+test downloads_and_verifies ... ok
+test http_errors_and_unreachable_hosts_are_plain_errors ... ok
+test resumes_with_range_after_dropped_connection ... ok
+test server_ignoring_range_restarts_cleanly ... ok
+test stalled_connection_fails_and_keeps_nothing_lost ... ok
+test pause_keeps_partial_and_cancel_deletes_it ... ok
+test stopped_process_keeps_partial_for_a_later_resume ... ok
+test transfer_longer_than_the_body_budget_completes ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.81s
+
+     Running tests/fixtures.rs (target/release/deps/fixtures-bf8f94072e6e6271)
+
+running 5 tests
+test five_minute_recording_is_not_truncated ... ok
+test parakeet_v3_transcribes_fixtures_with_one_load ... ok
+test incremental_segments_match_one_shot_and_leave_little_for_release ... ok
+test switching_models_releases_the_old_one ... ok
+test status_queries_do_not_block_during_load_or_inference ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.85s
+
+     Running unittests src/lib.rs (target/release/deps/utter_ffi-acdb74d2f207729b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests utter_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests utter_ffi
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+cd "/Users/ved/Documents 2/utter-kit/core" && cargo build --release --workspace
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.05s
+cd "/Users/ved/Documents 2/utter-kit/core" && ./target/release/uniffi-bindgen generate \
+		--library target/release/libutter_ffi.a --language swift --out-dir "/Users/ved/Documents 2/utter-kit/build/bindings"
+mkdir -p "/Users/ved/Documents 2/utter-kit/app/Sources/UtterFFI/include" "/Users/ved/Documents 2/utter-kit/app/Sources/UtterCore"
+install -m 644 "/Users/ved/Documents 2/utter-kit/build/bindings/UtterFFI.h" "/Users/ved/Documents 2/utter-kit/app/Sources/UtterFFI/include/UtterFFI.h"
+install -m 644 "/Users/ved/Documents 2/utter-kit/build/bindings/UtterFFI.modulemap" "/Users/ved/Documents 2/utter-kit/app/Sources/UtterFFI/include/module.modulemap"
+install -m 644 "/Users/ved/Documents 2/utter-kit/build/bindings/UtterCore.swift" "/Users/ved/Documents 2/utter-kit/app/Sources/UtterCore/UtterCore.swift"
+cd "/Users/ved/Documents 2/utter-kit/app" && UTTER_LOG_FILE="${TMPDIR:-/tmp}/utter-tests.log" swift test -c release --arch arm64 --build-system native -Xswiftc -F -Xswiftc /Library/Developer/CommandLineTools/Library/Developer/Frameworks -Xlinker -F -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/usr/lib; \
+		status=$?; find "$HOME/Library/Preferences" -maxdepth 1 -name 'dev.utter.test.*.plist' -delete; exit $status
+[0/1] Planning build
+Building for production...
+[0/9] Write sources
+[1/9] Write swift-version--1AB21518FC5DEDBE.txt
+[3/12] Compiling UtterAXHost main.swift
+[3/12] Write Objects.LinkFileList
+[4/12] Linking UtterAXHost
+[6/12] Compiling UtterCore UtterCore.swift
+[7/13] Compiling GRDB Configuration.swift
+[8/14] Compiling UtterKit AccessibilityInserter.swift
+/Users/ved/Documents 2/utter-kit/app/Sources/UtterKit/HistoryView.swift:34:23: warning: result of call to 'assumeIsolated(_:file:line:)' is unused [#NoUsage]
+ 32 |         // A new dictation shows up without reopening the window.
+ 33 |         observer = NotificationCenter.default.addObserver(forName: .historyChanged, object: nil, queue: .main) { [weak self] _ in
+ 34 |             MainActor.assumeIsolated { self?.reload() }
+    |                       `- warning: result of call to 'assumeIsolated(_:file:line:)' is unused [#NoUsage]
+ 35 |         }
+ 36 |     }
+
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+[9/17] Compiling Utter main.swift
+[9/17] Write Objects.LinkFileList
+[10/17] Linking Utter
+[12/17] Compiling utter_bench Support.swift
+/Users/ved/Documents 2/utter-kit/app/Sources/UtterBench/main.swift:36:12: warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 34 |     var buffer = [CChar](repeating: 0, count: max(size, 1))
+ 35 |     sysctlbyname(name, &buffer, &size, nil, 0)
+ 36 |     return String(cString: buffer)
+    |            `- warning: 'init(cString:)' is deprecated: Use String(decoding: array, as: UTF8.self) instead, after truncating the null termination. [#DeprecatedDeclaration]
+ 37 | }
+ 38 | 
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[12/17] Write Objects.LinkFileList
+[13/17] Linking utter-bench
+[15/17] Compiling UtterTests AXIntegrationTests.swift
+/Users/ved/Documents 2/utter-kit/app/Tests/UtterTests/InsertionTests.swift:228:9: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'FakeElement?', consider removing it
+226 |         paste.quietPeriod = .milliseconds(10)
+227 |         paste.receiptTimeout = .milliseconds(100)
+228 |         nonisolated(unsafe) let field = field
+    |         `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'FakeElement?', consider removing it
+229 |         return TextInserter(settings: settings, paste: paste, checkSecureInput: true, secureInputActive: { secure },
+230 |                             focus: { field }, typer: { text in typed(text); return nil })
+
+/Users/ved/Documents 2/utter-kit/app/Tests/UtterTests/InsertionTests.swift:359:9: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'FakeElement', consider removing it
+357 |         var submitted = false
+358 |         let paste = PasteInserter(pasteboard: pb, checkSecureInput: false) { nil }
+359 |         nonisolated(unsafe) let f = field
+    |         `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'FakeElement', consider removing it
+360 |         let ins = TextInserter(settings: settings, paste: paste, keys: { _ in submitted = true }, checkSecureInput: false,
+361 |                                focus: { f }, typer: { _ in nil })
+
+/Users/ved/Documents 2/utter-kit/app/Tests/UtterTests/InsertionTests.swift:375:9: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'FakeElement', consider removing it
+373 |         let paste = PasteInserter(pasteboard: pb, checkSecureInput: false) { nil }
+374 |         let field = FakeElement()
+375 |         nonisolated(unsafe) let f = field
+    |         `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'FakeElement', consider removing it
+376 |         let ins = TextInserter(settings: settings, paste: paste, checkSecureInput: false, focus: { f }, typer: { _ in nil })
+377 |         let report = await ins.insert("hi", bundleID: "com.apple.TextEdit")
+
+/Users/ved/Documents 2/utter-kit/app/Tests/UtterTests/InsertionTests.swift:416:9: warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'FakeElement', consider removing it
+414 |         var submitted = false
+415 |         let paste = PasteInserter(pasteboard: pb, checkSecureInput: false) { nil }
+416 |         nonisolated(unsafe) let f = field
+    |         `- warning: 'nonisolated(unsafe)' is unnecessary for a constant with 'Sendable' type 'FakeElement', consider removing it
+417 |         let ins = TextInserter(settings: settings, paste: paste, keys: { _ in submitted = true }, checkSecureInput: false,
+418 |                                focus: { f }, typer: { _ in nil })
+[15/17] Write Objects.LinkFileList
+[16/17] Linking UtterPackageTests
+Build complete! (39.56s)
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite TextInserterTests started.
+􀟈  Suite ResamplerTests started.
+􀟈  Suite ShortcutMatcherTests started.
+􀟈  Suite InsertionStrategyTableTests started.
+􀟈  Suite PermissionsOnboardingTests started.
+􀟈  Suite AudioHardwareTests started.
+􀟈  Suite TextPipelineTests started.
+􀟈  Suite ModelManagerSnapshotTests started.
+􀟈  Suite SecureInputTests started.
+􀟈  Suite SampleRingTests started.
+􀟈  Suite ErrorMappingTests started.
+􀟈  Suite ModelSwitchTests started.
+􀟈  Suite ScriptRunnerTests started.
+􀟈  Suite ModelManagerTests started.
+􀟈  Suite ClockTests started.
+􀟈  Suite IncrementalTranscriberTests started.
+􀟈  Suite ClipboardTests started.
+􀟈  Suite OverlayTests started.
+􀟈  Suite InsertionSettingsTests started.
+􀟈  Suite InsertionPreferenceTests started.
+􀟈  Suite AccessibilityInserterTests started.
+􀟈  Suite AudioDeviceTests started.
+􀟈  Suite AXIntegrationTests started.
+􀟈  Suite DictationPolicyTests started.
+􀟈  Suite InsertionSettingsBehaviourTests started.
+􀟈  Suite HistoryTests started.
+􀟈  Suite HotkeyModeTests started.
+􀟈  Suite SettingsSnapshotTests started.
+􀟈  Suite TypingInserterTests started.
+􀟈  Test rustCoreIsLinkedAndReportsRuntime() started.
+􀟈  Suite DeviceChangeTests started.
+􀟈  Test secureInputTurningOnBeforeTypingBlocksTyping() started.
+􀟈  Test rejectsInvalidFormat() started.
+􀟈  Test passwordFieldIsReportedAsSuch() started.
+􀟈  Test blankTranscriptIsNeverInserted(text:) started.
+􀟈  Test convertsToSixteenKilohertzMono(rate:) started.
+􀟈  Suite EngineBridgeTests started.
+􀟈  Test terminalSkipsAccessibility() started.
+􀟈  Test secureInputDuringTypingIsBlocked() started.
+􀟈  Test globalSecureInputBlocksEveryMethod(method:) started.
+􀟈  Test nativeAppUsesAccessibilityAndLeavesClipboardAlone() started.
+􀟈  Test unverifiedAccessibilityIsNotRetried() started.
+􀟈  Test autoSubmitSkippedWhenUnverified() started.
+􀟈  Test accessibilityNoOpFallsThroughToPaste() started.
+􀟈  Test copyToClipboardKeepsTheInsertedText() started.
+􀟈  Test chainFollowsTheFocusedFieldsAppNotTheFrontmostApp() started.
+􀟈  Test defaultsByAppClass() started.
+􀟈  Test overrideToTypingIsHonoured() started.
+􀟈  Test rowsForEveryState() started.
+􀟈  Test emptyOverrideFallsBackToDefault() started.
+􀟈  Test unreadPasteIsUnverifiedKeptAndNotSubmitted() started.
+􀟈  Test liveRecheckReportsGrants() started.
+􀟈  Test userOverrideWinsAndPersists() started.
+􀟈  Test passwordFieldBlocksEveryStrategy() started.
+􀟈  Test plainSpaceAndOtherCombosPassThrough() started.
+􀟈  Test rendersTheSetupWindow() started.
+􀟈  Test pushToTalkPressAndReleaseAreSwallowed() started.
+􀟈  Test resetReportsWhetherKeyWasHeld() started.
+􀟈  Test countsDroppedSamplesWhenFull() started.
+􀟈  Test concurrentProducerAndConsumerLoseNothing() started.
+􀟈  Test releasingModifierFirstStillEndsOnKeyUp() started.
+􀟈  Test resetClearsStateAndPendingSignals() started.
+􀟈  Test autoRepeatWithoutPressIsIgnored() started.
+􀟈  Test localStagesRunThroughTheRustCore() started.
+􀟈  Test rendersWithTheInstalledModels() started.
+􀟈  Test briefSecureInputIsNotSustained() started.
+􀟈  Test sustainedAfterThresholdAndClearsWhenOff() started.
+􀟈  Test signalsWhenAudioUpToReleaseHasArrived() started.
+􀟈  Test carbonModifierMapping() started.
+􀟈  Test coversEveryFailureTheBriefNames() started.
+􀟈  Test displayString() started.
+􀟈  Test realCoreFailuresMapToTheirMessages() started.
+􀟈  Test onlyTheLatestLoadRequestCounts() started.
+􀟈  Test preservesOrderAcrossWrapAround() started.
+􀟈  Test hostTimeConversionMatchesAVAudioTimeAndUptimeClock() started.
+􀟈  Test everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test conversionDoesNotOverflowForLongUptimes() started.
+􀟈  Test shortcutTakenByAnotherRegistrationIsDetected() started.
+􀟈  Test everyCoreErrorKindIsPlain() started.
+􀟈  Test unsupportedLanguageHasItsOwnMessage() started.
+􀟈  Test capsLockAndFnDoNotBreakMatching() started.
+􀟈  Test scriptThatIgnoresStdinCannotCrashOrHangUtter() started.
+􀟈  Test partialOrDeniedReadsAreUnreadable() started.
+􀟈  Test pasteDelaysAreHonouredInOrder() started.
+􀟈  Test composedInsertionFailuresArePlain() started.
+􀟈  Test corruptFileOfTheRightSizeFailsVerification() started.
+􀟈  Test scriptIgnoringSigtermIsKilled() started.
+􀟈  Test timedOutScriptTakesItsChildrenWithIt() started.
+􀟈  Test declinedReadLeavesTranscriptAsPlainClipboardText() started.
+􀟈  Test catalogHasAllVerifiedModelsAndRecommendsParakeet() started.
+􀟈  Test doesNotClobberANewerCopy() started.
+􀟈  Test segmentsWhileRecordingAndLeavesOnlyTheTail(noise:) started.
+􀟈  Test switchesWaitForTheDictationToFinish() started.
+􀟈  Test licenceAcceptanceIsRequiredOnceAndPersisted() started.
+􀟈  Test downloadPauseCancelAndInstallThroughTheManager() started.
+􀟈  Test oversizedClipboardIsNotKept() started.
+􀟈  Test overlappingInsertsAreSerialisedAndRestoreTheOriginal() started.
+􀟈  Test pasteMarksTranscriptTransientForClipboardManagers() started.
+􀟈  Test unlistedChromiumAppsPasteFirst() started.
+􀟈  Test installedStateSwitchingAndDeleteRules() started.
+􀟈  Test noReceiptKeepsTranscriptOnClipboard() started.
+􀟈  Test damagedModelShowsErrorAndRefreshKeepsIt() started.
+􀟈  Test decodingToleratesMissingAndNewKeys() started.
+􀟈  Test trailingSpaceOnlyWhenEnabledAndNeeded() started.
+􀟈  Test emptyClipboardStaysEmpty() started.
+􀟈  Test pasteRestoresClipboardAfterTheTargetReadsIt() started.
+􀟈  Test hangingClipboardOwnerCannotStallInsertion() started.
+􀟈  Test unreadableSnapshotIsNeverRestored() started.
+􀟈  Test snapshotRestoresEveryItemAndType() started.
+􀟈  Test failedKeystrokeRestoresAndReportsFailure() started.
+􀟈  Test realModelVerifiesOnceAndStaysVerified() started.
+􀟈  Test insertsAtCaretAndVerifies() started.
+􀟈  Test roundTripsThroughUserDefaults() started.
+􀟈  Test newlinesCanBecomeSpaces() started.
+􀟈  Test listsInputDevicesWithStableIDs() started.
+􀟈  Test clipboardPreservationCanBeTurnedOff() started.
+􀟈  Test notApplicableCasesNeverWrite() started.
+􀟈  Test insertRecordsTimings() started.
+􀟈  Test newSettingsDecodeFromOldData() started.
+􀟈  Test panelCanNeverTakeFocus() started.
+􀟈  Test replacesSelection() started.
+􀟈  Test silentNoOpIsDetectedSoPasteCanTakeOver() started.
+􀟈  Test unexpectedChangeIsNotRetried() started.
+􀟈  Test errorThatStillAppliesIsNotRetried() started.
+􀟈  Test focusedElementOwnerIsResolved() started.
+􀟈  Test autoSubmitFiresOnceAfterInsertion() started.
+􀟈  Test secureInputFallback() started.
+􀟈  Test outcomePlans() started.
+􀟈  Test watchdogRules() started.
+􀟈  Test handlesEmojiAndNonLatinUTF16Lengths() started.
+􀟈  Test lateAsynchronousApplyIsSeenAfterSettling() started.
+􀟈  Test insertsIntoRealTextViewAtCaret() started.
+􀟈  Test externalScriptFailuresArePlainEnglish() started.
+􀟈  Test refusesPasswordFields() started.
+􀟈  Test failedWriteWithNoChangeFallsThrough() started.
+􀟈  Test storesSearchesAndDeletes() started.
+􀟈  Test hungScriptIsStopped() started.
+􀟈  Test whatIsKept() started.
+􀟈  Test copyToClipboardLeavesTranscriptAfterPaste() started.
+􀟈  Test toggleRecordingsAreNotCutByTheKeyWatchdog() started.
+􀟈  Test externalScriptReceivesTextOnStdin() started.
+􀟈  Test chunksAtTwentyUnitsWithoutSplittingGraphemes() started.
+􀟈  Test clipboardOnlyNeverInserts() started.
+􀟈  Test everySettingsTabRenders() started.
+􀟈  Test case passing 1 argument text → "   " to blankTranscriptIsNeverInserted(text:) started.
+􀟈  Test oversizedGraphemeIsSplitOnScalarBoundaries() started.
+􀟈  Test case passing 1 argument text → "
+	 " to blankTranscriptIsNeverInserted(text:) started.
+􀟈  Test privacyDefaults() started.
+􀟈  Test shortcutNamesUseTheKeyboardLayout() started.
+􀟈  Test newlinesBecomeReturnKeys() started.
+􀟈  Test case passing 1 argument text → "" to blankTranscriptIsNeverInserted(text:) started.
+􀟈  Test pushToTalkAndToggleDecisions() started.
+􀟈  Test case passing 1 argument rate → 48000.0 to convertsToSixteenKilohertzMono(rate:) started.
+􀟈  Test case passing 1 argument rate → 44100.0 to convertsToSixteenKilohertzMono(rate:) started.
+􀟈  Test recorderAcceptsValidAndExplainsInvalid() started.
+􀟈  Test case passing 1 argument method → .externalScript to globalSecureInputBlocksEveryMethod(method:) started.
+􀟈  Test modeAndShortcutPersist() started.
+􀟈  Test eventTimestampsMapOntoOurClock() started.
+􀟈  Test case passing 1 argument method → .automatic to globalSecureInputBlocksEveryMethod(method:) started.
+􀟈  Test case passing 1 argument method → .clipboardOnly to globalSecureInputBlocksEveryMethod(method:) started.
+􀟈  Test case passing 1 argument rate → 24000.0 to convertsToSixteenKilohertzMono(rate:) started.
+􀟈  Test unsafeShortcutsAreRejected() started.
+􀟈  Test case passing 1 argument rate → 16000.0 to convertsToSixteenKilohertzMono(rate:) started.
+􀟈  Test recordingContinuesAcrossADeviceChange() started.
+􀟈  Test case passing 1 argument failure → .microphonePermissionDenied to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .accessibilityPermissionDenied to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .modelMissing to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .modelDownloadFailure to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .corruptedModel to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .insufficientMemory to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument noise → 0.0 to segmentsWhileRecordingAndLeavesOnlyTheTail(noise:) started.
+􀟈  Test case passing 1 argument failure → .unsupportedModel to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .inferenceFailure to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .microphoneDisconnected to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .hotkeyConflict to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .textInsertionFailure to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test case passing 1 argument failure → .unavailableFocusedApplication to everyFailureHasAPlainMessage(failure:) started.
+􀟈  Test audioIsKeptOnlyWhenSavedAndGoesWithItsEntry() started.
+􀟈  Test transcribesFixtureThroughBridgeAndLoadsOnce() started.
+􁁛  Test rustCoreIsLinkedAndReportsRuntime() passed after 0.009 seconds.
+􁁛  Test emptyOverrideFallsBackToDefault() passed after 0.014 seconds.
+􁁛  Test rejectsInvalidFormat() passed after 0.014 seconds.
+􁁛  Test defaultsByAppClass() passed after 0.014 seconds.
+􁁛  Test plainSpaceAndOtherCombosPassThrough() passed after 0.014 seconds.
+􁁛  Test pushToTalkPressAndReleaseAreSwallowed() passed after 0.014 seconds.
+􁁛  Test resetReportsWhetherKeyWasHeld() passed after 0.014 seconds.
+􁁛  Test autoRepeatWithoutPressIsIgnored() passed after 0.014 seconds.
+􁁛  Test releasingModifierFirstStillEndsOnKeyUp() passed after 0.014 seconds.
+􁁛  Test resetClearsStateAndPendingSignals() passed after 0.014 seconds.
+􁁛  Test countsDroppedSamplesWhenFull() passed after 0.014 seconds.
+􁁛  Test signalsWhenAudioUpToReleaseHasArrived() passed after 0.014 seconds.
+􁁛  Test sustainedAfterThresholdAndClearsWhenOff() passed after 0.014 seconds.
+􁁛  Test briefSecureInputIsNotSustained() passed after 0.014 seconds.
+􁁛  Test carbonModifierMapping() passed after 0.014 seconds.
+􁁛  Test coversEveryFailureTheBriefNames() passed after 0.014 seconds.
+􁁛  Test hostTimeConversionMatchesAVAudioTimeAndUptimeClock() passed after 0.014 seconds.
+􁁛  Test conversionDoesNotOverflowForLongUptimes() passed after 0.014 seconds.
+􁁛  Test preservesOrderAcrossWrapAround() passed after 0.014 seconds.
+􁁛  Test displayString() passed after 0.014 seconds.
+􁁛  Test onlyTheLatestLoadRequestCounts() passed after 0.014 seconds.
+􁁛  Test everyFailureHasAPlainMessage(failure:) with 12 test cases passed after 0.014 seconds.
+􁁛  Test capsLockAndFnDoNotBreakMatching() passed after 0.014 seconds.
+􁁛  Test everyCoreErrorKindIsPlain() passed after 0.014 seconds.
+􁁛  Test localStagesRunThroughTheRustCore() passed after 0.014 seconds.
+􁁛  Test realCoreFailuresMapToTheirMessages() passed after 0.014 seconds.
+􁁛  Test composedInsertionFailuresArePlain() passed after 0.014 seconds.
+􁁛  Test switchesWaitForTheDictationToFinish() passed after 0.014 seconds.
+􁁛  Test userOverrideWinsAndPersists() passed after 0.014 seconds.
+􁁛  Test convertsToSixteenKilohertzMono(rate:) with 4 test cases passed after 0.015 seconds.
+􁁛  Test decodingToleratesMissingAndNewKeys() passed after 0.014 seconds.
+􁁛  Test trailingSpaceOnlyWhenEnabledAndNeeded() passed after 0.014 seconds.
+􁁛  Test insertsAtCaretAndVerifies() passed after 0.014 seconds.
+􁁛  Test notApplicableCasesNeverWrite() passed after 0.014 seconds.
+􁁛  Test replacesSelection() passed after 0.014 seconds.
+􁁛  Test silentNoOpIsDetectedSoPasteCanTakeOver() passed after 0.014 seconds.
+􁁛  Test errorThatStillAppliesIsNotRetried() passed after 0.014 seconds.
+􁁛  Test unexpectedChangeIsNotRetried() passed after 0.014 seconds.
+􁁛  Test secureInputFallback() passed after 0.014 seconds.
+􁁛  Test outcomePlans() passed after 0.014 seconds.
+􁁛  Test watchdogRules() passed after 0.014 seconds.
+􁁛  Test handlesEmojiAndNonLatinUTF16Lengths() passed after 0.014 seconds.
+􁁛  Test lateAsynchronousApplyIsSeenAfterSettling() passed after 0.014 seconds.
+􁁛  Test unlistedChromiumAppsPasteFirst() passed after 0.014 seconds.
+􁁛  Test refusesPasswordFields() passed after 0.064 seconds.
+􁁛  Test failedWriteWithNoChangeFallsThrough() passed after 0.064 seconds.
+􁁛  Test focusedElementOwnerIsResolved() passed after 0.064 seconds.
+􁁛  Test roundTripsThroughUserDefaults() passed after 0.064 seconds.
+􁁛  Test toggleRecordingsAreNotCutByTheKeyWatchdog() passed after 0.064 seconds.
+􁁛  Test chunksAtTwentyUnitsWithoutSplittingGraphemes() passed after 0.065 seconds.
+􁁛  Test whatIsKept() passed after 0.065 seconds.
+􁁛  Test oversizedGraphemeIsSplitOnScalarBoundaries() passed after 0.065 seconds.
+􁁛  Test newlinesBecomeReturnKeys() passed after 0.065 seconds.
+􁁛  Test pushToTalkAndToggleDecisions() passed after 0.065 seconds.
+􁁛  Test privacyDefaults() passed after 0.065 seconds.
+􁁛  Test eventTimestampsMapOntoOurClock() passed after 0.065 seconds.
+􁁛  Test unsafeShortcutsAreRejected() passed after 0.065 seconds.
+􁁛  Test modeAndShortcutPersist() passed after 0.065 seconds.
+􁁛  Test audioIsKeptOnlyWhenSavedAndGoesWithItsEntry() passed after 0.059 seconds.
+􁁛  Test storesSearchesAndDeletes() passed after 0.066 seconds.
+􁁛  Test blankTranscriptIsNeverInserted(text:) with 3 test cases passed after 0.067 seconds.
+􁁛  Test listsInputDevicesWithStableIDs() passed after 0.067 seconds.
+􁁛  Suite InsertionStrategyTableTests passed after 0.068 seconds.
+􁁛  Suite ResamplerTests passed after 0.068 seconds.
+􁁛  Suite ShortcutMatcherTests passed after 0.068 seconds.
+􁁛  Suite ClockTests passed after 0.068 seconds.
+􁁛  Suite ModelSwitchTests passed after 0.068 seconds.
+􁁛  Suite InsertionSettingsTests passed after 0.068 seconds.
+􁁛  Suite AccessibilityInserterTests passed after 0.068 seconds.
+􁁛  Suite SecureInputTests passed after 0.068 seconds.
+􁁛  Suite DictationPolicyTests passed after 0.068 seconds.
+􁁛  Test shortcutTakenByAnotherRegistrationIsDetected() passed after 0.068 seconds.
+􁁛  Test secureInputTurningOnBeforeTypingBlocksTyping() passed after 0.068 seconds.
+􁁛  Test recorderAcceptsValidAndExplainsInvalid() passed after 0.067 seconds.
+􁁛  Suite HistoryTests passed after 0.068 seconds.
+􁁛  Suite TypingInserterTests passed after 0.068 seconds.
+􁁛  Test passwordFieldIsReportedAsSuch() passed after 0.068 seconds.
+􁁛  Test secureInputDuringTypingIsBlocked() passed after 0.068 seconds.
+􁁛  Test globalSecureInputBlocksEveryMethod(method:) with 3 test cases passed after 0.068 seconds.
+􁁛  Test chainFollowsTheFocusedFieldsAppNotTheFrontmostApp() passed after 0.068 seconds.
+􀟈  Test localModesNeverCallAProcessor() started.
+􀟈  Test recorderUsesTheChosenDeviceAndFallsBack() started.
+􁁛  Test overrideToTypingIsHonoured() passed after 0.068 seconds.
+􁁛  Test localModesNeverCallAProcessor() passed after 0.001 seconds.
+􀟈  Test processorRefinesAndFailuresFallBack() started.
+􁁛  Test processorRefinesAndFailuresFallBack() passed after 0.001 seconds.
+􁁛  Test passwordFieldBlocksEveryStrategy() passed after 0.069 seconds.
+􀟈  Test settingsPersistAndTolerateOldData() started.
+􁁛  Test settingsPersistAndTolerateOldData() passed after 0.004 seconds.
+􀟈  Test languageOnlyGoesToModelsThatSupportIt() started.
+􁁛  Test languageOnlyGoesToModelsThatSupportIt() passed after 0.001 seconds.
+􀟈  Test whisperGetsTheVocabularyAsPrompt() started.
+􁁛  Test whisperGetsTheVocabularyAsPrompt() passed after 0.001 seconds.
+􀟈  Test ollamaRequestAndReply() started.
+􁁛  Test ollamaRequestAndReply() passed after 0.015 seconds.
+􀟈  Test anthropicRequestAndReply() started.
+􁁛  Test anthropicRequestAndReply() passed after 0.001 seconds.
+􀟈  Test localOnlyMeansThisMac() started.
+􁁛  Test localOnlyMeansThisMac() passed after 0.001 seconds.
+􀟈  Test cloudNeedsAKeyInTheKeychain() started.
+􁁛  Test cloudNeedsAKeyInTheKeychain() passed after 0.030 seconds.
+􁁛  Suite TextPipelineTests passed after 0.123 seconds.
+􁁛  Test concurrentProducerAndConsumerLoseNothing() passed after 0.147 seconds.
+􁁛  Suite SampleRingTests passed after 0.148 seconds.
+􁁛  Test unsupportedLanguageHasItsOwnMessage() passed after 0.154 seconds.
+􁁛  Suite ErrorMappingTests passed after 0.154 seconds.
+􁁛  Test clipboardOnlyNeverInserts() passed after 0.258 seconds.
+􁁛  Test corruptFileOfTheRightSizeFailsVerification() passed after 0.265 seconds.
+􁁛  Test unverifiedAccessibilityIsNotRetried() passed after 0.265 seconds.
+􁁛  Test nativeAppUsesAccessibilityAndLeavesClipboardAlone() passed after 0.266 seconds.
+􁁛  Test copyToClipboardKeepsTheInsertedText() passed after 0.266 seconds.
+􁁛  Test rowsForEveryState() passed after 0.266 seconds.
+􁁛  Test autoSubmitSkippedWhenUnverified() passed after 0.266 seconds.
+􁁛  Test shortcutNamesUseTheKeyboardLayout() passed after 0.265 seconds.
+􁁛  Suite HotkeyModeTests passed after 0.266 seconds.
+􁁛  Test realModelVerifiesOnceAndStaysVerified() passed after 0.268 seconds.
+􁁛  Test rendersTheSetupWindow() passed after 0.268 seconds.
+􁁛  Test rendersWithTheInstalledModels() passed after 0.268 seconds.
+􁁛  Suite ModelManagerSnapshotTests passed after 0.269 seconds.
+􁁛  Test partialOrDeniedReadsAreUnreadable() passed after 0.268 seconds.
+􁁛  Test catalogHasAllVerifiedModelsAndRecommendsParakeet() passed after 0.268 seconds.
+􁁛  Test licenceAcceptanceIsRequiredOnceAndPersisted() passed after 0.269 seconds.
+􁁛  Test oversizedClipboardIsNotKept() passed after 0.269 seconds.
+􁁛  Test installedStateSwitchingAndDeleteRules() passed after 0.269 seconds.
+􁁛  Test damagedModelShowsErrorAndRefreshKeepsIt() passed after 0.269 seconds.
+􁁛  Test emptyClipboardStaysEmpty() passed after 0.269 seconds.
+􁁛  Test unreadableSnapshotIsNeverRestored() passed after 0.269 seconds.
+􁁛  Test snapshotRestoresEveryItemAndType() passed after 0.269 seconds.
+􁁛  Test newlinesCanBecomeSpaces() passed after 0.269 seconds.
+􁁛  Test newSettingsDecodeFromOldData() passed after 0.269 seconds.
+􁁛  Test recorderUsesTheChosenDeviceAndFallsBack() passed after 0.345 seconds.
+􁁛  Suite AudioDeviceTests passed after 0.414 seconds.
+􁁛  Test insertsIntoRealTextViewAtCaret() passed after 0.494 seconds.
+􀟈  Test detectsRealSecureTextField() started.
+􁁛  Test scriptThatIgnoresStdinCannotCrashOrHangUtter() passed after 0.525 seconds.
+􁁛  Test detectsRealSecureTextField() passed after 0.162 seconds.
+􀟈  Test insertsThroughSystemWideFocus() started.
+􁁛  Test insertsThroughSystemWideFocus() passed after 0.176 seconds.
+􁁛  Suite AXIntegrationTests passed after 0.834 seconds.
+􁁛  Test transcribesFixtureThroughBridgeAndLoadsOnce() passed after 0.862 seconds.
+􀟈  Test tooShortAndSilentAreSkipped() started.
+􁁛  Test tooShortAndSilentAreSkipped() passed after 0.001 seconds.
+􀟈  Test fiveMinuteBufferCrossesTheBridgeQuickly() started.
+ffi_5min_roundtrip_best_ms=28.92
+􁁛  Test fiveMinuteBufferCrossesTheBridgeQuickly() passed after 0.149 seconds.
+􀟈  Test errorsArePlainEnglishNotDebugDumps() started.
+􁁛  Test errorsArePlainEnglishNotDebugDumps() passed after 0.001 seconds.
+􁁛  Suite EngineBridgeTests passed after 1.021 seconds.
+􁁛  Test recordingContinuesAcrossADeviceChange() passed after 1.293 seconds.
+􀟈  Test noDeviceToTakeOverKeepsTheAudioBeforeTheChange() started.
+􁁛  Test scriptIgnoringSigtermIsKilled() passed after 1.313 seconds.
+􁁛  Test timedOutScriptTakesItsChildrenWithIt() passed after 1.506 seconds.
+􁁛  Suite ScriptRunnerTests passed after 1.507 seconds.
+􁁛  Test failedKeystrokeRestoresAndReportsFailure() passed after 1.854 seconds.
+􁁛  Test panelCanNeverTakeFocus() passed after 1.860 seconds.
+􀟈  Test showingDoesNotActivateOrTakeKey() started.
+􁁛  Test externalScriptFailuresArePlainEnglish() passed after 1.861 seconds.
+􁁛  Test externalScriptReceivesTextOnStdin() passed after 1.861 seconds.
+􁁛  Test hungScriptIsStopped() passed after 1.862 seconds.
+􁁛  Test everySettingsTabRenders() passed after 1.866 seconds.
+􀟈  Test settingsReloadWhatTheMenuChanged() started.
+􁁛  Test terminalSkipsAccessibility() passed after 1.887 seconds.
+􁁛  Test insertRecordsTimings() passed after 1.910 seconds.
+􁁛  Test showingDoesNotActivateOrTakeKey() passed after 0.050 seconds.
+􁁛  Test settingsReloadWhatTheMenuChanged() passed after 0.044 seconds.
+􀟈  Test showsWithinOneFrame() started.
+􀟈  Test historyRenders() started.
+􁁛  Test autoSubmitFiresOnceAfterInsertion() passed after 1.932 seconds.
+􁁛  Test copyToClipboardLeavesTranscriptAfterPaste() passed after 1.933 seconds.
+􁁛  Suite InsertionSettingsBehaviourTests passed after 1.933 seconds.
+􁁛  Test accessibilityNoOpFallsThroughToPaste() passed after 1.933 seconds.
+􁁛  Test pasteRestoresClipboardAfterTheTargetReadsIt() passed after 1.933 seconds.
+􁁛  Test showsWithinOneFrame() passed after 0.043 seconds.
+􀟈  Test firstShowAfterPrewarmIsWithinOneFrame() started.
+􁁛  Test historyRenders() passed after 0.120 seconds.
+􁁛  Suite SettingsSnapshotTests passed after 2.032 seconds.
+􁁛  Test declinedReadLeavesTranscriptAsPlainClipboardText() passed after 2.039 seconds.
+􁁛  Test clipboardPreservationCanBeTurnedOff() passed after 2.039 seconds.
+􁁛  Suite InsertionPreferenceTests passed after 2.039 seconds.
+􁁛  Test pasteMarksTranscriptTransientForClipboardManagers() passed after 2.039 seconds.
+􁁛  Test hangingClipboardOwnerCannotStallInsertion() passed after 2.087 seconds.
+􁁛  Test unreadPasteIsUnverifiedKeptAndNotSubmitted() passed after 2.088 seconds.
+􁁛  Suite TextInserterTests passed after 2.088 seconds.
+􁁛  Test noReceiptKeepsTranscriptOnClipboard() passed after 2.088 seconds.
+􁁛  Test firstShowAfterPrewarmIsWithinOneFrame() passed after 0.135 seconds.
+􁁛  Test overlappingInsertsAreSerialisedAndRestoreTheOriginal() passed after 2.090 seconds.
+􀟈  Test noticeHidesItself() started.
+􁁛  Test liveRecheckReportsGrants() passed after 2.090 seconds.
+􁁛  Suite PermissionsOnboardingTests passed after 2.091 seconds.
+􁁛  Test doesNotClobberANewerCopy() passed after 2.094 seconds.
+􁁛  Test pasteDelaysAreHonouredInOrder() passed after 2.115 seconds.
+􁁛  Suite ClipboardTests passed after 2.116 seconds.
+􁁛  Test noDeviceToTakeOverKeepsTheAudioBeforeTheChange() passed after 0.889 seconds.
+􀟈  Test choosingAMicrophoneMidRecordingWaitsForTheNextOne() started.
+􁁛  Test downloadPauseCancelAndInstallThroughTheManager() passed after 2.306 seconds.
+􁁛  Suite ModelManagerTests passed after 2.307 secondswarning: '--build-system native' has been deprecated and will be removed in a future release; please report an issue at https://github.com/swiftlang/swift-package-manager/issues if you are unable to adopt the default build system.
+.
+􁁛  Test noticeHidesItself() passed after 0.407 seconds.
+􀟈  Test meterFollowsTheRecorderLevel() started.
+􁁛  Test meterFollowsTheRecorderLevel() passed after 0.211 seconds.
+􀟈  Test geometryAndFormatting() started.
+􁁛  Test geometryAndFormatting() passed after 0.001 seconds.
+􀟈  Test rendersEveryPhase() started.
+􁁛  Test rendersEveryPhase() passed after 0.007 seconds.
+􁁛  Suite OverlayTests passed after 2.718 seconds.
+􁁛  Test choosingAMicrophoneMidRecordingWaitsForTheNextOne() passed after 0.759 seconds.
+􁁛  Suite DeviceChangeTests passed after 2.943 seconds.
+􀟈  Suite CaptureStartLatencyTests started.
+􀟈  Test coldStartIsMeasuredAndWarmStartIsInstant() started.
+􀟈  Test case passing 1 argument noise → 0.003 to segmentsWhileRecordingAndLeavesOnlyTheTail(noise:) started.
+􁁛  Test segmentsWhileRecordingAndLeavesOnlyTheTail(noise:) with 2 test cases passed after 6.252 seconds.
+􀟈  Test releaseDuringARunningSegmentIsNoSlowerThanOneShot() started.
+􁁛  Test releaseDuringARunningSegmentIsNoSlowerThanOneShot() passed after 1.291 seconds.
+􀟈  Test whisperNeverSegmentsUnderOneWindow() started.
+􁁛  Test whisperNeverSegmentsUnderOneWindow() passed after 1.471 seconds.
+􀟈  Test whisperReleaseRightAfterASegmentStartsIsNoSlower() started.
+capture_start_latency_ms restart_after_1s_idle(block/first_sample)=27.8/26.0 28.9/27.4 28.6/27.0 28.4/26.3 28.1/26.4 warm=0.1/0.0 0.1/0.0 0.1/0.0 0.1/0.0 0.1/0.0
+􁁛  Test coldStartIsMeasuredAndWarmStartIsInstant() passed after 13.545 seconds.
+􀟈  Test warmModeSurvivesChangesAndTurningOff() started.
+􁁛  Test whisperReleaseRightAfterASegmentStartsIsNoSlower() passed after 8.841 seconds.
+􀟈  Test aFailedSegmentLeavesTheWorkToRelease() started.
+􁁛  Test aFailedSegmentLeavesTheWorkToRelease() passed after 0.079 seconds.
+􀟈  Test shortDictationsNeverSegment() started.
+􁁛  Test shortDictationsNeverSegment() passed after 0.001 seconds.
+􀟈  Test cjkSegmentsJoinWithoutSpaces() started.
+􁁛  Test cjkSegmentsJoinWithoutSpaces() passed after 0.001 seconds.
+􁁛  Suite IncrementalTranscriberTests passed after 17.937 seconds.
+􁁛  Test warmModeSurvivesChangesAndTurningOff() passed after 1.718 seconds.
+􁁛  Suite CaptureStartLatencyTests passed after 15.264 seconds.
+􀟈  Suite IncrementalAlignmentTests started.
+􀟈  Test samplesSoFarMatchTheRecording() started.
+􁁛  Test samplesSoFarMatchTheRecording() passed after 1.878 seconds.
+􁁛  Suite IncrementalAlignmentTests passed after 1.878 seconds.
+􁁛  Suite AudioHardwareTests passed after 20.087 seconds.
+􁁛  Test run with 160 tests in 33 suites passed after 20.087 seconds.

@@ -24,6 +24,12 @@ public final class SettingsModel {
     var connectionResult: String?
     var confirmClear = false
     var selectedTab = "general"
+    /// Mirrors of the controller's shortcut state (the controller isn't observable).
+    var dictationMode = DictationMode.pushToTalk { didSet { if !reloading { controller.setMode(dictationMode) } } }
+    var holdThresholdMs = DictationMode.defaultHoldThresholdMs { didSet { if !reloading { controller.setHoldThreshold(ms: holdThresholdMs) } } }
+    var processMode = TextPipelineSettings.Mode.professional { didSet { if !reloading { controller.processMode = processMode } } }
+    var shortcut = Shortcut.optionSpace
+    var processShortcut: Shortcut?
 
     /// Set while copying the controller's values in, so nothing is written back.
     private var reloading = false
@@ -40,7 +46,19 @@ public final class SettingsModel {
         processing = controller.processorSettings
         privacy = controller.privacySettings
         launchAtLogin = LaunchAtLogin.isEnabled
+        refreshShortcuts()
         refreshAPIKeyState()
+    }
+
+    func refreshShortcuts() {
+        let wasReloading = reloading
+        reloading = true
+        defer { reloading = wasReloading }
+        dictationMode = controller.mode
+        holdThresholdMs = controller.holdThresholdMs
+        processMode = controller.processMode
+        shortcut = controller.hotkey.shortcut
+        processShortcut = controller.hotkey.processShortcut
     }
 
     func refreshAPIKeyState() {
@@ -64,7 +82,13 @@ public final class SettingsModel {
         overrides = controller.insertionOverrides
         processing = controller.processorSettings
         privacy = controller.privacySettings
+        refreshShortcuts()
+        shortcutObserver = NotificationCenter.default.addObserver(forName: DictationController.shortcutsChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshShortcuts() }
+        }
     }
+
+    @ObservationIgnored nonisolated(unsafe) private var shortcutObserver: NSObjectProtocol?
 
     private func applyGeneral(_ old: GeneralSettings) {
         general.save()
@@ -149,7 +173,7 @@ public final class SettingsModel {
 struct SettingsView: View {
     @Bindable var model: SettingsModel
     let openModelManager: () -> Void
-    let changeShortcut: () -> Void
+    let changeShortcut: (ShortcutBinding) -> Void
 
     var body: some View {
         TabView(selection: $model.selectedTab) {
@@ -208,14 +232,40 @@ struct SettingsView: View {
     private var dictation: some View {
         Form {
             Section("Shortcut") {
-                Picker("Shortcut mode", selection: Binding(get: { model.controller.mode }, set: { model.controller.setMode($0) })) {
+                Picker("Shortcut mode", selection: $model.dictationMode) {
                     ForEach(DictationMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                if model.dictationMode == .holdOrToggle {
+                    Stepper(value: $model.holdThresholdMs, in: DictationMode.holdThresholdRange, step: 50) {
+                        LabeledContent("A tap is shorter than", value: "\(model.holdThresholdMs) ms")
+                    }
                 }
                 LabeledContent("Shortcut") {
                     HStack {
-                        Text(model.controller.hotkey.shortcut.displayString).monospaced()
-                        Button("Change…", action: changeShortcut)
+                        Text(model.shortcut.displayString).monospaced()
+                        Button("Change…") { changeShortcut(.dictate) }
+                        Button("Reset") { model.controller.resetShortcut() }
+                            .disabled(model.shortcut == .optionSpace)
+                            .help("Go back to ⌥Space")
                     }
+                }
+                Text("Press Esc while dictating to cancel: nothing is typed.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("AI shortcut") {
+                Text("A second shortcut that dictates and then runs an AI mode, whatever your everyday mode is.")
+                    .font(.caption).foregroundStyle(.secondary)
+                LabeledContent("Shortcut") {
+                    HStack {
+                        Text(model.processShortcut?.displayString ?? "None").monospaced()
+                        Button(model.processShortcut == nil ? "Set…" : "Change…") { changeShortcut(.process) }
+                        if model.processShortcut != nil {
+                            Button("Remove") { model.controller.setProcessShortcut(nil) }
+                        }
+                    }
+                }
+                Picker("Runs", selection: $model.processMode) {
+                    ForEach(TextPipelineSettings.Mode.allCases.filter(\.usesProcessor), id: \.self) { Text($0.title).tag($0) }
                 }
             }
             Section("Text") {
@@ -487,9 +537,9 @@ public final class SettingsWindowController {
     public let model: SettingsModel
     private var window: NSWindow?
     private let openModelManager: () -> Void
-    private let changeShortcut: () -> Void
+    private let changeShortcut: (ShortcutBinding) -> Void
 
-    public init(controller: DictationController, updates: Updates? = nil, openModelManager: @escaping () -> Void, changeShortcut: @escaping () -> Void) {
+    public init(controller: DictationController, updates: Updates? = nil, openModelManager: @escaping () -> Void, changeShortcut: @escaping (ShortcutBinding) -> Void) {
         model = SettingsModel(controller: controller)
         model.updates = updates
         self.openModelManager = openModelManager

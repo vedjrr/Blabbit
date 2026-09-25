@@ -35,8 +35,12 @@ final class CarbonHotkey {
     private var handler: EventHandlerRef?
     private let onPress: () -> Void
     private let onRelease: () -> Void
+    private let hotkeyID: UInt32
 
-    init?(shortcut: Shortcut, onPress: @escaping () -> Void, onRelease: @escaping () -> Void) {
+    /// `id` tells two registered hotkeys apart (each handler sees every 'UTTR' event).
+    init?(shortcut: Shortcut, id: UInt32 = 1, onPress: @escaping () -> Void, onRelease: @escaping () -> Void) {
+        guard !shortcut.isModifierOnly else { return nil } // Carbon can't register a lone modifier
+        self.hotkeyID = id
         self.onPress = onPress
         self.onRelease = onRelease
         var types = [
@@ -50,12 +54,12 @@ final class CarbonHotkey {
             var id = EventHotKeyID()
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
                               MemoryLayout<EventHotKeyID>.size, nil, &id)
-            guard id.signature == CarbonHotkey.signature else { return OSStatus(eventNotHandledErr) }
+            guard id.signature == CarbonHotkey.signature, id.id == hotkey.hotkeyID else { return OSStatus(eventNotHandledErr) }
             if GetEventKind(event) == UInt32(kEventHotKeyPressed) { hotkey.onPress() } else { hotkey.onRelease() }
             return noErr
         }, types.count, &types, context, &handler)
         guard status == noErr else { return nil }
-        let id = EventHotKeyID(signature: Self.signature, id: 1)
+        let id = EventHotKeyID(signature: Self.signature, id: id)
         let registered = RegisterEventHotKey(UInt32(shortcut.keyCode), Self.carbonModifiers(shortcut.modifiers), id,
                                              GetApplicationEventTarget(), 0, &ref)
         guard registered == noErr else {
@@ -75,6 +79,7 @@ final class CarbonHotkey {
     /// True if another app (or this one) already holds `shortcut` as a global
     /// hotkey: registering it fails with `eventHotKeyExistsErr`. Main thread.
     public static func isTakenElsewhere(_ shortcut: Shortcut) -> Bool {
+        guard !shortcut.isModifierOnly else { return false }
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(UInt32(shortcut.keyCode), carbonModifiers(shortcut.modifiers),
                                          EventHotKeyID(signature: signature, id: 99), GetApplicationEventTarget(), 0, &ref)

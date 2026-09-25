@@ -48,7 +48,7 @@ import Testing
         let model = SettingsModel(controller: controller)
         for tab in ["general", "dictation", "models", "audio", "insertion", "language", "processing", "privacy"] {
             model.selectedTab = tab
-            let rep = try snapshot(SettingsView(model: model, openModelManager: {}, changeShortcut: {}),
+            let rep = try snapshot(SettingsView(model: model, openModelManager: {}, changeShortcut: { _ in }),
                                    size: NSSize(width: 620, height: 520), name: "settings_\(tab)")
             #expect(rep.pixelsWide >= 620 && rep.pixelsHigh >= 520)
         }

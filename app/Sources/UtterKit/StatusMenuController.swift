@@ -83,8 +83,12 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         toggle.target = self
         toggle.isEnabled = controller.modelLoaded || recording
         menu.addItem(toggle)
-        let verb = controller.mode == .pushToTalk ? "hold" : "press"
-        let shortcut = NSMenuItem(title: "Shortcut: \(verb) \(controller.hotkey.shortcut.displayString)", action: nil, keyEquivalent: "")
+        if recording || controller.state == .transcribing {
+            let cancel = NSMenuItem(title: "Cancel Dictation (Esc)", action: #selector(cancelDictation), keyEquivalent: "")
+            cancel.target = self
+            menu.addItem(cancel)
+        }
+        let shortcut = NSMenuItem(title: "Shortcut: \(controller.mode.verb) \(controller.hotkey.shortcut.displayString)", action: nil, keyEquivalent: "")
         let shortcutMenu = NSMenu()
         for mode in DictationMode.allCases {
             let item = NSMenuItem(title: mode.title, action: #selector(chooseMode(_:)), keyEquivalent: "")
@@ -94,9 +98,13 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
             shortcutMenu.addItem(item)
         }
         shortcutMenu.addItem(.separator())
-        let change = NSMenuItem(title: "Change Shortcut…", action: #selector(changeShortcut), keyEquivalent: "")
+        let change = NSMenuItem(title: "Change Shortcut…", action: #selector(changeDictationShortcut), keyEquivalent: "")
         change.target = self
         shortcutMenu.addItem(change)
+        let ai = NSMenuItem(title: controller.hotkey.processShortcut.map { "AI Shortcut: \($0.displayString) (\(controller.processMode.title))…" } ?? "Set AI Shortcut…",
+                            action: #selector(changeProcessShortcut), keyEquivalent: "")
+        ai.target = self
+        shortcutMenu.addItem(ai)
         shortcut.submenu = shortcutMenu
         menu.addItem(shortcut)
         let textMode = NSMenuItem(title: "Mode: \(controller.textSettings.mode.title)", action: nil, keyEquivalent: "")
@@ -200,13 +208,14 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleDictation() { controller.toggleFromMenu() }
+    @objc private func cancelDictation() { controller.cancelDictation(reason: "menu") }
     @objc private func openModelManager() { modelWindow.show() }
 
     private lazy var historyWindow = HistoryWindowController(controller: controller)
     private lazy var settingsWindow: SettingsWindowController = {
         let window = SettingsWindowController(controller: controller, updates: updates,
                                               openModelManager: { [weak self] in self?.modelWindow.show() },
-                                              changeShortcut: { [weak self] in self?.changeShortcut() })
+                                              changeShortcut: { [weak self] binding in self?.changeShortcut(binding) })
         window.model.onGeneralChange = { [weak self] general in
             self?.general = general
             self?.updateVisibility()
@@ -250,15 +259,27 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         if let raw = sender.representedObject as? String, let mode = DictationMode(rawValue: raw) { controller.setMode(mode) }
     }
 
-    @objc private func changeShortcut() {
+    @objc private func changeDictationShortcut() { changeShortcut(.dictate) }
+    @objc private func changeProcessShortcut() { changeShortcut(.process) }
+
+    private func changeShortcut(_ binding: ShortcutBinding) {
         if shortcutWindow.isOpen { shortcutWindow.bringToFront(); return }
         // A toggle-mode recording would have no way to stop while the tap is paused.
         if controller.state == .recording { controller.toggleFromMenu() }
         // The event tap would otherwise catch the current shortcut while recording a new one.
         controller.hotkey.stop()
-        shortcutWindow.show(current: controller.hotkey.shortcut,
-                            onSave: { [weak self] in self?.controller.setShortcut($0) },
-                            onClose: { [weak self] in self?.controller.startHotkey() })
+        let primary = controller.hotkey.shortcut
+        let process = controller.hotkey.processShortcut
+        switch binding {
+        case .dictate:
+            shortcutWindow.show(current: primary, other: process,
+                                onSave: { [weak self] in self?.controller.setShortcut($0) },
+                                onClose: { [weak self] in self?.controller.startHotkey() })
+        case .process:
+            shortcutWindow.show(current: process, other: primary, title: "AI Shortcut (\(controller.processMode.title) mode)",
+                                onSave: { [weak self] in self?.controller.setProcessShortcut($0) },
+                                onClose: { [weak self] in self?.controller.startHotkey() })
+        }
     }
 
     @objc private func toggleKeepReady() { controller.setKeepMicrophoneReady(!controller.keepMicrophoneReady) }

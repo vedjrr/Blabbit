@@ -24,6 +24,7 @@ public struct KeyTiming: Sendable {
     public var callbackNs: UInt64
     public var eventTimestamp: UInt64
     public var source: RecordingSource = .tap
+    public var binding: ShortcutBinding = .dictate
 }
 
 public final class HotkeyMonitor: @unchecked Sendable {
@@ -31,10 +32,14 @@ public final class HotkeyMonitor: @unchecked Sendable {
     /// the tap saw the event; `eventTimestamp` is the raw `CGEvent.timestamp`.
     public var onPress: (@Sendable (KeyTiming) -> Void)?
     public var onRelease: (@Sendable (KeyTiming) -> Void)?
+    /// Esc while a dictation runs (see `cancelArmed`).
+    public var onCancel: (@Sendable () -> Void)?
+    /// A modifier-only shortcut was part of a combo: drop that recording.
+    public var onAbort: (@Sendable () -> Void)?
 
-    private let matcher: OSAllocatedUnfairLock<ShortcutMatcher>
-    /// Carbon fallback registered while secure input is sustained (main thread only).
-    private var carbon: CarbonHotkey?
+    private let matcher: OSAllocatedUnfairLock<HotkeyRouter>
+    /// Carbon fallbacks registered while secure input is sustained (main thread only).
+    private var carbon: [CarbonHotkey] = []
     private var secureState = SecureInputState()
     private var secureTimer: Timer?
     /// Called on main when sustained secure input starts/stops (for UI notices).
@@ -46,17 +51,32 @@ public final class HotkeyMonitor: @unchecked Sendable {
     private var runLoop: CFRunLoop?
     private var thread: Thread?
 
-    public init(shortcut: Shortcut = .optionSpace) {
-        matcher = OSAllocatedUnfairLock(initialState: ShortcutMatcher(shortcut: shortcut))
+    public init(shortcut: Shortcut = .optionSpace, processShortcut: Shortcut? = nil) {
+        matcher = OSAllocatedUnfairLock(initialState: HotkeyRouter(primary: shortcut, secondary: processShortcut))
     }
 
     public var shortcut: Shortcut {
-        get { matcher.withLock { $0.shortcut } }
+        get { matcher.withLock { $0.primary.shortcut } }
         set {
-            matcher.withLock { $0.shortcut = newValue }
+            matcher.withLock { $0.primary.shortcut = newValue }
             // A registered Carbon fallback must follow the new shortcut.
-            DispatchQueue.main.async { if self.carbon != nil { self.registerCarbon() } }
+            DispatchQueue.main.async { if self.secureState.sustained { self.registerCarbon() } }
         }
+    }
+
+    /// The second shortcut that dictates with an AI mode (nil: none).
+    public var processShortcut: Shortcut? {
+        get { matcher.withLock { $0.secondary?.shortcut } }
+        set {
+            matcher.withLock { $0.secondary = newValue.map(ShortcutMatcher.init(shortcut:)) }
+            DispatchQueue.main.async { if self.secureState.sustained { self.registerCarbon() } }
+        }
+    }
+
+    /// Esc cancels only while a dictation runs; otherwise it is left alone.
+    public var cancelArmed: Bool {
+        get { matcher.withLock { $0.cancelArmed } }
+        set { matcher.withLock { $0.cancelArmed = newValue } }
     }
 
     public var isRunning: Bool { tap != nil }
@@ -65,7 +85,7 @@ public final class HotkeyMonitor: @unchecked Sendable {
     /// Returns true if the shortcut had been considered held.
     @discardableResult
     public func forceRelease() -> Bool {
-        matcher.withLock { $0.reset() }
+        matcher.withLock { $0.reset() } != nil
     }
 
     public func start() throws {
@@ -131,33 +151,43 @@ public final class HotkeyMonitor: @unchecked Sendable {
         if secureState.sustained {
             registerCarbon()
         } else {
-            carbon = nil
+            carbon = []
             Log.info("secure input off; carbon fallback removed")
         }
         onSecureInputChange?(secureState.sustained)
     }
 
     private func registerCarbon() {
-        let shortcut = self.shortcut
-        carbon = nil
-        carbon = CarbonHotkey(shortcut: shortcut, onPress: { [weak self] in self?.carbonEvent(down: true) },
-                              onRelease: { [weak self] in self?.carbonEvent(down: false) })
-        Log.info("secure input sustained; carbon fallback \(carbon == nil ? "could not be registered" : "registered") for \(shortcut.displayString)")
-        // Only a genuine conflict is reported as one; other failures are logged above.
-        if carbon == nil, CarbonHotkey.isTakenElsewhere(shortcut) {
-            let conflict = HotkeyError.shortcutInUse(shortcut.displayString)
-            Task { @MainActor [weak self] in self?.onShortcutConflict?(conflict) }
+        carbon = []
+        let bindings: [(Shortcut, ShortcutBinding)] = [(shortcut, .dictate)] + (processShortcut.map { [($0, .process)] } ?? [])
+        for (index, (shortcut, binding)) in bindings.enumerated() {
+            if shortcut.isModifierOnly {
+                // A lone modifier can't be a Carbon hotkey; its flag changes still reach the tap.
+                Log.info("secure input sustained; \(shortcut.displayString) is modifier-only, no carbon fallback")
+                continue
+            }
+            let hotkey = CarbonHotkey(shortcut: shortcut, id: UInt32(index + 1),
+                                      onPress: { [weak self] in self?.carbonEvent(down: true, binding: binding) },
+                                      onRelease: { [weak self] in self?.carbonEvent(down: false, binding: binding) })
+            if let hotkey { carbon.append(hotkey) }
+            Log.info("secure input sustained; carbon fallback \(hotkey == nil ? "could not be registered" : "registered") for \(shortcut.displayString)")
+            // Only a genuine conflict is reported as one; other failures are logged above.
+            if hotkey == nil, CarbonHotkey.isTakenElsewhere(shortcut) {
+                let conflict = HotkeyError.shortcutInUse(shortcut.displayString)
+                Task { @MainActor [weak self] in self?.onShortcutConflict?(conflict) }
+            }
         }
     }
 
     /// Carbon events go through the same matcher so tap + Carbon can't double-fire.
-    private func carbonEvent(down: Bool) {
-        let shortcut = self.shortcut
-        let timing = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0, source: .carbon)
-        let action = matcher.withLock {
+    private func carbonEvent(down: Bool, binding: ShortcutBinding) {
+        guard let shortcut = binding == .dictate ? self.shortcut : processShortcut else { return }
+        var timing = KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0, source: .carbon)
+        let (action, routed) = matcher.withLock {
             $0.handle(kind: down ? .keyDown : .keyUp, keyCode: shortcut.keyCode,
                       flags: CGEventFlags(rawValue: shortcut.modifiers), isRepeat: false)
         }
+        timing.binding = routed
         if action == .press { onPress?(timing) }
         if action == .release { onRelease?(timing) }
     }
@@ -165,7 +195,7 @@ public final class HotkeyMonitor: @unchecked Sendable {
     public func stop() {
         secureTimer?.invalidate()
         secureTimer = nil
-        carbon = nil
+        carbon = []
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
             CFMachPortInvalidate(tap)
@@ -186,7 +216,11 @@ public final class HotkeyMonitor: @unchecked Sendable {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // macOS disables slow taps; turn it back on and never leave a key "held".
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
-            if matcher.withLock({ $0.reset() }) { onRelease?(now) }
+            if let binding = matcher.withLock({ $0.reset() }) {
+                var timing = now
+                timing.binding = binding
+                onRelease?(timing)
+            }
             Log.error("hotkey tap was disabled (\(type.rawValue)); re-enabled")
             return Unmanaged.passUnretained(event)
         case .keyDown, .keyUp, .flagsChanged:
@@ -194,16 +228,26 @@ public final class HotkeyMonitor: @unchecked Sendable {
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
             let flags = event.flags
-            let action = matcher.withLock { $0.handle(kind: kind, keyCode: keyCode, flags: flags, isRepeat: isRepeat) }
+            let (action, binding) = matcher.withLock { $0.handle(kind: kind, keyCode: keyCode, flags: flags, isRepeat: isRepeat) }
+            var timing = now
+            timing.binding = binding
+            // Modifier changes always reach the system, or the modifier would stick.
+            let consumed: Unmanaged<CGEvent>? = kind == .flagsChanged ? Unmanaged.passUnretained(event) : nil
             switch action {
             case .pass: return Unmanaged.passUnretained(event)
-            case .swallow: return nil
+            case .swallow: return consumed
             case .press:
-                onPress?(now)
-                return nil
+                onPress?(timing)
+                return consumed
             case .release:
-                onRelease?(now)
+                onRelease?(timing)
+                return consumed
+            case .cancel:
+                onCancel?()
                 return nil
+            case .abort:
+                onAbort?()
+                return Unmanaged.passUnretained(event)
             }
         default:
             return Unmanaged.passUnretained(event)
