@@ -49,6 +49,7 @@ public final class IncrementalTranscriber: @unchecked Sendable {
     private var busy = false
     private var failed = false
     private var inferenceMs = 0.0
+    private var trimmedMs: UInt64 = 0
     private var segmentCount = 0
 
     public init(engine: UtterEngine, options: DictationOptions, policy: Policy = .proportional) {
@@ -110,6 +111,7 @@ public final class IncrementalTranscriber: @unchecked Sendable {
                     self.options.language = language
                 }
                 inferenceMs += result.inferenceMs
+                trimmedMs += result.trimmedMs
                 pending.removeFirst(segment.count)
                 committed += segment.count
                 segmentCount += 1
@@ -130,6 +132,8 @@ public final class IncrementalTranscriber: @unchecked Sendable {
         public var segments: Int
         public var skipped: SkipReason?
         public var language: String?
+        /// Silence removed across all segments (ms).
+        public var trimmedMs: UInt64 = 0
 
         public init(text: String, tailInferenceMs: Double, totalInferenceMs: Double, segments: Int, skipped: SkipReason?, language: String?) {
             self.text = text
@@ -155,9 +159,11 @@ public final class IncrementalTranscriber: @unchecked Sendable {
             queue.async { done.resume(with: Swift.Result { try engine.transcribe(pcm: rest, options: options) }) }
         }
         let parts = (before + [tail.text]).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        return Result(text: Self.join(parts), tailInferenceMs: tail.inferenceMs,
-                      totalInferenceMs: doneMs + tail.inferenceMs, segments: count,
-                      skipped: parts.isEmpty ? tail.skipped : nil, language: options.language ?? tail.language)
+        var result = Result(text: Self.join(parts), tailInferenceMs: tail.inferenceMs,
+                            totalInferenceMs: doneMs + tail.inferenceMs, segments: count,
+                            skipped: parts.isEmpty ? tail.skipped : nil, language: options.language ?? tail.language)
+        result.trimmedMs = lock.withLock { trimmedMs } + tail.trimmedMs
+        return result
     }
 
     private func snapshot(limit: Int) -> (Int, [String], Double, Int, DictationOptions) {

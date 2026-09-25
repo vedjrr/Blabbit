@@ -54,7 +54,7 @@ import UtterCore
         _ = try engine.loadModel(path: model)
         let speech = (0..<32_000).map { Float(sin(Double($0) * 0.05)) * 0.3 } // 2 s, not silent
         do {
-            _ = try engine.transcribe(pcm: speech, options: DictationOptions(language: "de", translate: false, initialPrompt: nil))
+            _ = try engine.transcribe(pcm: speech, options: DictationOptions(language: "de", translate: false, initialPrompt: nil, trimSilence: false))
             Issue.record("Moonshine (English only) must refuse German")
         } catch let error as CoreError {
             guard case .LanguageUnsupported = error else { Issue.record("got \(error.logDetail)"); return }
@@ -66,7 +66,7 @@ import UtterCore
     @Test func realCoreFailuresMapToTheirMessages() throws {
         let engine = UtterEngine()
         do {
-            _ = try engine.transcribe(pcm: [Float](repeating: 0.1, count: 16_000), options: DictationOptions(language: nil, translate: false, initialPrompt: nil))
+            _ = try engine.transcribe(pcm: [Float](repeating: 0.1, count: 16_000), options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false))
             Issue.record("transcribing without a model must fail")
         } catch let error as CoreError {
             #expect(Self.isPlainEnglish(error.userMessage) && error.userMessage == errorMessages().first { $0.kind == "ModelNotLoaded" }?.message)

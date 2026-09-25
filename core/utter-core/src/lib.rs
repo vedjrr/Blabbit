@@ -7,6 +7,7 @@ pub mod memory;
 pub mod model;
 pub mod segment;
 pub mod text;
+pub mod vad;
 pub mod wer;
 
 pub use engine::Engine;

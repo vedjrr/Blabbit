@@ -72,6 +72,8 @@ pub struct DictationOptions {
     pub language: Option<String>,
     pub translate: bool,
     pub initial_prompt: Option<String>,
+    /// Remove long silences before inference (Settings → Audio).
+    pub trim_silence: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -87,6 +89,7 @@ pub struct TranscriptionResult {
     pub language: Option<String>,
     pub audio_ms: u64,
     pub inference_ms: f64,
+    pub trimmed_ms: u64,
 }
 
 #[derive(uniffi::Object)]
@@ -144,6 +147,7 @@ impl UtterEngine {
             language: options.language,
             translate: options.translate,
             initial_prompt: options.initial_prompt,
+            trim_silence: options.trim_silence,
         };
         let t = self.inner.transcribe(&pcm, &opts)?;
         Ok(TranscriptionResult {
@@ -155,6 +159,7 @@ impl UtterEngine {
             language: t.language,
             audio_ms: t.audio_ms,
             inference_ms: t.inference_ms,
+            trimmed_ms: t.trimmed_ms,
         })
     }
 }

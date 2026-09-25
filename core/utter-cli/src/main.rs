@@ -36,6 +36,9 @@ struct Args {
     /// Whisper initial prompt unless --prompt is given or UTTER_NO_VOCAB_PROMPT is set).
     #[arg(long)]
     vocab: Option<String>,
+    /// Remove long silences before inference (the app's default, PARITY A16).
+    #[arg(long)]
+    trim: bool,
     /// WAV files (16 kHz). A sibling .txt is used as the WER reference.
     #[arg(required = true)]
     files: Vec<PathBuf>,
@@ -88,7 +91,7 @@ fn main() -> ExitCode {
     });
     let vocab_prompt = if std::env::var_os("UTTER_NO_VOCAB_PROMPT").is_some() { None } else { utter_core::text::whisper_prompt(&vocabulary) };
     let prompt = args.prompt.clone().or(vocab_prompt);
-    let options = TranscribeOptions { language: args.language.clone(), translate: false, initial_prompt: prompt };
+    let options = TranscribeOptions { language: args.language.clone(), translate: false, initial_prompt: prompt, trim_silence: args.trim };
     let mut processed_errors = 0usize;
     let mut failed = false;
     let mut total_errors = 0usize;

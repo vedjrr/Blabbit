@@ -27,7 +27,7 @@ import UtterCore
         #expect(info.loadMs > 0)
         let (samples, reference) = try loadFixture("tts_02")
         for _ in 0..<3 {
-            let result = try engine.transcribe(pcm: samples, options: DictationOptions(language: nil, translate: false, initialPrompt: nil))
+            let result = try engine.transcribe(pcm: samples, options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false))
             #expect(result.skipped == nil)
             #expect(wordErrorRate(reference: reference, hypothesis: result.text) == 0)
         }
@@ -35,11 +35,28 @@ import UtterCore
         #expect(engine.modelInfo()?.architecture == "parakeet")
     }
 
+    /// Settings → Audio → Remove long silences reaches the Rust VAD (PARITY A16).
+    @Test func silenceTrimmingRunsThroughTheBridge() throws {
+        let modelPath = ModelLocation.defaultModelURL.path
+        try #require(FileManager.default.fileExists(atPath: modelPath), "run `make models` first")
+        let engine = UtterEngine()
+        _ = try engine.loadModel(path: modelPath)
+        let (samples, reference) = try loadFixture("tts_03")
+        let pause = [Float](repeating: 0, count: 16_000 * 4)
+        let padded = pause + samples + pause
+        let trimmed = try engine.transcribe(pcm: padded, options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: true))
+        #expect(trimmed.trimmedMs > 6_000, "removed \(trimmed.trimmedMs) ms of 8 s")
+        #expect(trimmed.audioMs == UInt64(padded.count / 16))
+        #expect(wordErrorRate(reference: reference, hypothesis: trimmed.text) == 0, "\(trimmed.text)")
+        let untouched = try engine.transcribe(pcm: padded, options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false))
+        #expect(untouched.trimmedMs == 0)
+    }
+
     @Test func tooShortAndSilentAreSkipped() throws {
         let engine = UtterEngine()
-        let short = try engine.transcribe(pcm: [Float](repeating: 0.3, count: 3_000), options: DictationOptions(language: nil, translate: false, initialPrompt: nil))
+        let short = try engine.transcribe(pcm: [Float](repeating: 0.3, count: 3_000), options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false))
         #expect(short.skipped == .tooShort)
-        let silent = try engine.transcribe(pcm: [Float](repeating: 0, count: 32_000), options: DictationOptions(language: nil, translate: false, initialPrompt: nil))
+        let silent = try engine.transcribe(pcm: [Float](repeating: 0, count: 32_000), options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false))
         #expect(silent.skipped == .silent)
         #expect(silent.text.isEmpty)
     }
@@ -52,7 +69,7 @@ import UtterCore
         var best = Double.infinity
         for _ in 0..<5 {
             let t0 = MonoClock.nowNs()
-            let r = try engine.transcribe(pcm: fiveMinutes, options: DictationOptions(language: nil, translate: false, initialPrompt: nil))
+            let r = try engine.transcribe(pcm: fiveMinutes, options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false))
             best = min(best, MonoClock.ms(from: t0, to: MonoClock.nowNs()))
             #expect(r.skipped == .silent)
         }

@@ -99,11 +99,20 @@ impl Engine {
                 language: None,
                 audio_ms: (pcm_16k_mono.len() as u64 * 1000) / crate::audio::SAMPLE_RATE as u64,
                 inference_ms: 0.0,
+                trimmed_ms: 0,
             });
         }
+        let trimmed = if options.trim_silence { crate::vad::trim_silence(pcm_16k_mono) } else { None };
+        let pcm = trimmed.as_ref().map_or(pcm_16k_mono, |t| &t.pcm);
         let mut slot = self.guard();
         let model = slot.as_mut().ok_or(UtterError::ModelNotLoaded)?;
-        model.transcribe(pcm_16k_mono, options)
+        let mut result = model.transcribe(pcm, options)?;
+        if let Some(t) = trimmed {
+            // Report the recording's real length; say how much silence was cut.
+            result.audio_ms = (pcm_16k_mono.len() as u64 * 1000) / crate::audio::SAMPLE_RATE as u64;
+            result.trimmed_ms = t.removed_ms;
+        }
+        Ok(result)
     }
 }
 

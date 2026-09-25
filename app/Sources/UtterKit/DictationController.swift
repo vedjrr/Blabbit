@@ -442,7 +442,8 @@ public final class DictationController {
             lastMessage = "\(loadedEntry?.name ?? "This model") doesn't support \(name), so the language is detected automatically."
         }
         return DictationOptions(language: language, translate: text.translateToEnglish && family == "whisper",
-                                initialPrompt: text.initialPrompt(forModelFamily: family, modelID: loadedModelID))
+                                initialPrompt: text.initialPrompt(forModelFamily: family, modelID: loadedModelID),
+                                trimSilence: captureSettings.trimSilence)
     }
 
     // MARK: Incremental transcription of long dictations
@@ -872,7 +873,7 @@ public final class DictationController {
                     let r = try await incremental.finish(complete: samples)
                     Log.info("incremental segments=\(r.segments) tail_inference_ms=\(Int(r.tailInferenceMs)) total_inference_ms=\(Int(r.totalInferenceMs))")
                     return TranscriptionResult(text: r.text, skipped: r.skipped, language: r.language,
-                                               audioMs: UInt64(samples.count / 16), inferenceMs: r.tailInferenceMs)
+                                               audioMs: UInt64(samples.count / 16), inferenceMs: r.tailInferenceMs, trimmedMs: r.trimmedMs)
                 }
                 return try engine.transcribe(pcm: samples, options: options)
             }.value
@@ -1018,6 +1019,7 @@ public final class DictationController {
             ("text_changes", "\(currentPipeline?.changes.count ?? 0)"),
             ("processor", currentPipeline?.processor.map { "\"\($0)\"" } ?? "none"),
             ("inference_ms", String(format: "%.1f", result.inferenceMs)),
+            ("trimmed_silence_ms", "\(result.trimmedMs)"),
             ("release_to_paste_sent_ms", t.pasteSentNs == nil ? "n/a" : ms(release.callbackNs, t.pasteSentNs)),
             ("release_to_target_read_ms", ms(release.callbackNs, t.firstReadNs)),
             ("release_to_restored_ms", ms(release.callbackNs, t.restoredNs)),

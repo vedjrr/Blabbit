@@ -240,3 +240,65 @@ fn incremental_segments_match_one_shot_and_leave_little_for_release() {
     assert!(w2 <= w1 + 0.02, "segmenting cost accuracy: {w2:.3} vs {w1:.3}");
     assert!(tail_ms * 3.0 < one_shot_ms, "release work {tail_ms:.0} ms vs one-shot {one_shot_ms:.0} ms");
 }
+
+/// PARITY A16: silence trimming on real speech. Each fixture is padded with
+/// long quiet stretches (low room noise) before, inside and after the speech;
+/// trimming must cut them, keep the words (WER no worse), and save inference time.
+#[test]
+fn trimming_long_silences_keeps_the_words_and_saves_time() {
+    let _serial = serial();
+    let engine = Engine::new();
+    engine.load_gguf(&require_model(PARAKEET_V3)).expect("load");
+    let quiet = |seconds: f32| -> Vec<f32> {
+        let mut x: u32 = 7;
+        (0..(seconds * 16_000.0) as usize)
+            .map(|_| {
+                x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                0.0015 * ((x >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0)
+            })
+            .collect()
+    };
+    let (mut orig_err, mut plain_err, mut trim_err, mut words) = (0, 0, 0, 0);
+    let (mut plain_ms, mut trim_ms, mut removed_ms) = (0.0, 0.0, 0u64);
+    for (wav, reference) in fixtures() {
+        let speech = audio::load_wav_16k_mono(&wav).unwrap();
+        let half = speech.len() / 2;
+        // Split at a quiet point near the middle so no word is cut in two.
+        // The quietest 200 ms in the middle half is a pause between words.
+        let quiet_at = |a: usize| audio::rms(&speech[a..(a + 3_200).min(speech.len())]);
+        let split = (speech.len() / 4..speech.len() * 3 / 4)
+            .step_by(160)
+            .min_by(|&a, &b| quiet_at(a).total_cmp(&quiet_at(b)))
+            .map_or(half, |a| a + 1_600);
+        let original = engine.transcribe(&speech, &TranscribeOptions::default()).unwrap();
+        let padded = [quiet(3.0), speech[..split].to_vec(), quiet(4.0), speech[split..].to_vec(), quiet(3.0)].concat();
+        let plain = engine.transcribe(&padded, &TranscribeOptions::default()).unwrap();
+        let trimmed = engine.transcribe(&padded, &TranscribeOptions { trim_silence: true, ..Default::default() }).unwrap();
+        let (p, t) = (wer::wer_counts(&reference, &plain.text), wer::wer_counts(&reference, &trimmed.text));
+        eprintln!(
+            "{} original wer={:.3} {:?} | plain wer={:.3} {:.0} ms | trimmed wer={:.3} {:.0} ms removed={} ms\n  plain:   {:?}\n  trimmed: {:?}",
+            wav.file_name().unwrap().to_string_lossy(), wer::wer_counts(&reference, &original.text).wer(), original.text, p.wer(), plain.inference_ms,
+            t.wer(), trimmed.inference_ms, trimmed.trimmed_ms, plain.text, trimmed.text
+        );
+        assert_eq!(trimmed.audio_ms, plain.audio_ms, "audio_ms reports the real recording length");
+        assert!(trimmed.trimmed_ms >= 7_000, "{}: only {} ms removed of 10 s padding", wav.display(), trimmed.trimmed_ms);
+        orig_err += wer::wer_counts(&reference, &original.text).errors();
+        plain_err += p.errors();
+        trim_err += t.errors();
+        words += p.reference_words;
+        plain_ms += plain.inference_ms;
+        trim_ms += trimmed.inference_ms;
+        removed_ms += trimmed.trimmed_ms;
+    }
+    eprintln!(
+        "aggregate original wer={:.3} | padded wer={:.3} inference={plain_ms:.0} ms | trimmed wer={:.3} inference={trim_ms:.0} ms removed={removed_ms} ms",
+        orig_err as f64 / words as f64,
+        plain_err as f64 / words as f64,
+        trim_err as f64 / words as f64
+    );
+    // A trimmed recording is close to the unpadded clip; the model's spelling
+    // of vocabulary words ("123"/"one two three", "backend"/"back end") varies
+    // a word or two either way between runs of different lengths.
+    assert!(trim_err <= orig_err + 2, "trimming lost words: {trim_err} errors vs {orig_err} on the original clips");
+    assert!(trim_ms < plain_ms * 0.7, "trimming should save inference time: {trim_ms:.0} vs {plain_ms:.0} ms");
+}

@@ -12,6 +12,8 @@ pub struct TranscribeOptions {
     pub translate: bool,
     /// Vocabulary/context prompt (Whisper-family only; ignored elsewhere).
     pub initial_prompt: Option<String>,
+    /// Remove long silences first (`vad::trim_silence`).
+    pub trim_silence: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +24,8 @@ pub struct Transcription {
     pub language: Option<String>,
     pub audio_ms: u64,
     pub inference_ms: f64,
+    /// Silence removed before inference (ms).
+    pub trimmed_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +167,7 @@ impl SpeechModel for GgufModel {
             language: result.language,
             audio_ms: (pcm.len() as u64 * 1000) / crate::audio::SAMPLE_RATE as u64,
             inference_ms: started.elapsed().as_secs_f64() * 1e3,
+            trimmed_ms: 0,
         })
     }
 

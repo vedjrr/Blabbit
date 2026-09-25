@@ -1,0 +1,21 @@
+$ cargo test --release -p utter-core --test fixtures trimming -- --nocapture   # Parakeet V3 Q8_0, M4, 2026-09-25
+tts_01.wav original wer=1.000 "Testing udder, 123, hold my code uses post gur SQL." | plain wer=0.750 210 ms | trimmed wer=0.875 108 ms removed=8443 ms
+  plain:   "Testing Utter one two three. Hold my code uses post gur sql."
+  trimmed: "Testing Udder, 123. Hold my code uses postGur SQL."
+tts_02.wav original wer=0.000 "The quick brown fox jumps over the lazy dog while the band plays in the park." | plain wer=0.062 212 ms | trimmed wer=0.062 103 ms removed=8200 ms
+  plain:   "The quick brown fox jump. Over the lazy dog while the band plays in the park."
+  trimmed: "The quick brown fox j over the lazy dog while the band plays in the park."
+tts_03.wav original wer=0.000 "Please schedule a meeting with the design team for next Tuesday afternoon at 3." | plain wer=0.000 262 ms | trimmed wer=0.000 108 ms removed=8166 ms
+  plain:   "Please schedule a meeting with the design team for next Tuesday afternoon at three."
+  trimmed: "Please schedule a meeting with the design team for next Tuesday afternoon at three."
+tts_04.wav original wer=0.091 "I studied computer science at Minute before moving into product engineering." | plain wer=0.091 207 ms | trimmed wer=0.091 104 ms removed=8182 ms
+  plain:   "I studied computer science at Manuth. Before moving into product engineering."
+  trimmed: "I studied computer science at Minute before moving into product engineering."
+tts_05.wav original wer=0.538 "We rewrote the settings screen and swiftly lie and move the backend the type script." | plain wer=0.385 217 ms | trimmed wer=0.538 111 ms removed=8371 ms
+  plain:   "We rewrote the settings screen and Swift Eli and move the backend the TypeScript."
+  trimmed: "We rewrote the settings screen and swiftly lie and move the backend the type script."
+tts_06.wav original wer=0.250 "DeSiva transcribe speech with WhisperKit on the device." | plain wer=0.375 198 ms | trimmed wer=0.375 80 ms removed=8181 ms
+  plain:   "DeSiva transcribes speech with whisper kit on the device."
+  trimmed: "DeSiva transcribes speech with whisper kit on the device."
+aggregate original wer=0.257 | padded wer=0.229 inference=1307 ms | trimmed wer=0.271 inference=613 ms removed=49543 ms
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 2.70s

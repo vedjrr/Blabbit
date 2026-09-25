@@ -134,7 +134,7 @@ for entry in installed {
                 var times: [Double] = []
                 var text = ""
                 for _ in 0..<3 {
-                    let r = try engine.transcribe(pcm: pcm, options: DictationOptions(language: nil, translate: false, initialPrompt: nil))
+                    let r = try engine.transcribe(pcm: pcm, options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false))
                     times.append(r.inferenceMs)
                     text = r.text
                     inferenceTotal += r.inferenceMs
@@ -185,7 +185,7 @@ if let entry = installed.first(where: { $0.recommended }) ?? installed.first,
     if (try? engine.loadModel(path: path)) != nil, let clip = try? loadWav16kMono(path: fixtures[0].wav.path) {
         let short = Array(clip.prefix(8_000 + 16_000 / 2)) // ~1 s of speech
         func once() -> Double {
-            (try? engine.transcribe(pcm: short, options: DictationOptions(language: nil, translate: false, initialPrompt: nil)).inferenceMs) ?? -1
+            (try? engine.transcribe(pcm: short, options: DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false)).inferenceMs) ?? -1
         }
         let hot = (0..<5).map { _ in once() }
         var afterIdle: [String: Double] = [:]
@@ -221,7 +221,7 @@ func longDictation(_ entry: ModelEntry, seconds: Double) async -> [String: Any]?
         audio += [Float](repeating: 0, count: 12_800)
         reference += text + " "
     }
-    let options = DictationOptions(language: nil, translate: false, initialPrompt: nil)
+    let options = DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false)
     let t0 = nowNs()
     let oneShot = try? engine.transcribe(pcm: audio, options: options)
     let oneShotMs = ms(t0, nowNs())
@@ -285,7 +285,7 @@ func releaseRightAfterStart(_ entry: ModelEntry, seconds: Double) async -> [Stri
         audio += [Float](repeating: 0, count: 12_800)
         index += 1
     }
-    let options = DictationOptions(language: nil, translate: false, initialPrompt: nil)
+    let options = DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false)
     var releases: [Double] = [], oneShots: [Double] = []
     var started = false
     var recorded = audio.count

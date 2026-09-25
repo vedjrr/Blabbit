@@ -42,7 +42,7 @@ import UtterCore
         return engine
     }
 
-    static let options = DictationOptions(language: nil, translate: false, initialPrompt: nil)
+    static let options = DictationOptions(language: nil, translate: false, initialPrompt: nil, trimSilence: false)
 
     @Test(arguments: [Float(0), 0.003]) // digital silence, and room noise at about -50 dBFS
     func segmentsWhileRecordingAndLeavesOnlyTheTail(noise: Float) async throws {
