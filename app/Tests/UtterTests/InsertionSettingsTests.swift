@@ -158,3 +158,37 @@ import Testing
         #expect(Date().timeIntervalSince(started) < 3)
     }
 }
+
+@MainActor @Suite struct InsertionPreferenceTests {
+    @Test func newlinesCanBecomeSpaces() {
+        var s = InsertionSettings()
+        #expect(s.finalText("first\nsecond") == "first\nsecond")
+        s.newlines = .spaces
+        #expect(s.finalText("first\n\nsecond\nthird") == "first second third")
+        s.appendTrailingSpace = true
+        #expect(s.finalText("a\nb") == "a b ")
+    }
+
+    @Test func clipboardPreservationCanBeTurnedOff() async {
+        let pb = NSPasteboard(name: NSPasteboard.Name("dev.utter.test.\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        pb.clearContents(); pb.setString("SENTINEL", forType: .string)
+        let paste = PasteInserter(pasteboard: pb, checkSecureInput: false) {
+            _ = pb.string(forType: .string)
+            return nil
+        }
+        paste.quietPeriod = .milliseconds(20)
+        paste.restoreClipboard = false
+        #expect(await paste.insert("keep me") == .pasted(receipt: true))
+        #expect(pb.string(forType: .string) == "keep me", "the transcript stays on the clipboard")
+        paste.restoreClipboard = true
+        pb.clearContents(); pb.setString("SENTINEL", forType: .string)
+        #expect(await paste.insert("restore") == .pasted(receipt: true))
+        #expect(pb.string(forType: .string) == "SENTINEL")
+    }
+
+    @Test func newSettingsDecodeFromOldData() throws {
+        let old = try JSONDecoder().decode(InsertionSettings.self, from: Data(#"{"method":"automatic","copyToClipboard":true}"#.utf8))
+        #expect(old.restoreClipboard && old.newlines == .keep && old.copyToClipboard)
+    }
+}

@@ -59,6 +59,9 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     public var quietPeriod: Duration = .milliseconds(400)
     /// Give up waiting for a read after this long and restore anyway.
     public var receiptTimeout: Duration = .milliseconds(2000)
+    /// Put the previous clipboard back after pasting (Settings → Text Insertion).
+    /// Off: the transcript stays on the clipboard.
+    public var restoreClipboard = true
     /// Longest the clipboard snapshot may take before it is given up on.
     public var snapshotTimeout: TimeInterval = 1.0
     public private(set) var lastTiming = InsertTiming()
@@ -168,8 +171,10 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
             if elapsed < restoreDelay { try? await Task.sleep(for: restoreDelay - elapsed) }
         }
         let receipt = receiptCount > 0
-        if receipt {
+        if receipt, restoreClipboard {
             restoreIfUnchanged(snapshot, ourChangeCount)
+        } else if receipt {
+            leaveTranscriptIfUnchanged(ourChangeCount)
         } else {
             // Nothing read the clipboard, so the text almost certainly did not go
             // in (paste blocked, no text focus, a VM or remote desktop). Keep the

@@ -169,6 +169,7 @@ public final class TextInserter {
                 }
             case .paste:
                 // Clamped: a bad setting must not stall the paste queue.
+                paste.restoreClipboard = settings.restoreClipboard
                 paste.pasteDelay = .milliseconds(min(max(settings.pasteDelayMs, 0), 5_000))
                 paste.restoreDelay = .milliseconds(min(max(settings.pasteDelayAfterMs, 0), 5_000))
                 let outcome = await paste.insert(text)

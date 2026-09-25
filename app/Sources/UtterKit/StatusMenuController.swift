@@ -19,6 +19,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
             self?.cueReset?.cancel()
             self?.statusItem.button?.toolTip = nil
             self?.updateIcon(for: state)
+            self?.updateVisibility()
         }
         controller.onAttention = { [weak self] cue in self?.showCue(cue) }
         updateIcon(for: controller.state)
@@ -96,6 +97,18 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         shortcutMenu.addItem(change)
         shortcut.submenu = shortcutMenu
         menu.addItem(shortcut)
+        let textMode = NSMenuItem(title: "Mode: \(controller.textSettings.mode.title)", action: nil, keyEquivalent: "")
+        let textModeMenu = NSMenu()
+        for mode in TextPipelineSettings.Mode.allCases {
+            let item = NSMenuItem(title: mode.title, action: #selector(chooseTextMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = controller.textSettings.mode == mode ? .on : .off
+            item.toolTip = mode.summary
+            textModeMenu.addItem(item)
+        }
+        textMode.submenu = textModeMenu
+        menu.addItem(textMode)
         let model = NSMenuItem(title: "Model: \(controller.modelName)\(controller.modelLoaded ? "" : " (not loaded)")", action: nil, keyEquivalent: "")
         let modelMenu = NSMenu()
         for entry in controller.models.installedEntries {
@@ -152,6 +165,12 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let history = NSMenuItem(title: "History…", action: #selector(openHistory), keyEquivalent: "y")
+        history.target = self
+        menu.addItem(history)
+        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
         let log = NSMenuItem(title: "Open Log", action: #selector(openLog), keyEquivalent: "")
         log.target = self
         menu.addItem(log)
@@ -171,6 +190,36 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func toggleDictation() { controller.toggleFromMenu() }
     @objc private func openModelManager() { modelWindow.show() }
+
+    private lazy var historyWindow = HistoryWindowController(controller: controller)
+    private lazy var settingsWindow: SettingsWindowController = {
+        let window = SettingsWindowController(controller: controller,
+                                              openModelManager: { [weak self] in self?.modelWindow.show() },
+                                              changeShortcut: { [weak self] in self?.changeShortcut() })
+        window.model.onGeneralChange = { [weak self] general in
+            self?.general = general
+            self?.updateVisibility()
+        }
+        return window
+    }()
+
+    @objc private func openHistory() { historyWindow.show() }
+    @objc private func openSettings() { settingsWindow.show() }
+    public func showSettings() { settingsWindow.show() }
+    public func updateVisibilityAtLaunch() { updateVisibility() }
+
+    @objc private func chooseTextMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = TextPipelineSettings.Mode(rawValue: raw) else { return }
+        controller.textSettings.mode = mode
+    }
+
+    private var general = GeneralSettings.load()
+
+    /// The icon hides when idle if the user chose so; it always shows while dictating.
+    private func updateVisibility() {
+        let busy = controller.state == .recording || controller.state == .transcribing
+        statusItem.isVisible = general.showMenuBarIcon || busy
+    }
     @objc private func chooseModel(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? String { controller.models.setDefault(id) }
     }

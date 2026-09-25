@@ -75,6 +75,24 @@ public final class DictationController {
     private lazy var recorder = AudioRecorder(queue: audioQueue)
     private let engine = UtterEngine()
     private let inserter = TextInserter()
+
+    /// Settings → Text Insertion (saved on change).
+    public var insertionSettings: InsertionSettings {
+        get { inserter.settings }
+        set {
+            inserter.settings = newValue
+            newValue.save()
+        }
+    }
+
+    /// Per-app strategy overrides (Settings → Text Insertion).
+    public var insertionOverrides: [String: [InsertionStrategy]] {
+        get { inserter.table.overrides }
+        set {
+            inserter.table.overrides = newValue
+            inserter.table.save()
+        }
+    }
     private var press: KeyTiming?
     private var recordStartedNs: UInt64 = 0
     /// When the overlay was put on screen for the current dictation.
@@ -162,8 +180,11 @@ public final class DictationController {
         let permissions = PermissionSnapshot.current()
         startHotkey()
         prepareMicrophone(permissions.microphone)
+        let general = GeneralSettings.load()
+        general.applyAppearance()
+        // Always at launch: the model loads once, warms up and stays resident (hard rule 3).
         loadModel(id: models.defaultModelID)
-        if !permissions.allGranted { onNeedsPermissions?() }
+        if !permissions.allGranted, general.showSetupWhenNeeded { onNeedsPermissions?() }
         // Always: a permission revoked and granted again later must be noticed too.
         startPermissionWatch()
     }
@@ -648,7 +669,7 @@ public final class DictationController {
         logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, report: report)
         let plan = InsertionOutcome.plan(for: report)
         // Keep the words rather than lose them when they may not have gone in.
-        if plan.copyToClipboard { Self.putOnClipboard(inserter.settings.finalText(result.text)) }
+        if plan.copyToClipboard { Self.putOnClipboard(inserter.settings.finalText(processed.final)) }
         if let failure = plan.failure {
             fail(failure)
             return

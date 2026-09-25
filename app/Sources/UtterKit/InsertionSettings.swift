@@ -15,6 +15,14 @@ public struct InsertionSettings: Codable, Equatable, Sendable {
         case off, enter, controlEnter, commandEnter
     }
 
+    /// What spoken line breaks ("new line") become when inserted.
+    public enum Newlines: String, Codable, CaseIterable, Sendable {
+        /// Real line breaks.
+        case keep
+        /// Spaces: for chat apps where Return sends the message.
+        case spaces
+    }
+
     public var method: Method = .automatic
     /// Also leave the transcript on the clipboard after inserting (Handy's "copy to clipboard").
     public var copyToClipboard = false
@@ -25,6 +33,9 @@ public struct InsertionSettings: Codable, Equatable, Sendable {
     /// Minimum wait after pasting before the clipboard is restored.
     public var pasteDelayAfterMs = 0
     public var externalScriptPath: String?
+    /// Restore the previous clipboard after a paste.
+    public var restoreClipboard = true
+    public var newlines: Newlines = .keep
 
     public init() {}
 
@@ -39,10 +50,17 @@ public struct InsertionSettings: Codable, Equatable, Sendable {
         pasteDelayMs = try c.decodeIfPresent(Int.self, forKey: .pasteDelayMs) ?? d.pasteDelayMs
         pasteDelayAfterMs = try c.decodeIfPresent(Int.self, forKey: .pasteDelayAfterMs) ?? d.pasteDelayAfterMs
         externalScriptPath = try c.decodeIfPresent(String.self, forKey: .externalScriptPath)
+        restoreClipboard = try c.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? d.restoreClipboard
+        newlines = try c.decodeIfPresent(Newlines.self, forKey: .newlines) ?? d.newlines
     }
 
     /// Text actually inserted, after formatting options.
     public func finalText(_ text: String) -> String {
+        var text = text
+        if newlines == .spaces {
+            text = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }.joined(separator: " ")
+        }
         guard appendTrailingSpace, !text.isEmpty, text.last?.isWhitespace == false else { return text }
         return text + " "
     }
