@@ -41,6 +41,8 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
     public var customInstruction = "Rewrite this as a concise, friendly message."
     /// ISO language code, or nil for automatic detection.
     public var language: String?
+    /// Whisper models only: output English whatever language is spoken.
+    public var translateToEnglish = false
 
     public init() {}
 
@@ -68,6 +70,7 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
         vocabularyThreshold = (try? c.decode(Double.self, forKey: .vocabularyThreshold)) ?? d.vocabularyThreshold
         customInstruction = (try? c.decode(String.self, forKey: .customInstruction)) ?? d.customInstruction
         language = try? c.decode(String.self, forKey: .language)
+        translateToEnglish = (try? c.decode(Bool.self, forKey: .translateToEnglish)) ?? false
     }
 
     var ffi: TextSettings {
@@ -92,8 +95,10 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
     /// Whisper models take the vocabulary as an initial prompt, except Large v3
     /// Turbo, which measured worse with any prompt (0.043 → 0.129–0.157 WER over
     /// 6 clips, evidence/m5/vocabulary_wer.log); post-correction still applies.
+    public static let modelsWithoutPrompt: Set<String> = ["whisper-large-v3-turbo"]
+
     public func initialPrompt(forModelFamily family: String?, modelID: String? = nil) -> String? {
-        guard family == "whisper", !(modelID ?? "").contains("turbo") else { return nil }
+        guard family == "whisper", !Self.modelsWithoutPrompt.contains(modelID ?? "") else { return nil }
         return vocabularyPrompt(vocabulary: vocabulary)
     }
 }

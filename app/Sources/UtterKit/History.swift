@@ -98,7 +98,10 @@ public final class HistoryStore: @unchecked Sendable {
     public init(directory: URL = HistoryStore.defaultDirectory) throws {
         self.directory = directory
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        db = try DatabaseQueue(path: directory.appendingPathComponent("history.sqlite").path)
+        var config = Configuration()
+        // Deleted dictations are overwritten on disk, not left in free pages.
+        config.prepareDatabase { db in try db.execute(sql: "PRAGMA secure_delete = ON") }
+        db = try DatabaseQueue(path: directory.appendingPathComponent("history.sqlite").path, configuration: config)
         try Self.migrator.migrate(db)
     }
 

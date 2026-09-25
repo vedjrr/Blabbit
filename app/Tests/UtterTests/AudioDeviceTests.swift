@@ -1,28 +1,37 @@
+import CoreGraphics
 import Foundation
+import IOKit
 import Testing
 @testable import UtterKit
 
 /// Everything that touches the real audio hardware runs one test at a time
 /// (nested suites inherit `.serialized`): parallel captures keep the device
 /// running and would falsify the start-latency numbers.
-/// A 0.6 s capture: does any audio arrive? (A MacBook's built-in mic is off
-/// with the lid closed, so the hardware tests can't run then.)
+/// Whether live microphone input can exist, judged independently of the
+/// recorder under test: a closed MacBook lid switches the built-in mic off,
+/// and a sleeping display or locked screen goes with it here. When this says
+/// available, the hardware tests run and a silent recorder fails them.
 enum LiveAudio {
-    static let available: Bool = {
-        let queue = DispatchQueue(label: "dev.utter.test.audio-probe")
-        let recorder = AudioRecorder(queue: queue)
-        guard (try? queue.sync { try recorder.start() }) != nil else { return false }
-        Thread.sleep(forTimeInterval: 0.6)
-        return !queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }.samples.isEmpty
-    }()
+    static var lidClosed: Bool {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        defer { IOObjectRelease(service) }
+        let value = IORegistryEntryCreateCFProperty(service, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue()
+        return (value as? Bool) ?? false
+    }
+
+    static var available: Bool {
+        !lidClosed && CGDisplayIsAsleep(CGMainDisplayID()) == 0 && !screenIsLocked()
+    }
 }
 
 @Suite(.serialized,
-       .enabled(if: LiveAudio.available, "the microphone delivers no audio (lid closed or display asleep); these tests need live input"))
+       .enabled(if: LiveAudio.available, "no live microphone: the lid is closed, the display is asleep or the screen is locked"))
 enum AudioHardwareTests {}
 
-/// Real CoreAudio devices on this Mac (no capture is started).
-extension AudioHardwareTests { @Suite struct AudioDeviceTests {
+/// Real CoreAudio devices on this Mac (no capture is started; runs even with
+/// the lid closed).
+@Suite(.serialized) struct AudioDeviceTests {
     @Test func listsInputDevicesWithStableIDs() throws {
         let devices = AudioDevices.inputDevices()
         try #require(!devices.isEmpty, "no audio input device on this Mac")
@@ -54,7 +63,6 @@ extension AudioHardwareTests { @Suite struct AudioDeviceTests {
     }
 }
 
-}
 
 /// A device change mid-recording (AirPods connecting, a USB mic unplugged)
 /// triggers the same handler as `AVAudioEngineConfigurationChange`.

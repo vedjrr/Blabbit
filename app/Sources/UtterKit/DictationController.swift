@@ -264,16 +264,28 @@ public final class DictationController {
         didSet { privacySettings.save() }
     }
     /// Local history, opened (with its migration) on a background queue.
-    private let historyStore = LazyStore()
+    private nonisolated let historyStore = LazyStore()
     private let historyQueue = DispatchQueue(label: "dev.utter.history", qos: .utility)
-    /// nil while opening or if the database couldn't be opened; dictation still works.
+    /// nil if the database couldn't be opened; dictation still works. May block
+    /// briefly while the background open finishes: prefer `historyIfOpen` on main.
     public var history: HistoryStore? { historyStore.value }
+    /// The store if it's already open (never opens or waits on the main thread).
+    public var historyIfOpen: HistoryStore? { historyStore.ifOpen }
+    /// For work already off the main thread.
+    public nonisolated func historyStoreForBackground() -> HistoryStore? { historyStore.value }
+    /// The model actually loaded (for Settings → Language).
+    public var loadedModelEntry: ModelEntry? { loadedModelID.flatMap { models.entry($0) } }
 
     /// Opens the history database once, on a background queue.
     final class LazyStore: @unchecked Sendable {
         private let lock = NSLock()
         private var opened: HistoryStore?
         private var tried = false
+        var ifOpen: HistoryStore? {
+            guard lock.try() else { return nil } // being opened right now
+            defer { lock.unlock() }
+            return opened
+        }
         var value: HistoryStore? {
             lock.lock(); defer { lock.unlock() }
             if !tried {
@@ -306,6 +318,8 @@ public final class DictationController {
     /// The last dictation's pipeline result (for history).
     public private(set) var lastPipeline: PipelineResult?
     private var processedNs: UInt64 = 0
+    /// This dictation's pipeline result, for its log line (set even when skipped).
+    private var currentPipeline: PipelineResult?
     /// "No processor" is said once per session, not on every dictation.
     private var warnedNoProcessor = false
     /// The model the language notice was last shown for (once per model).
@@ -636,7 +650,7 @@ public final class DictationController {
             let name = Locale.current.localizedString(forLanguageCode: text.language ?? "") ?? text.language ?? ""
             lastMessage = "\(loadedEntry?.name ?? "This model") doesn't support \(name), so the language is detected automatically."
         }
-        let options = DictationOptions(language: language, translate: false,
+        let options = DictationOptions(language: language, translate: text.translateToEnglish && family == "whisper",
                                        initialPrompt: text.initialPrompt(forModelFamily: family, modelID: loadedModelID))
         let result: TranscriptionResult
         do {
@@ -684,6 +698,7 @@ public final class DictationController {
         }
         let pipeline = TextPipeline(settings: text, processor: processor)
         let processed = result.skipped == nil ? await pipeline.run(result.text) : PipelineResult(raw: result.text, final: "", changes: [])
+        currentPipeline = processed
         processedNs = MonoClock.nowNs()
         // A lone "um" cleans up to nothing: skip it like silence.
         let skipped = result.skipped.map { "\($0)" } ?? (TranscriptPolicy.isBlank(processed.final) ? "empty" : nil)
@@ -724,7 +739,11 @@ public final class DictationController {
         logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs, report: report)
         let plan = InsertionOutcome.plan(for: report)
         // Keep the words rather than lose them when they may not have gone in.
-        if plan.copyToClipboard { Self.putOnClipboard(inserter.settings.finalText(processed.final)) }
+        if plan.copyToClipboard {
+            Self.putOnClipboard(inserter.settings.finalText(processed.final))
+            // On the clipboard now, so it can be copied again (never for a password field).
+            if !report.secureFieldFocused { lastPipeline = processed }
+        }
         if let failure = plan.failure {
             fail(failure)
             return
@@ -770,8 +789,8 @@ public final class DictationController {
             ("release_to_transcribed_ms", ms(release.callbackNs, transcribedNs)),
             ("text_mode", textSettings.mode.rawValue),
             ("processing_ms", processedNs >= transcribedNs ? ms(transcribedNs, processedNs) : "n/a"),
-            ("text_changes", "\(lastPipeline?.changes.count ?? 0)"),
-            ("processor", lastPipeline?.processor.map { "\"\($0)\"" } ?? "none"),
+            ("text_changes", "\(currentPipeline?.changes.count ?? 0)"),
+            ("processor", currentPipeline?.processor.map { "\"\($0)\"" } ?? "none"),
             ("inference_ms", String(format: "%.1f", result.inferenceMs)),
             ("release_to_paste_sent_ms", t.pasteSentNs == nil ? "n/a" : ms(release.callbackNs, t.pasteSentNs)),
             ("release_to_target_read_ms", ms(release.callbackNs, t.firstReadNs)),

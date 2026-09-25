@@ -37,21 +37,37 @@ final class HistoryModel {
 
     @ObservationIgnored private var observer: NSObjectProtocol?
 
-    private var store: HistoryStore? { explicitStore ?? controller.history }
+    private var store: HistoryStore? { explicitStore ?? controller.historyIfOpen }
 
     var enabled: Bool { controller.privacySettings.historyEnabled }
 
-    func reload() {
+    /// Queries off the main thread; the newest request wins (typing in search).
+    private var generation = 0
+
+    @discardableResult
+    func reload() -> Task<Void, Never>? {
         guard let history = store else {
-            problem = "History couldn't be opened."
-            return
+            problem = controller.privacySettings.historyEnabled ? "History is still opening. Try again in a moment." : nil
+            return nil
         }
-        do {
-            entries = try history.entries(matching: query)
-            problem = nil
-        } catch {
-            problem = "History couldn't be read."
+        generation += 1
+        let mine = generation
+        let query = self.query
+        return Task {
+            let result = await Task.detached { () -> [HistoryEntry]? in try? history.entries(matching: query) }.value
+            guard mine == generation else { return }
+            if let result {
+                entries = result
+                problem = nil
+            } else {
+                problem = "History couldn't be read."
+            }
         }
+    }
+
+    func stopObserving() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
     }
 
     func copy(_ text: String) {

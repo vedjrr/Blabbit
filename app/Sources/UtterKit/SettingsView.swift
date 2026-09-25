@@ -84,14 +84,19 @@ public final class SettingsModel {
     func saveAPIKey() {
         let key = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
-        hasAPIKey = KeychainStore.anthropic.write(key)
         apiKeyDraft = ""
-        message = hasAPIKey ? "API key saved in your Keychain." : "The API key couldn't be saved in the Keychain."
+        Task {
+            let saved = await Task.detached { KeychainStore.anthropic.write(key) }.value
+            hasAPIKey = saved
+            message = saved ? "API key saved in your Keychain." : "The API key couldn't be saved in the Keychain."
+        }
     }
 
     func removeAPIKey() {
-        KeychainStore.anthropic.delete()
-        hasAPIKey = false
+        Task {
+            _ = await Task.detached { KeychainStore.anthropic.delete() }.value
+            hasAPIKey = false
+        }
     }
 
     /// Sends one short request through the chosen processor (user-initiated).
@@ -101,11 +106,12 @@ public final class SettingsModel {
             return
         }
         connectionResult = "Testing…"
-        guard let processor = processing.makeProcessor() else {
-            connectionResult = processing.provider == .anthropic ? "Add an API key first." : "Choose a processor first."
-            return
-        }
+        let settings = processing
         Task {
+            guard let processor = await Task.detached(operation: { settings.makeProcessor() }).value else {
+                connectionResult = settings.provider == .anthropic ? "Add an API key first." : "Choose a processor first."
+                return
+            }
             do {
                 let out = try await processor.process("um so this is a test", instruction: TextPipeline.professionalInstruction, vocabulary: [])
                 connectionResult = "Works: “\(out.prefix(60))”"
@@ -118,11 +124,17 @@ public final class SettingsModel {
     }
 
     func refreshHistoryCount() {
-        historyCount = try? controller.history?.count()
+        let controller = self.controller
+        Task {
+            historyCount = await Task.detached { try? controller.historyStoreForBackground()?.count() }.value
+        }
     }
 
     func clearLocalData() {
-        guard let history = controller.history else { return }
+        guard let history = controller.historyIfOpen else {
+            message = "History isn't available, so there was nothing to delete."
+            return
+        }
         Task {
             let ok = await Task.detached { (try? history.deleteAll()) != nil }.value
             message = ok ? "History and kept audio were deleted." : "Local data couldn't be deleted completely."
@@ -170,6 +182,11 @@ struct SettingsView: View {
             Text("It always appears while you dictate. With the icon hidden, open Settings by launching Utter again.")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Open setup at launch when a permission is missing", isOn: $model.general.showSetupWhenNeeded)
+            LabeledContent("Updates") {
+                Button("Check for Updates…") { NSWorkspace.shared.open(Self.releasesURL) }
+            }
+            Text("Opens Utter's releases page. Automatic updates arrive with the signed release build.")
+                .font(.caption).foregroundStyle(.secondary)
             LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development build")
         }
         .formStyle(.grouped)
@@ -351,11 +368,14 @@ struct SettingsView: View {
         Form {
             Picker("Language", selection: Binding(get: { model.text.language ?? "" }, set: { model.text.language = $0.isEmpty ? nil : $0 })) {
                 Text("Detect automatically").tag("")
-                ForEach(Self.languages(for: model.controller.models.defaultEntry), id: \.self) { code in
+                ForEach(Self.languages(for: model.controller.loadedModelEntry ?? model.controller.models.defaultEntry), id: \.self) { code in
                     Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
                 }
             }
             Text("Choosing your language can help short dictations. The list shows what the current model (\(model.controller.modelName)) supports.")
+                .font(.caption).foregroundStyle(.secondary)
+            Toggle("Translate to English (Whisper models)", isOn: $model.text.translateToEnglish)
+            Text("Speak any language Whisper knows and get English text. Other models ignore this.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
@@ -371,6 +391,8 @@ struct SettingsView: View {
         case .notInstalled, nil: "Not installed"
         }
     }
+
+    static let releasesURL = URL(string: "https://github.com/vedjrr/Utter/releases")!
 
     static func languages(for entry: ModelEntry?) -> [String] {
         (entry?.languages ?? ["en"]).sorted {

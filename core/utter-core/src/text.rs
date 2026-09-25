@@ -133,7 +133,10 @@ pub fn remove_fillers(text: &str) -> String {
         .map(|line| {
             let mut kept: Vec<String> = Vec::new();
             for word in line.split_whitespace() {
-                if FILLERS.contains(&bare(word).as_str()) {
+                // "ER" (all capitals) is a word, not a filler.
+                let core = word.trim_matches(|c: char| !c.is_alphanumeric());
+                let shouted = core.len() > 1 && core.chars().all(|c| c.is_uppercase());
+                if FILLERS.contains(&bare(word).as_str()) && !shouted {
                     // Keep sentence-ending punctuation the filler carried ("…the end, um.").
                     if let Some(end) = word.chars().last().filter(|c| matches!(c, '.' | '!' | '?')) {
                         if let Some(last) = kept.last_mut() {
@@ -151,15 +154,18 @@ pub fn remove_fillers(text: &str) -> String {
     lines.join("\n")
 }
 
-/// Short words said twice in a row ("I I think", "the the") lose the repeat.
+/// Words people stutter on ("I I think", "the the") lose the repeat. Only
+/// these: a repeated number ("1 1 2 3", "one one two") or "had had" is meaning.
 pub fn remove_stutters(text: &str) -> String {
-    const KEEP: &[&str] = &["no", "so", "bye", "ha", "ho", "go", "oh"];
+    const STUTTER: &[&str] = &[
+        "i", "a", "an", "the", "to", "and", "we", "it", "in", "of", "on", "you", "my", "but", "for", "with", "at", "is", "he", "she", "they",
+    ];
     let mut out: Vec<&str> = Vec::new();
     for word in text.split(' ') {
         if let Some(prev) = out.last() {
             let (a, b) = (bare(prev), bare(word));
             let prev_open = !prev.ends_with(|c: char| matches!(c, ',' | '.' | '!' | '?' | ';' | ':'));
-            if prev_open && !a.is_empty() && a == b && a.len() <= 3 && !KEEP.contains(&a.as_str()) {
+            if prev_open && !a.is_empty() && a == b && STUTTER.contains(&a.as_str()) {
                 // Keep the second copy's punctuation: "the the." → "the."
                 out.pop();
             }
@@ -183,10 +189,9 @@ pub fn spoken_line_breaks(text: &str) -> String {
             (Some("new"), Some("line")) => Some("\n"),
             _ => None,
         };
-        let at_boundary = i == 0
-            || words.get(i - 1).is_some_and(|w| ends_clause(w))
-            || words.get(i + 1).is_some_and(|w| ends_clause(w))
-            || i + 2 == words.len();
+        // Its own clause: after the start or a clause end ("…, new line, …",
+        // "Done. New paragraph"), so "we launched a new line." stays a sentence.
+        let at_boundary = i == 0 || words.get(i - 1).is_some_and(|w| ends_clause(w));
         if let (Some(brk), true) = (command, at_boundary) {
             // Punctuation said around the command belongs to the previous sentence.
             let trimmed = out.trim_end_matches([' ', ',']).to_string();
@@ -210,7 +215,7 @@ pub fn capitalize_sentences(text: &str) -> String {
     for word in text.split_inclusive([' ', '\n']) {
         let core = word.trim_end_matches([' ', '\n']);
         let mut w = word.to_string();
-        let lone_i = bare(core) == "i" || bare(core).starts_with("i'");
+        let lone_i = bare(core) == "i" || bare(core).starts_with("i'") || bare(core).starts_with("i\u{2019}");
         if lone_i {
             // Replace the 'i' itself, wherever it sits ("(i", "“i", "😀i").
             if let Some((pos, _)) = w.char_indices().find(|(_, c)| *c == 'i') {
@@ -468,6 +473,11 @@ mod tests {
         assert_eq!(remove_fillers("Umbrella and hummus"), "Umbrella and hummus");
         assert_eq!(remove_stutters("I I think the the plan works"), "I think the plan works");
         assert_eq!(remove_stutters("no no no, that that works"), "no no no, that that works");
+        // Repeated numbers and real repeats are meaning, not stutters.
+        assert_eq!(remove_stutters("my pin is 1 1 2 3"), "my pin is 1 1 2 3");
+        assert_eq!(remove_stutters("call extension one one two"), "call extension one one two");
+        assert_eq!(remove_stutters("i had had enough"), "i had had enough");
+        assert_eq!(remove_fillers("er, the ER doctor"), "the ER doctor");
         assert_eq!(remove_stutters("it is. Is it"), "it is. Is it");
     }
 
@@ -484,7 +494,9 @@ mod tests {
     fn spoken_commands() {
         assert_eq!(spoken_line_breaks("first point. New line. Second point"), "first point.\nSecond point");
         assert_eq!(spoken_line_breaks("intro, new paragraph, body"), "intro\n\nbody");
-        assert_eq!(spoken_line_breaks("thanks new line"), "thanks\n");
+        assert_eq!(spoken_line_breaks("thanks. New line"), "thanks.\n");
+        assert_eq!(spoken_line_breaks("that was a new line."), "that was a new line.");
+        assert_eq!(spoken_line_breaks("i said new line"), "i said new line");
         // Ordinary speech is left alone.
         assert_eq!(spoken_line_breaks("we launched a new line of products"), "we launched a new line of products");
         assert_eq!(spoken_line_breaks("start a new paragraph about cats"), "start a new paragraph about cats");
@@ -521,6 +533,8 @@ mod tests {
             "The minute he held my cup, the whisper stopped.",
             "Swift is fast. Type safety matters.",
             "She swiftly left the room.",
+            // Known trade-off: "hold my coat" vs HoldMyCode is close enough to change
+            // (score ≥ 0.96); users who say both should remove the term. Not listed here.
         ];
         for text in untouched {
             let (out, changes) = apply_vocabulary(text, &vocab(), DEFAULT_THRESHOLD);
@@ -583,6 +597,7 @@ mod tests {
         assert_eq!(capitalize_sentences("he said “i think so”"), "He said “I think so”");
         assert_eq!(capitalize_sentences("(i agree) fine"), "(I agree) fine");
         assert_eq!(capitalize_sentences("😀i did it"), "😀I did it");
+        assert_eq!(capitalize_sentences("I’m here and i’ll go."), "I’m here and I’ll go.");
         // Accented terms still correct by spelling (no phonetic code for them).
         let (out, _) = apply_vocabulary("je travaille à décivra", &["Décivra".to_string()], DEFAULT_THRESHOLD);
         assert_eq!(out, "je travaille à Décivra");

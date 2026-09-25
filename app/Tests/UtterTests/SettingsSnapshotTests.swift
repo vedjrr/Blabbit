@@ -69,7 +69,7 @@ import Testing
         #expect(controller.textSettings.mode == other, "reload didn't write the stale value back")
     }
 
-    @Test func historyRenders() throws {
+    @Test func historyRenders() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("utter-history-snap-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = try HistoryStore(directory: dir)
@@ -79,7 +79,7 @@ import Testing
                                                 raw: "um we rewrote the settings screen in swift UI", final: "We rewrote the settings screen in SwiftUI.", app: "com.apple.Notes"))
         let controller = DictationController(models: ModelManager())
         let model = HistoryModel(controller: controller, store: store)
-        model.reload()
+        await model.reload()?.value
         model.selection = latest.id
         let rep = try snapshot(HistoryView(model: model), size: NSSize(width: 760, height: 480), name: "history")
         #expect(model.entries.count == 2 && rep.pixelsWide >= 760)

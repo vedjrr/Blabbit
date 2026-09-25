@@ -17,7 +17,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | A4 | Configurable shortcut incl. modifier-only and fn/Globe | `H/src-tauri/src/shortcut/handy_keys.rs:412` | handy-keys validation | Native shortcut recorder, modifier-only + fn, conflict detection with system shortcuts | M7 | Partly built (recorder + validation + system-shortcut conflicts, layout-aware names; modifier-only and fn/Globe not yet, retargeted to M7) | Native recorder + conflict warning |
 | A5 | Default shortcut `⌥ Space` on macOS | `H/src-tauri/src/settings.rs:862` | — | Same default | M1 | Built (`Shortcut.optionSpace`) | — |
 | A6 | Cancel shortcut (Esc) while recording | `S.bindings["cancel"]` | registered only while recording | Same, swallowed only while recording | M4 | Missing | — |
-| A7 | Separate "transcribe with post-processing" shortcut | `S.bindings["transcribe_with_post_process"]` | second binding | Second binding that forces the selected LLM mode | M5 | Missing | — |
+| A7 | Separate "transcribe with post-processing" shortcut | `S.bindings["transcribe_with_post_process"]` | second binding | Second binding that forces the selected LLM mode | M7 | Missing (a second shortcut that forces the AI mode; retargeted) | — |
 | A8 | Secure-input shortcut fallback + tray warning | `H/src-tauri/src/secure_input.rs` | polls `IsSecureEventInputEnabled`, shadow-registers Carbon hotkeys | Same idea, own code (ADR-005) | M2 | Built (Carbon fallback while secure input is sustained; typing stays blocked, text goes to the clipboard with a notice; `WatchdogPolicy`/`SecureInputFallback`/`globalSecureInputBlocksEveryMethod` tests; live check pending) | Show culprit app name in overlay |
 | A9 | Audio feedback sounds (start/stop), themes, custom, volume | `S.audio_feedback`, `S.sound_theme`, `S.audio_feedback_volume`, `H/src-tauri/src/audio_feedback.rs` | bundled WAVs | Own sounds (original, generated), `NSSound`/AVAudioPlayer | M4 | Missing | — |
 | A10 | Mute system output while recording | `S.mute_while_recording` | — | Core Audio default-output mute + restore | M4 | Missing | — |
@@ -29,8 +29,8 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | A16 | VAD silence trimming (Silero / Earshot) | `S.vad_enabled`, `S.vad_backend`, `H/src-tauri/src/audio_toolkit/vad/` | Silero ONNX / Earshot | Energy + model VAD (Silero GGUF if transcribe.cpp supports, else energy VAD with hangover); silence-only → no insert | M4 | Missing | — |
 | A17 | Extra recording buffer after release | `S.extra_recording_buffer_ms` | keeps recording N ms | Same | M4 | Missing | — |
 | A18 | Live streaming transcription in overlay | `S.overlay_style = Live`, `StreamTextEvent` in `managers/transcription.rs` | transcribe-cpp streaming sessions | transcribe-cpp `Session::stream` for streaming-capable models | M4 | Missing | — |
-| A19 | Language selection + auto-detect | `S.selected_language` | per-model languages | Same | M5 | Missing | — |
-| A20 | Translate to English (Whisper) | `S.translate_to_english` | Whisper translate task | Same (`Task::Translate`) | M5 | Missing | — |
+| A19 | Language selection + auto-detect | `S.selected_language` | per-model languages | Same | M5 | Built (Settings → Language: auto or a language the loaded model lists; unsupported → auto + notice; `languageOnlyGoesToModelsThatSupportIt`) | — |
+| A20 | Translate to English (Whisper) | `S.translate_to_english` | Whisper translate task | Same (`Task::Translate`) | M5 | Built (Settings → Language → Translate to English, Whisper models) | — |
 | A21 | Short / silent recordings ignored | `managers/audio.rs` VAD policy | — | < 0.3 s or silence → nothing | M1 | Built (Rust `skip_reason` + `tooShortAndSilentAreSkipped`) | — |
 | A22 | Play test sound (preview feedback sound on the chosen output device) | `play_test_sound` in `H/src-tauri/src/commands/audio.rs:295` | — | "Play" button next to sound picker | M4 | Missing | — |
 | A23 | Reset a shortcut to its default | `reset_binding` in `H/src-tauri/src/shortcut/mod.rs:226` | — | "Reset to ⌥Space" button | M4 | Missing | — |
@@ -60,12 +60,12 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | C3 | Cancel download | `cancel_download` command | — | Pause / cancel / retry | M3 | Built (pause / resume / cancel incl. paused rows / retry) | Pause (Handy has cancel only) |
 | C4 | Delete model | `delete_model` | — | Same | M3 | Built | — |
 | C5 | Select / switch active model (also from tray) | `switch_active_model`, `H/src-tauri/src/tray.rs:539` | — | Same; unload old, RSS measured | M3 | Built (Model Manager + menu submenu; unload old, RSS 1051 → 265 MB) | — |
-| C6 | Quantisation choice per model | catalog `files[]`, `default_quant` | — | Default quant + "Advanced: quant" picker | M5 | Missing (retargeted from M3: settings work) | — |
-| C7 | Discover local models (HF cache, custom dir) | `rescan_local_models`, `managers/model.rs:328` | scans HF cache + dir | "Add model file…" + rescan of models dir | M5 | Missing (retargeted from M3: settings work) | — |
+| C6 | Quantisation choice per model | catalog `files[]`, `default_quant` | — | Default quant + "Advanced: quant" picker | M7 | Missing (one quantisation per model in the catalog; retargeted) | — |
+| C7 | Discover local models (HF cache, custom dir) | `rescan_local_models`, `managers/model.rs:328` | scans HF cache + dir | "Add model file…" + rescan of models dir | M7 | Missing (retargeted) | — |
 | C8 | Speed / accuracy scores, recommended flag | catalog `speed_score`, `accuracy_score` | static scores | Show **our measured** RTF + WER on this Mac | M3 | Built (measured WER + p50 on this Mac, Recommended badge) | **Better**: measured, not static |
-| C9 | Model unload after idle timeout | `S.model_unload_timeout` | never / immediately / 2 min … 1 h | Same | M5 | Missing (retargeted from M3: settings work) | — |
-| C10 | Manual unload from tray | `H/src-tauri/src/tray.rs:549` | — | Same | M5 | Missing (retargeted from M3: settings work) | — |
-| C11 | Accelerator / GPU device selection | `S.transcribe_accelerator`, `S.transcribe_gpu_device` | — | Auto / Metal / CPU | M5 | Missing (retargeted from M3: settings work) | — |
+| C9 | Model unload after idle timeout | `S.model_unload_timeout` | never / immediately / 2 min … 1 h | Same | — | Not planned: hard rule 3 keeps the model resident; the memory it frees is measured instead (G3) | — |
+| C10 | Manual unload from tray | `H/src-tauri/src/tray.rs:549` | — | Same | — | Not planned: same reason as C9 (switching models unloads the old one) | — |
+| C11 | Accelerator / GPU device selection | `S.transcribe_accelerator`, `S.transcribe_gpu_device` | — | Auto / Metal / CPU | M7 | Missing (Metal is always used; a CPU fallback switch is retargeted) | — |
 | C12 | Parakeet TDT 0.6B V3 | catalog | GGUF Q8_0 | Verify with fixtures | M1 | Built (verified, `evidence/m3/model_verification.log`) | — |
 | C13 | Parakeet TDT 0.6B V2 | catalog | GGUF Q8_0 | Verify | M3 | Built (verified) | — |
 | C14 | Whisper Small / Medium / Large-v3 / Large-v3-Turbo | catalog | GGUF | Verify each | M3 | Built (all four verified) | — |

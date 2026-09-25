@@ -2,8 +2,8 @@ STATUS: IN_PROGRESS
 
 # Progress (loop state — Claude owns this file)
 
-Current milestone: M5 — processing, vocabulary, history, settings
-Iteration: 8
+Current milestone: M6 — benchmarks & performance
+Iteration: 9
 
 ## Environment (verified 2026-09-24)
 - Apple M4, 16 GB, macOS 27.0 (26A428), arm64.
@@ -12,7 +12,7 @@ Iteration: 8
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M5 gate: critic re-review #2 after fixing review #1 (3 BLOCKERs).
+- M6: `make bench` JSON must cover launch time, model load, warm-up, key-down→capture, RTF per model, insert latency, peak RSS, CPU%; write `docs/BENCHMARKS.md` with the machine spec; profile the slowest stage and fix it; G8 "better than Handy" numbers.
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
@@ -23,6 +23,7 @@ Iteration: 8
 - [x] M2 — Insertion reliability (automated). Critic re-review #3 `VERDICT: PASS`, zero BLOCKERs (2026-09-25); its MAJOR and MINORs fixed afterwards. Live per-app checklist (H) deferred with the other human checks. G2's overlay notice is carried to M4 (see Proposed goal changes).
 - [x] M3 — Model manager + all models. Critic re-review #2 `VERDICT: PASS`, zero BLOCKERs (2026-09-25); it also ran a real Hugging Face pause → segmented resume → verify of Moonshine through the shipped downloader. Its 3 MAJORs and most MINORs fixed afterwards (see Done).
 - [x] M4 — Overlay, audio robustness, permissions (automated). Critic re-review #3 `VERDICT: PASS`, zero BLOCKERs (2026-09-25). **Pending your G1 decision** (Keep Microphone Ready default; see Blocked on human). Its MAJORs and MINORs were fixed afterwards. Live checks (H) deferred.
+- [x] M5 — Processing, vocabulary, history, settings. Critic re-review #2 `VERDICT: PASS`, zero BLOCKERs (2026-09-25); its MAJORs and MINORs fixed afterwards. Ollama/Anthropic live runs are (H).
 
 ## Done (with evidence)
 - [M0] Handy cloned read-only to `/tmp/handy-ref` (v0.9.7-6-g8f9cf53). Component map → `docs/ARCHITECTURE.md` §1.
@@ -167,7 +168,7 @@ Iteration: 8
 - [M5] Swift pipeline: `TextPipelineSettings` (mode, toggles, vocabulary, custom instruction, language; tolerant decoding), Rust stages over FFI (`process_text`), Whisper initial prompt from the vocabulary, optional processors (Ollama local; Anthropic cloud, key in Keychain, off by default, blocked by local-only mode), fallback to the local result with a message. Wired into dictation: raw → final is inserted; the log gains `text_mode`, `processing_ms`, `text_changes`, `processor`. `TextPipelineTests` (8): real FFI stages per mode; Exact/Clean/Code never call a processor; success, failure and empty-reply fallback; settings persistence; Whisper-only prompt; Ollama and Anthropic request/response via a stub URL protocol (headers, body, 401/500/unreachable messages); Keychain round trip. Ollama isn't installed here, so a live Ollama run is (H).
 - [M5] History (G5): GRDB 7.11.1 + FTS5 (`History.swift`). Records timestamp, duration, model, mode, raw, final and app after each dictation that reached an app (never for password-field blocks). Search, copy, copy original, delete, delete all, play kept audio. Audio is only kept with Privacy → Keep audio. Privacy: history on, no audio, local-only by default. `HistoryTests` (3): search by prefix over raw and final, all words must match, delete, delete all, reopen, WAV valid (AVAudioFile 16 kHz mono), audio deleted with its entry.
 - [M5] Settings window (G5; BRIEF §10), live-saving:
-  - General: launch at login (SMAppService), appearance, menu bar icon, setup at launch, updates, version.
+  - General: launch at login (SMAppService), appearance, menu bar icon, setup at launch, Check for Updates… (releases page until Sparkle), version.
   - Dictation: shortcut mode, shortcut, text mode, fillers, capitals, full stop, line breaks, custom instruction, vocabulary editor.
   - Models: default, installed count, storage, Model Manager.
   - Audio: input device, Keep Microphone Ready.
@@ -194,6 +195,14 @@ Iteration: 8
 - [M5] Environment: late in the session the Mac was locked with the display asleep and the built-in mic delivered no audio at all (the standalone probe got no callbacks). The real-hardware audio suites now skip with that reason (`LiveAudio.available`), like the AX suites on a locked screen. They passed earlier today while unlocked (evidence above).
 - [M5] `make test` (locked, lid closed): Rust 29 unit + 10 download + 4 real-model; Swift `Test run with 152 tests in 31 suites passed`, `AudioHardwareTests` skipped (no live audio).
 
+- [M5] Critic re-review #2 → **PASS** (a 400,000-input fuzz of `process` found 0 panics; unsupported languages were checked for every catalog language). Fixed afterwards:
+  (MAJOR) Stutter removal only touches known stutter words, so repeated numbers ("1 1 2 3", "one one two") and "had had" are kept (tested).
+  (MAJOR) The hardware-audio skip no longer uses the recorder under test: it checks the lid (IOKit `AppleClamshellState`), a sleeping display or a locked screen. When those say the mic is live, a silent recorder fails. Device listing and choice run even with the lid closed (they did here).
+  (MAJOR) Settings → General has an honest Updates row (a releases-page button) until Sparkle.
+  (MAJOR) PARITY A7/A19/A20/C6/C7/C9/C10/C11 updated. A19 and A20 are Built; Translate to English was added for Whisper. C9/C10 (idle unload) are not planned: hard rule 3.
+  MINORs: "new line" counts as a command only after a clause end ("that was a new line." stays); "ER" isn't a filler; "i’ll" with a curly apostrophe is capitalised; the log uses this dictation's pipeline result; text left on the clipboard after a failed insertion can be copied again (never after a password-field block); Keychain reads and writes in Settings are off main; history queries run off main (the newest search wins); the database is never opened from main; history uses `PRAGMA secure_delete = ON`; the Language list follows the loaded model; the Turbo no-prompt rule is an explicit model set; the history observer is removable.
+- [M5] Final `make test` (lid closed): Rust 29 + 10 + 4; Swift `Test run with 152 tests in 31 suites passed`; AX and live-capture suites skipped for the stated reasons, device suites ran.
+
 ## Blocked on human
 - **Decision needed (G1, M4): should "Keep Microphone Ready" be on by default?** When the microphone starts from cold it takes 40–65 ms (measured; the hardware start, the same with every capture API), which misses G1's "< 50 ms". With Keep Microphone Ready on, recording starts in 0.0–0.1 ms and even includes the 150 ms before your key press. The catch is that macOS shows the orange microphone indicator the whole time Utter runs, and a Bluetooth headset stays in call-quality mode. My recommendation: keep it **off** by default (privacy) and accept G1 as "< 50 ms with the option on; cold start logged". The details are under Proposed goal changes. Reply with "default off" or "default on".
 - **Deferred to the end (by your choice):** run `docs/TEST_CHECKLIST.md` across the apps.
@@ -211,7 +220,7 @@ Iteration: 8
 - (optional) Install Xcode.app if you want Instruments profiling in M6; the build does not need it.
 
 ## Proposed goal changes
-- **BRIEF §10 Settings → General → "Updates"**: moved to M7 with Sparkle (G7). An "update checks" toggle with nothing behind it would be placeholder UI (hard rule 1), so Settings has no Updates control until M7 builds the updater.
+- **BRIEF §10 Settings → General → "Updates"**: until Sparkle (M7), the row is an honest "Check for Updates…" button that opens https://github.com/vedjrr/Utter/releases. Automatic update checks arrive with Sparkle in M7; no toggle without a working updater (hard rule 1).
 - **G1 "Hold hotkey → recording starts in < 50 ms"**: measured, the microphone hardware itself takes **30–65 ms to start** on this Mac. Numbers: AVAudioEngine 47–65 ms and a bare AUHAL unit 40–57 ms (first sample, fresh processes, `scratchpad/lat` probe); inside the test suite 32–40 ms (`CaptureStartLatencyTests`); the critic measured 53–64 ms. No capture API avoids this. Measured options: keeping the input running is the one that gets under 50 ms (a speculative start on the chord's modifier key-down is untested and would flicker the mic indicator whenever ⌥ is used). The new **"Keep Microphone Ready"** option (Microphone menu) starts in **0.0–0.1 ms**, and the recording even includes 150 ms from before the key-down, but macOS then shows the microphone indicator all the time. Proposal: keep the option **off by default** (privacy), and read G1 as "< 50 ms with Keep Microphone Ready on; cold start measured and logged (`keydown_to_first_sample_ms`)". Alternatively, turn it on by default. Your call.
 - G2 says secure input → "subtle **overlay** notice". The overlay is built in M4. Until then M2 gives a visible cue: the menu bar icon becomes a lock for 4 s, with the message as its tooltip and in the menu. I moved the overlay version to M4 (`docs/MILESTONES.md`) and left the G2 box **unchecked** until M4 delivers it. Please confirm this interim behaviour is acceptable.
 - CLAUDE.md says `make test` = `cargo test` + `xcodebuild test`. Xcode is not installed, so `make test` runs `swift test` (Swift Testing) instead. Same coverage, and it works with or without Xcode. (ADR-001)
