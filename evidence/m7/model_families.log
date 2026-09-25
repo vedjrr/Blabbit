@@ -1,0 +1,137 @@
+# 2026-09-25T23:32:34Z Apple M4 16 GB macOS 27.0 — PARITY C17: one model per extra family, pinned revision, SHA-256 = HF LFS hash, then utter-cli --repeat 3 on tts_01–05 (62 words). Files were deleted after each run.
+
+## canary-180m-flash-gguf canary-180m-flash-Q8_0.gguf size=218447552 sha=OK
+$ core/target/release/utter-cli --model <canary-180m-flash-Q8_0.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model canary-180m-flash-Q8_0.gguf arch=canary backend=MTL0 load=114ms warmup=178ms footprint+296MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=94ms rtf=0.020 wer=0.625	Testing Utter, one two three, hold my code uses post GERSQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=81ms rtf=0.018 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=87ms rtf=0.020 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at three.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=87ms rtf=0.018 wer=0.091	I studied computer science at Manuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=87ms rtf=0.017 wer=0.462	We rewrote the settings screen and swiftly lie and move the backend to type script.
+aggregate wer=0.194 (12/62 words) model_loads=1
+exit=0
+
+## cohere-transcribe-03-2026-gguf cohere-transcribe-03-2026-Q4_K_M.gguf size=1558162944 sha=OK
+$ core/target/release/utter-cli --model <cohere-transcribe-03-2026-Q4_K_M.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model cohere-transcribe-03-2026-Q4_K_M.gguf arch=cohere_asr backend=MTL0 load=443ms warmup=156ms footprint+1615MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=232ms rtf=0.050 wer=0.375	Testing utter, one two three, hold my code uses postgreSQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=230ms rtf=0.052 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=220ms rtf=0.051 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=224ms rtf=0.046 wer=0.000	I studied computer science at Maynooth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=247ms rtf=0.049 wer=0.231	We rewrote the settings screen in SwiftEli and moved the back end to TypeScript.
+aggregate wer=0.097 (6/62 words) model_loads=1
+exit=0
+
+## gigaam-v3-e2e-ctc-gguf gigaam-v3-e2e-ctc-Q8_0.gguf size=272151136 sha=OK
+$ core/target/release/utter-cli --model <gigaam-v3-e2e-ctc-Q8_0.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model gigaam-v3-e2e-ctc-Q8_0.gguf arch=gigaam backend=MTL0 load=106ms warmup=140ms footprint+332MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=39ms rtf=0.008 wer=0.875	Testing otther One2wtree Hold my Codeuses post GurSQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=39ms rtf=0.009 wer=0.375	heQuick Brown Fox Jumpsovat the Lazy Dog Will the Band Playse In the Park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=39ms rtf=0.009 wer=0.714	lease Shedol Armeding with th Design Team for nixt Twseday autonunit ree
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=40ms rtf=0.008 wer=0.636	I Studi cmputer Science At Minote Befor moving in to Product Engenering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=40ms rtf=0.008 wer=0.923	Wery oto sadeng Screen and Swift Fili an Woofd to Bakan ypscript
+aggregate wer=0.677 (42/62 words) model_loads=1
+exit=0
+
+## granite-speech-5.0-470m-turboctc-gguf granite-speech-5.0-470m-turboctc-Q8_0.gguf size=505606496 sha=OK
+$ core/target/release/utter-cli --model <granite-speech-5.0-470m-turboctc-Q8_0.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+error: The speech model file is damaged or incomplete. Delete it and download it again. (model load failed: load granite-speech-5.0-470m-turboctc-Q8_0.gguf: unsupported architecture (status 5))
+exit=0
+
+## Qwen3-ASR-0.6B-gguf Qwen3-ASR-0.6B-Q8_0.gguf size=850423456 sha=OK
+$ core/target/release/utter-cli --model <Qwen3-ASR-0.6B-Q8_0.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model Qwen3-ASR-0.6B-Q8_0.gguf arch=qwen3_asr backend=MTL0 load=7896ms warmup=225ms footprint+1482MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=228ms rtf=0.049 wer=0.375	Testing utter one two three. Hold my code uses PostgreSQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=300ms rtf=0.068 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=279ms rtf=0.065 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at three.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=254ms rtf=0.053 wer=0.091	I studied computer science at Manute before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=268ms rtf=0.053 wer=0.308	We wrote the setting screen in Swift UI and moved the backend to TypeScript.
+aggregate wer=0.129 (8/62 words) model_loads=1
+exit=0
+
+## Voxtral-Mini-3B-2507-gguf Voxtral-Mini-3B-2507-Q4_K_M.gguf size=2984721056 sha=OK
+$ core/target/release/utter-cli --model <Voxtral-Mini-3B-2507-Q4_K_M.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+
+Dear Design Team,
+
+Please join me for our next design team meeting on Tuesday, [date], at 3:00 PM. Let me know if this works for you.
+
+Best,
+[Your Name]
+
+---
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=2801ms rtf=0.581 wer=0.091	I studied computer science at Manuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=2918ms rtf=0.578 wer=0.000	We rewrote the settings screen in SwiftUI and moved the backend to TypeScript.
+aggregate wer=4.274 (265/62 words) model_loads=1
+exit=0
+
+## Fun-ASR-MLT-Nano-2512-gguf Fun-ASR-MLT-Nano-2512-Q8_0.gguf size=891271232 sha=OK
+$ core/target/release/utter-cli --model <Fun-ASR-MLT-Nano-2512-Q8_0.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model Fun-ASR-MLT-Nano-2512-Q8_0.gguf arch=funasr_nano backend=MTL0 load=325ms warmup=94ms footprint+1521MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=225ms rtf=0.048 wer=0.750	Testing utter 123 hold my code uses post-grsql
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=247ms rtf=0.056 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=267ms rtf=0.063 wer=0.000	please schedule a meeting with the design team for next tuesday afternoon at three
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=230ms rtf=0.048 wer=0.091	I studied computer science at minute before moving into product engineering
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=279ms rtf=0.055 wer=0.462	We reload the settings screen and switch to UI and move the backend to typescript
+aggregate wer=0.210 (13/62 words) model_loads=1
+exit=0
+
+## medasr-gguf medasr-Q8_0.gguf size=127712448 sha=OK
+$ core/target/release/utter-cli --model <medasr-Q8_0.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model medasr-Q8_0.gguf arch=medasr backend=MTL0 load=63ms warmup=100ms footprint+184MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=24ms rtf=0.005 wer=0.750	testing under one two three, hold my code uses post Gscu.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=23ms rtf=0.005 wer=0.062	the quick brown fx jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=23ms rtf=0.005 wer=0.286	lease schedule a meeting with the designed team for next Tuesday afternoon at 03:00.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=25ms rtf=0.005 wer=0.364	studied computer Sicience maneuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=25ms rtf=0.005 wer=0.923	ro set and screen and swipp] li and mov back and type script.
+aggregate wer=0.435 (27/62 words) model_loads=1
+exit=0
+
+## moss-transcribe-diarize-gguf MOSS-Transcribe-Diarize-Q8_0.gguf size=986899616 sha=OK
+$ core/target/release/utter-cli --model <MOSS-Transcribe-Diarize-Q8_0.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model MOSS-Transcribe-Diarize-Q8_0.gguf arch=moss backend=MTL0 load=332ms warmup=907ms footprint+1623MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=1028ms rtf=0.221 wer=0.500	Testing other. One, two, three. Hold my code uses Postgresql.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=1022ms rtf=0.231 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=1006ms rtf=0.236 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at three.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=990ms rtf=0.205 wer=0.091	I studied computer science at Manhuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=1004ms rtf=0.199 wer=0.154	We rewrote the settings screen in Swift UI and moved the backend to TypeScript.
+aggregate wer=0.113 (7/62 words) model_loads=1
+exit=0
+## nemotron-speech-streaming-en-0.6b-gguf DOWNLOAD_FAILED
+ALLDONE
+
+# Second pass: Granite 4.0 1B (Granite 5.0 turbo-CTC is 'unsupported architecture' in transcribe-cpp 0.2.3), Voxtral with --language en (without it Voxtral answered the spoken request instead of transcribing), Nemotron (first download failed)
+
+## granite-4.0-1b-speech-gguf granite-4.0-1b-speech-Q4_K_M.gguf size=1602904800 sha=OK
+$ core/target/release/utter-cli --model <granite-4.0-1b-speech-Q4_K_M.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model granite-4.0-1b-speech-Q4_K_M.gguf arch=granite_speech backend=MTL0 load=454ms warmup=417ms footprint+2188MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=488ms rtf=0.105 wer=0.500	testing utter 123 hold my code uses postgresql
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=525ms rtf=0.119 wer=0.000	the quick brown fox jumps over the lazy dog while the band plays in the park
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=521ms rtf=0.122 wer=0.000	please schedule a meeting with the design team for next tuesday afternoon at 3
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=525ms rtf=0.109 wer=0.091	i studied computer science at manuth before moving into product engineering
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=581ms rtf=0.115 wer=0.154	we rewrote the settings screen in swift ui and moved the backend to typescript
+aggregate wer=0.113 (7/62 words) model_loads=1
+exit=0
+
+## Voxtral-Mini-3B-2507-gguf Voxtral-Mini-3B-2507-Q4_K_M.gguf size=2984721056 sha=OK
+$ core/target/release/utter-cli --model <Voxtral-Mini-3B-2507-Q4_K_M.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model Voxtral-Mini-3B-2507-Q4_K_M.gguf arch=voxtral backend=MTL0 load=1049ms warmup=2759ms footprint+4589MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=2722ms rtf=0.586 wer=0.500	Testing utter 123. Hold my code uses postgreSQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=2766ms rtf=0.626 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park.
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=2750ms rtf=0.645 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3.
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=2677ms rtf=0.555 wer=0.091	I studied computer science at Manuth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=2771ms rtf=0.549 wer=0.000	We rewrote the settings screen in SwiftUI and moved the backend to TypeScript.
+aggregate wer=0.081 (5/62 words) model_loads=1
+exit=0
+
+## nemotron-speech-streaming-en-0.6b-gguf nemotron-speech-streaming-en-0.6b-Q8_0.gguf size=729650176 sha=OK
+$ core/target/release/utter-cli --model <nemotron-speech-streaming-en-0.6b-Q8_0.gguf> --repeat 3 fixtures/audio/tts_0[1-5].wav
+model nemotron-speech-streaming-en-0.6b-Q8_0.gguf arch=parakeet backend=MTL0 load=220ms warmup=89ms footprint+827MB
+fixtures/audio/tts_01.wav	audio=4643ms infer_p50=80ms rtf=0.017 wer=0.625	Testing utter one two three hold my code uses postgur SQL.
+fixtures/audio/tts_02.wav	audio=4420ms infer_p50=78ms rtf=0.018 wer=0.000	The quick brown fox jumps over the lazy dog while the band plays in the park
+fixtures/audio/tts_03.wav	audio=4266ms infer_p50=79ms rtf=0.018 wer=0.000	Please schedule a meeting with the design team for next Tuesday afternoon at 3
+fixtures/audio/tts_04.wav	audio=4822ms infer_p50=81ms rtf=0.017 wer=0.091	I studied computer science at Manouth before moving into product engineering.
+fixtures/audio/tts_05.wav	audio=5051ms infer_p50=98ms rtf=0.019 wer=0.154	We rewrote the settings screen in Swift UI and moved the backend to TypeScript.
+aggregate wer=0.129 (8/62 words) model_loads=1
+exit=0
+ALLDONE

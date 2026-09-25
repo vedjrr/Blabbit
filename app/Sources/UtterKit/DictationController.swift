@@ -505,12 +505,19 @@ public final class DictationController {
     private var lastLanguageNotice: String?
 
     /// Transcription options for the loaded model and current settings.
+    static func needsLanguage(architecture: String?) -> Bool { architecture == "voxtral" }
+
     private func dictationOptions(noticeUnsupportedLanguage: Bool) -> DictationOptions {
         let text = textSettings
         let loadedEntry = loadedModelID.flatMap { models.entry($0) }
         let family = loadedEntry?.family
         // A language the loaded model lacks would fail every dictation: detect instead.
-        let language = text.effectiveLanguage(forModelLanguages: loadedEntry?.languages)
+        var language = text.effectiveLanguage(forModelLanguages: loadedEntry?.languages)
+        // Voxtral (an audio chat model) answers a spoken request instead of
+        // transcribing it unless a language is set (evidence/m7/model_families.log).
+        if language == nil, Self.needsLanguage(architecture: engine.modelInfo()?.architecture) {
+            language = text.language.map { ChineseScript(languageCode: $0) != nil ? "zh" : $0 } ?? "en"
+        }
         if noticeUnsupportedLanguage, text.language != nil, language == nil, lastLanguageNotice != loadedModelID {
             lastLanguageNotice = loadedModelID
             let name = Locale.current.localizedString(forLanguageCode: text.language ?? "") ?? text.language ?? ""
