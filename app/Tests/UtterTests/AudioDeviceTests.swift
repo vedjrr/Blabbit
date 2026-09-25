@@ -76,12 +76,17 @@ extension AudioHardwareTests { @Suite struct DeviceChangeTests {
             return
         }
         Thread.sleep(forTimeInterval: 0.5)
+        let lostSignal = DispatchSemaphore(value: 0)
         queue.sync {
+            // What the controller uses to stop the dictation at once.
+            recorder.onCaptureLost = { lostSignal.signal() }
             // The only microphone went away (USB mic unplugged, lid closed).
             recorder.defaultDevice = { nil }
             recorder.simulateConfigurationChange()
         }
+        #expect(lostSignal.wait(timeout: .now() + 1) == .success, "onCaptureLost fired")
         #expect(!recorder.isRecording)
+        #expect(recorder.level == 0, "the meter doesn't freeze on the last level")
         let lost = queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }
         #expect(lost.didRecord, "the dictation must not be dropped")
         #expect(lost.interruptedByDeviceChange && lost.continuedOnDevice == nil)
@@ -163,14 +168,45 @@ extension AudioHardwareTests { @Suite struct CaptureStartLatencyTests {
         }
         try queue.sync { try recorder.setKeepReady(false) }
         let fmt = { (xs: [(block: Double, firstSample: Double)]) in xs.map { String(format: "%.1f/%.1f", $0.block, $0.firstSample) }.joined(separator: " ") }
-        Log.info("capture_start_latency_ms cold(block/first_sample)=\(fmt(cold)) warm=\(fmt(warm))")
-        print("capture_start_latency_ms cold(block/first_sample)=\(fmt(cold)) warm=\(fmt(warm))")
+        // "cold" here = restart after 1 s idle in a process that has used the mic;
+        // a first start in a fresh process measured 40–65 ms (see PROGRESS).
+        Log.info("capture_start_latency_ms restart_after_1s_idle(block/first_sample)=\(fmt(cold)) warm=\(fmt(warm))")
+        print("capture_start_latency_ms restart_after_1s_idle(block/first_sample)=\(fmt(cold)) warm=\(fmt(warm))")
         // Cold: the device start (~40–65 ms here) is recorded, not asserted.
         #expect(cold.allSatisfy { $0.firstSample < 500 })
         // Warm: audio is in hand at once, far inside the 50 ms budget.
         #expect(warm.allSatisfy { $0.block < 10 && $0.firstSample < 10 }, "warm \(fmt(warm))")
         // The pre-roll (0.15 s before the start) is part of the recording.
         #expect(preRollCheck.samples.count >= Int(16_000 * AudioRecorder.preRollSeconds * 0.8), "pre-roll samples \(preRollCheck.samples.count)")
+        #expect(preRollCheck.preRollMs > 100)
+    }
+
+    @Test func warmModeSurvivesChangesAndTurningOff() throws {
+        let queue = DispatchQueue(label: "dev.utter.test.warm")
+        let recorder = AudioRecorder(queue: queue)
+        do { try queue.sync { try recorder.setKeepReady(true) } } catch {
+            withKnownIssue("capture unavailable to the test runner: \(error)") { throw error }
+            return
+        }
+        Thread.sleep(forTimeInterval: 0.4)
+        // A configuration change while idle and warm: rebuilds and stays warm.
+        queue.sync { recorder.simulateConfigurationChange() }
+        Thread.sleep(forTimeInterval: 0.4)
+        try queue.sync { try recorder.start() }
+        #expect(recorder.startedWarm)
+        Thread.sleep(forTimeInterval: 0.2)
+        // Turning the option off mid-recording: the recording continues, then input stops.
+        try queue.sync { try recorder.setKeepReady(false) }
+        #expect(recorder.isRecording)
+        Thread.sleep(forTimeInterval: 0.2)
+        let recording = queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }
+        #expect(recording.samples.count > Int(16_000 * 0.3), "samples \(recording.samples.count)")
+        // The next start is cold again (not a stale warm path with invented timing).
+        try queue.sync { try recorder.start() }
+        #expect(!recorder.startedWarm)
+        Thread.sleep(forTimeInterval: 0.2)
+        let cold = queue.sync { recorder.stop(releaseNs: MonoClock.nowNs()) }
+        #expect(cold.preRollMs == 0 && cold.didRecord)
     }
 }
 }

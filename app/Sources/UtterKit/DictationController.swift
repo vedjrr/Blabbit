@@ -146,6 +146,13 @@ public final class DictationController {
         recorder.onCaptureLost = { [weak self] in
             Task { @MainActor in self?.captureLost() }
         }
+        recorder.onKeepReadyFailed = { [weak self] _ in
+            Task { @MainActor in
+                self?.lastMessage = "Utter couldn't keep the microphone ready, so the next recording may start a moment later. It retries when a microphone is available."
+            }
+        }
+        // First CoreAudio enumeration and listener setup off the main thread.
+        audioQueue.async { _ = AudioDeviceCache.shared }
         recorder.onDeviceReady = { [weak self] name in
             Task { @MainActor in
                 self?.microphoneName = name
@@ -217,7 +224,7 @@ public final class DictationController {
         released(KeyTiming(callbackNs: MonoClock.nowNs(), eventTimestamp: 0, source: recordingSource))
     }
 
-    public static let keepMicReadyKey = "audio.keepMicrophoneReady"
+    public nonisolated static let keepMicReadyKey = "audio.keepMicrophoneReady"
     public var keepMicrophoneReady: Bool { UserDefaults.standard.bool(forKey: Self.keepMicReadyKey) }
 
     /// Keeps the input running between dictations for an instant start (the
@@ -568,6 +575,9 @@ public final class DictationController {
             logDictation(recording, result, press: press, release: release, transcribedNs: transcribedNs,
                          report: InsertReport(result: .failed("skipped_\(skipped)"), bundleID: nil))
             state = .ready
+            if recording.interruptedByDeviceChange, let message = lastMessage {
+                overlay.show(.notice(message, recording.continuedOnDevice == nil ? .failed : .unconfirmed))
+            }
             return
         }
         let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
@@ -612,6 +622,8 @@ public final class DictationController {
             ("event_to_callback_ms", MonoClock.eventNs(press.eventTimestamp, before: press.callbackNs).map { ms($0, press.callbackNs) } ?? "n/a"),
             ("keydown_to_record_started_ms", recordStartedNs == 0 ? "n/a" : ms(press.callbackNs, recordStartedNs)),
             ("keydown_to_overlay_ms", overlayShownNs == 0 ? "n/a" : ms(press.callbackNs, overlayShownNs)),
+            // Keep Microphone Ready: audio from before the key-down included in the recording.
+            ("pre_roll_ms", String(format: "%.0f", rec.preRollMs)),
             ("device_changed", "\(rec.interruptedByDeviceChange)"),
             ("keydown_to_first_sample_ms", ms(press.callbackNs, rec.firstSampleNs)),
             ("keydown_to_first_callback_ms", ms(press.callbackNs, rec.firstCallbackNs)),

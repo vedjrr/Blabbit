@@ -17,6 +17,8 @@ public struct Recording: Sendable {
     /// With `interruptedByDeviceChange`: the device capture continued on
     /// (nil if audio after the change was lost).
     public var continuedOnDevice: String?
+    /// Audio included from before the start (Keep Microphone Ready's pre-roll).
+    public var preRollMs: Double = 0
     /// False if the microphone never started for this recording.
     public var didRecord = true
     public var durationMs: Double { Double(samples.count) / 16.0 }
@@ -191,6 +193,8 @@ public final class AudioRecorder: @unchecked Sendable {
     private var idleTimer: DispatchSourceTimer?
     /// Whether the current recording began with a warm input.
     public private(set) var startedWarm = false
+    /// Pre-roll length included in the current recording.
+    private var preRollMs: Double = 0
 
     public func setKeepReady(_ on: Bool) throws {
         dispatchPrecondition(condition: .onQueue(queue))
@@ -374,6 +378,9 @@ public final class AudioRecorder: @unchecked Sendable {
 
     public func start() throws {
         dispatchPrecondition(condition: .onQueue(queue))
+        // Warm only if input was already running before this call: `prepare()`
+        // may cold-start it (after a failed rebuild), which is not warm.
+        let wasRunning = engine.isRunning && sink != nil
         try prepare()
         samples.removeAll(keepingCapacity: true)
         samples.reserveCapacity(16_000 * 60)
@@ -382,10 +389,10 @@ public final class AudioRecorder: @unchecked Sendable {
         cursorBeforeChange = nil
         levelState.withLock { $0 = 0 }
         resampler?.reset()
-        if keepReady, engine.isRunning, let ring {
+        stopIdle()
+        drainIdle()
+        if keepReady, wasRunning, engine.isRunning, !preRoll.isEmpty, let ring {
             // Warm: audio is already flowing. Take the pre-roll, then keep going.
-            stopIdle()
-            drainIdle()
             let now = MonoClock.nowNs()
             ring.cursor.withLock { c in
                 c.dropped = 0
@@ -396,12 +403,15 @@ public final class AudioRecorder: @unchecked Sendable {
             }
             recordingState.withLock { $0 = true }
             startedWarm = true
+            preRollMs = Double(preRoll.count) / inputRate * 1000
             convertIntoSamples(preRoll)
             preRoll.removeAll(keepingCapacity: true)
             startDrainTimer()
             return
         }
         startedWarm = false
+        preRollMs = 0
+        preRoll.removeAll(keepingCapacity: true)
         ring?.reset()
         do {
             try engine.start()
@@ -444,15 +454,17 @@ public final class AudioRecorder: @unchecked Sendable {
         let c = ring?.cursor.withLock { $0 } ?? cursorBeforeChange ?? SampleRing.Cursor()
         let recording = Recording(samples: samples, firstSampleNs: c.firstSampleNs, firstCallbackNs: c.firstCallbackNs,
                                   lastSampleEndNs: c.lastEndNs == 0 ? nil : c.lastEndNs, droppedFrames: c.dropped,
-                                  interruptedByDeviceChange: interrupted, continuedOnDevice: continuedOn)
+                                  interruptedByDeviceChange: interrupted, continuedOnDevice: continuedOn, preRollMs: preRollMs)
         samples = []
         interrupted = false
         continuedOn = nil
         cursorBeforeChange = nil
         levelState.withLock { $0 = 0 }
         // Apply a device chosen mid-recording now, not on the next key-down.
-        if needsRebuild { try? buildGraph() }
-        if keepReady { try? runWarmIfIdle() }
+        if needsRebuild {
+            do { try buildGraph() } catch { Log.error("rebuild after recording failed: \(error)") }
+        }
+        rewarm()
         return recording
     }
 
@@ -526,8 +538,21 @@ public final class AudioRecorder: @unchecked Sendable {
                 Log.error("input device changed while recording and no device could take over; audio after the change is lost: \(error)")
             }
         } else {
-            try? buildGraph()
-            try? runWarmIfIdle()
+            do { try buildGraph() } catch { Log.error("rebuild after configuration change failed: \(error)") }
+            rewarm()
+        }
+    }
+
+    /// Called when Keep Microphone Ready couldn't restart the input (on `queue`).
+    public var onKeepReadyFailed: (@Sendable (String) -> Void)?
+
+    /// Restarts warm idling after a recording or a rebuild. A failure is logged
+    /// and reported (the next start is cold); the next graph build retries.
+    private func rewarm() {
+        guard keepReady else { return }
+        do { try runWarmIfIdle() } catch {
+            Log.error("keep microphone ready: could not restart input: \(error)")
+            onKeepReadyFailed?("\(error)")
         }
     }
 

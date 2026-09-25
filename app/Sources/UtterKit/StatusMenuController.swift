@@ -133,7 +133,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         let ready = NSMenuItem(title: "Keep Microphone Ready (instant start)", action: #selector(toggleKeepReady), keyEquivalent: "")
         ready.target = self
         ready.state = controller.keepMicrophoneReady ? .on : .off
-        ready.toolTip = "Keeps the microphone running between dictations so recording starts instantly and catches the first syllable. macOS shows the microphone indicator the whole time. Audio is never stored or sent."
+        ready.toolTip = "Keeps the microphone running between dictations so recording starts instantly and catches the first syllable. macOS shows the microphone indicator the whole time. With a Bluetooth headset microphone, the headset stays in its lower-quality call mode while this is on. Audio is never stored or sent."
         micMenu.addItem(ready)
         mic.submenu = micMenu
         menu.addItem(mic)
