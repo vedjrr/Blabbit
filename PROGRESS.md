@@ -12,7 +12,12 @@ Iteration: 10
 - Repo was not a git repo; `git init` done, author = Vedjr02.
 
 ## Next task
-- M7 gate: critic review (G7 + G8 evidence), then the final critic review (G6), then STATUS per the Completion rule.
+M7 is not done: the gate critic (review #1, 2026-09-25) returned **FAIL**. Work list, in order:
+1. PARITY rows still Missing (G0: zero at DONE). Done: A3 A4 A6 A7 A23 (2e29b72). Left: A9 A10 A13 A14 A15 A16 A17 A18 A22, C6 C7 C11 C17, D4 D5 D7 D8 D9, E3 E4 E6, F7 F10 F14 F21 F23.
+2. Critic BLOCKERs: `scripts/compare-handy.sh` must trigger Handy's lazy model load and sum helper-process footprints; G8 "lower idle RAM / faster launch" needs Handy installed → Proposed goal change (reclassify as H) or run it.
+3. Critic MAJORs: make-dmg identity must be an exact "Developer ID Application" match + notary profile checked first; Settings "check automatically" toggle must be observable; PARITY vocabulary "Better" and incremental "Better" rows must state their real baseline.
+4. Critic MINORs: re-record the dmg exit code, appcast deltas/URL prefix, compare-handy error handling, Cask stanza order, uninstall.sh (EOF, HTTPStorages, login item, wait for quit), unused `canCheck`, Sparkle checks deferred during dictation, no updater in dev builds, strip CLT rpath, Apple Events for external scripts, hdiutil deprecation, M7 entries misplaced under Proposed goal changes, stray `dev.utter.verify.tmp.plist`.
+5. Critic re-review → final review → STATUS per the Completion rule.
 
 ## Decisions by the human
 - 2026-09-24: The human **deferred the M1 voice/TextEdit gate to the end** ("model testing can be done later on at the end of the app… go ahead with the next step"). M1's automated gate is passed (critic PASS); the (H) item moves to the final human checklist and no longer blocks M2+. Deviation from CLAUDE.md rule 6, made at the human's direction.
