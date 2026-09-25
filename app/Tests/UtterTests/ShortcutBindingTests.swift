@@ -1,4 +1,5 @@
 import AppKit
+import os
 import CoreGraphics
 import Testing
 @testable import UtterKit
@@ -168,5 +169,37 @@ import Testing
         left.recordFlagsChanged(keyCode: 58, rawFlags: CGEventFlags.maskAlternate.rawValue)
         left.recordFlagsChanged(keyCode: 58, rawFlags: 0)
         #expect(left.candidate == nil)
+    }
+}
+
+/// The bug a human found: holding the shortcut in Hold to Talk was cut after
+/// 0.5 s, because the watchdog read the session key state, which never sees a
+/// key the tap swallows. Real tap, real HID-level key events (F13, harmless).
+@Suite(.serialized, .enabled(if: AXIsProcessTrusted(), "test runner is not trusted for Accessibility"))
+struct HeldShortcutTests {
+    @Test func aHeldShortcutReadsAsDownWhileTheTapSwallowsIt() throws {
+        let f13 = Shortcut(keyCode: 105, modifiers: 0)
+        let monitor = HotkeyMonitor(shortcut: f13)
+        let presses = OSAllocatedUnfairLock(initialState: (down: 0, up: 0))
+        monitor.onPress = { _ in presses.withLock { $0.down += 1 } }
+        monitor.onRelease = { _ in presses.withLock { $0.up += 1 } }
+        try monitor.start()
+        defer { monitor.stop() }
+        let source = CGEventSource(stateID: .hidSystemState)
+        CGEvent(keyboardEventSource: source, virtualKey: 105, keyDown: true)?.post(tap: .cghidEventTap)
+        defer { CGEvent(keyboardEventSource: source, virtualKey: 105, keyDown: false)?.post(tap: .cghidEventTap) }
+        // Longer than the watchdog's two 250 ms checks.
+        for _ in 0..<6 {
+            Thread.sleep(forTimeInterval: 0.2)
+            #expect(f13.isPhysicallyDown(), "held key read as up")
+        }
+        // The same checks the watchdog runs, with the live key state.
+        var checks = 0
+        #expect(WatchdogPolicy.releaseReason(elapsed: 1.2, maxSeconds: 600, source: .tap, keyDown: f13.isPhysicallyDown(),
+                                             secureInput: false, keyUpChecks: &checks) == nil)
+        CGEvent(keyboardEventSource: source, virtualKey: 105, keyDown: false)?.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.2)
+        #expect(!f13.isPhysicallyDown())
+        #expect(presses.withLock { $0 } == (down: 1, up: 1), "the tap saw one press and one release")
     }
 }

@@ -49,9 +49,12 @@ public struct Shortcut: Equatable, Sendable, Codable {
     }
 
     /// For the watchdog: is the shortcut's key physically down right now?
+    /// Reads the hardware (HID) state: the session state never sees a key our
+    /// tap swallows, so it reports a held shortcut as up (that cut every
+    /// hold-to-talk recording after 0.5 s).
     public func isPhysicallyDown() -> Bool {
-        if isModifierOnly { return modifierIsDown(in: CGEventSource.flagsState(.combinedSessionState)) }
-        return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(keyCode))
+        if isModifierOnly { return modifierIsDown(in: CGEventSource.flagsState(.hidSystemState)) }
+        return CGEventSource.keyState(.hidSystemState, key: CGKeyCode(keyCode))
     }
 
     public var displayString: String {

@@ -30,7 +30,8 @@ public enum OverlayStyle: String, Codable, CaseIterable, Sendable {
     }
 
     public static func load(from defaults: UserDefaults = .standard) -> OverlayStyle {
-        defaults.string(forKey: defaultsKey).flatMap(OverlayStyle.init(rawValue:)) ?? .minimal
+        // Live by default, like Handy on macOS (models too slow for it show the meter).
+        defaults.string(forKey: defaultsKey).flatMap(OverlayStyle.init(rawValue:)) ?? .live
     }
 
     public func save(to defaults: UserDefaults = .standard) {

@@ -191,13 +191,13 @@ import Testing
         #expect(!shown.dropFirst(2).hasPrefix("ord"), "cut at a word boundary: \(shown)")
     }
 
-    @Test func styleDefaultsToMinimalAndPersists() throws {
+    @Test func styleDefaultsToLiveAndPersists() throws {
         let suite = "dev.utter.test.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        #expect(OverlayStyle.load(from: defaults) == .minimal)
-        OverlayStyle.live.save(to: defaults)
         #expect(OverlayStyle.load(from: defaults) == .live)
+        OverlayStyle.minimal.save(to: defaults)
+        #expect(OverlayStyle.load(from: defaults) == .minimal)
     }
 
     @MainActor @Test func liveTextShowsInAWiderPill() throws {
