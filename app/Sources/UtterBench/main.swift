@@ -92,7 +92,8 @@ let fixtures: [(wav: URL, reference: String)] = {
 var report: [String: Any] = [:]
 let date = ISO8601DateFormatter().string(from: Date())
 report["date"] = date
-let dirty = !run("/usr/bin/git", ["status", "--porcelain", "--untracked-files=no"]).isEmpty
+// Dirty = uncommitted changes to code (not to these results or the notes).
+let dirty = !run("/usr/bin/git", ["status", "--porcelain", "--untracked-files=no", "--", "app", "core", "scripts", "Makefile"]).isEmpty
 report["git"] = run("/usr/bin/git", ["rev-parse", "--short", "HEAD"]).trimmingCharacters(in: .whitespacesAndNewlines) + (dirty ? "-dirty" : "")
 report["runtime"] = coreVersion()
 report["machine"] = [
