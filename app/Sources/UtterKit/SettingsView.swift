@@ -187,7 +187,7 @@ public final class SettingsModel {
             do {
                 let models: [String]
                 switch settings.provider {
-                case .none: models = []
+                case .none, .appleIntelligence: models = []
                 case .ollama:
                     guard let url = URL(string: settings.ollamaURL) else { providerModelsNote = "That Ollama address isn't valid."; return }
                     models = try await ProcessorModels.ollama(baseURL: url)
@@ -628,6 +628,9 @@ struct SettingsView: View {
             switch model.processing.provider {
             case .none:
                 EmptyView()
+            case .appleIntelligence:
+                Text(AppleIntelligenceProcessor.unavailableReason ?? "Uses Apple's on-device model. Nothing leaves your Mac.")
+                    .font(.callout).foregroundStyle(AppleIntelligenceProcessor.unavailableReason == nil ? Color.secondary : Color.orange)
             case .ollama:
                 TextField("Ollama address", text: $model.processing.ollamaURL)
                 modelField($model.processing.ollamaModel)

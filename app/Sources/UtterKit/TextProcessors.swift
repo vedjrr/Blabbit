@@ -33,11 +33,12 @@ public enum TextProcessorError: Error, Equatable {
 /// unless the user picks it and stores a key.
 public struct ProcessorSettings: Codable, Equatable, Sendable {
     public enum Provider: String, Codable, CaseIterable, Sendable {
-        case none, ollama, anthropic
+        case none, appleIntelligence, ollama, anthropic
 
         public var title: String {
             switch self {
             case .none: "None (local clean-up only)"
+            case .appleIntelligence: "Apple Intelligence (on this Mac)"
             case .ollama: "Ollama (on this Mac)"
             case .anthropic: "Anthropic (cloud)"
             }
@@ -68,7 +69,7 @@ public struct ProcessorSettings: Codable, Equatable, Sendable {
     /// Local-only mode allows nothing else.
     public var isLocal: Bool {
         switch provider {
-        case .none: return true
+        case .none, .appleIntelligence: return true
         case .anthropic: return false
         case .ollama:
             guard let host = URL(string: ollamaURL)?.host?.lowercased() else { return false }
@@ -81,6 +82,8 @@ public struct ProcessorSettings: Codable, Equatable, Sendable {
         switch provider {
         case .none:
             return nil
+        case .appleIntelligence:
+            return AppleIntelligenceProcessor(timeout: timeoutSeconds)
         case .ollama:
             guard let url = URL(string: ollamaURL) else { return nil }
             return OllamaProcessor(baseURL: url, model: ollamaModel, timeout: timeoutSeconds, session: session)

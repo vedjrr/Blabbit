@@ -1,0 +1,6 @@
+$ swift test --filter AppleIntelligenceTests  (2026-09-25, Apple M4, macOS 27.0)
+􁁛  Test countsAsLocal() passed after 0.001 seconds.
+􁁛  Test rewritesOnDevice() passed after 0.990 seconds.
+􁁛  Suite AppleIntelligenceTests passed after 0.990 seconds.
+􁁛  Test run with 2 tests in 1 suite passed after 0.990 seconds.
+Standalone probe earlier the same day: availability: available; 'um so basically i think we should like ship it on friday maybe' → 'We could consider shipping it this Friday, perhaps.' in 2460 ms (first call, model load included).
