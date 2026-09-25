@@ -120,7 +120,7 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
         translateToEnglish = (try? c.decode(Bool.self, forKey: .translateToEnglish)) ?? false
     }
 
-    var ffi: TextSettings {
+    func ffi(modelLanguages: [String] = []) -> TextSettings {
         let m: TextMode = switch mode {
         case .exact: .exact
         case .clean: .clean
@@ -130,14 +130,21 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
         }
         return TextSettings(mode: m, vocabulary: vocabulary, vocabularyThreshold: vocabularyThreshold,
                             removeFillers: removeFillers, capitalize: capitalize,
-                            autoPunctuation: autoPunctuation, spokenLineBreaks: spokenLineBreaks)
+                            autoPunctuation: autoPunctuation, spokenLineBreaks: spokenLineBreaks,
+                            language: effectiveLanguage(forModelLanguages: modelLanguages.isEmpty ? nil : modelLanguages) ?? (modelLanguages.isEmpty ? language : nil),
+                            modelLanguages: modelLanguages)
     }
 
     /// The chosen language if the model supports it, otherwise nil (auto-detect).
+    /// "zh-Hans"/"zh-Hant" transcribe as "zh" and then convert the script.
     public func effectiveLanguage(forModelLanguages languages: [String]?) -> String? {
-        guard let language, let languages, languages.contains(language) else { return nil }
-        return language
+        guard let language, let languages else { return nil }
+        let base = ChineseScript(languageCode: language) != nil ? "zh" : language
+        return languages.contains(base) ? base : nil
     }
+
+    /// The Chinese script to convert to (PARITY D7), when one was chosen.
+    public var chineseScript: ChineseScript? { language.flatMap(ChineseScript.init(languageCode:)) }
 
     /// Whisper models take the vocabulary as an initial prompt, except Large v3
     /// Turbo, which measured worse with any prompt (0.043 → 0.129–0.157 WER over
@@ -147,6 +154,23 @@ public struct TextPipelineSettings: Codable, Equatable, Sendable {
     public func initialPrompt(forModelFamily family: String?, modelID: String? = nil) -> String? {
         guard family == "whisper", !Self.modelsWithoutPrompt.contains(modelID ?? "") else { return nil }
         return vocabularyPrompt(vocabulary: vocabulary)
+    }
+}
+
+/// Simplified ↔ Traditional Chinese (PARITY D7), with the system's ICU
+/// transform: character by character, where Handy's OpenCC also swaps
+/// regional phrasings (软件 → 軟件, not 軟體).
+public enum ChineseScript: String, Sendable, CaseIterable {
+    case simplified = "zh-Hans"
+    case traditional = "zh-Hant"
+
+    public init?(languageCode: String) { self.init(rawValue: languageCode) }
+
+    public var title: String { self == .simplified ? "Chinese (Simplified)" : "Chinese (Traditional)" }
+
+    public func convert(_ text: String) -> String {
+        let transform = StringTransform(self == .simplified ? "Hant-Hans" : "Hans-Hant")
+        return text.applyingTransform(transform, reverse: false) ?? text
     }
 }
 
@@ -186,17 +210,28 @@ public struct PipelineResult: Equatable, Sendable {
 public struct TextPipeline: Sendable {
     public var settings: TextPipelineSettings
     public var processor: (any TextProcessor)?
+    /// The model's languages: English-only clean-up (fillers) is skipped when
+    /// the text is in another of them (PARITY D8).
+    public var modelLanguages: [String]
 
-    public init(settings: TextPipelineSettings, processor: (any TextProcessor)? = nil) {
+    public init(settings: TextPipelineSettings, processor: (any TextProcessor)? = nil, modelLanguages: [String] = []) {
         self.settings = settings
         self.processor = processor
+        self.modelLanguages = modelLanguages
     }
 
     public static let professionalInstruction =
         "Improve the grammar, punctuation and readability of this dictated text without changing its meaning, facts, names or language. Keep the author's voice. Return only the rewritten text."
 
     public func run(_ raw: String) async -> PipelineResult {
-        let local = processText(raw: raw, settings: settings.ffi)
+        var local = processText(raw: raw, settings: settings.ffi(modelLanguages: modelLanguages))
+        if let script = settings.chineseScript {
+            let converted = script.convert(local.text)
+            if converted != local.text {
+                local.text = converted
+                local.changes.append("script: \(script.rawValue)")
+            }
+        }
         var result = PipelineResult(raw: raw, final: local.text, changes: local.changes)
         guard settings.mode.usesProcessor, let processor, !local.text.isEmpty else { return result }
         let instruction = settings.mode == .professional ? Self.professionalInstruction : settings.customInstruction

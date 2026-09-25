@@ -272,3 +272,29 @@ extension TextPipelineTests {
         }
     }
 }
+
+/// PARITY D7 (Chinese script) and D8 (fillers only out of English text).
+@Suite struct LanguageAwareCleanupTests {
+    @Test func germanKeepsUmAndEr() async {
+        var s = TextPipelineSettings()
+        s.mode = .clean
+        let german = "ich komme um drei Uhr und er bringt den Kuchen mit, das wird schön"
+        let out = await TextPipeline(settings: s, modelLanguages: ["en", "de", "fr"]).run(german)
+        #expect(out.final.contains("um drei Uhr und er bringt"), "\(out.final)")
+        let english = await TextPipeline(settings: s, modelLanguages: ["en", "de", "fr"]).run("um so I think we should uh ship the new settings window on Friday")
+        #expect(!english.final.contains(" uh "), "\(english.final)")
+    }
+
+    @Test func chineseScriptIsConverted() async {
+        var s = TextPipelineSettings()
+        s.mode = .exact
+        s.language = "zh-Hant"
+        #expect(s.effectiveLanguage(forModelLanguages: ["zh", "en"]) == "zh", "the model is asked for zh")
+        let out = await TextPipeline(settings: s, modelLanguages: ["zh", "en"]).run("我们应该在星期五发布这个软件")
+        #expect(out.final == "我們應該在星期五發佈這個軟件")
+        s.language = "zh-Hans"
+        #expect(await TextPipeline(settings: s).run("我們應該發佈").final == "我们应该发布")
+        s.language = "en"
+        #expect(s.chineseScript == nil)
+    }
+}

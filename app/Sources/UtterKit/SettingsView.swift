@@ -572,7 +572,7 @@ struct SettingsView: View {
             Picker("Language", selection: Binding(get: { model.text.language ?? "" }, set: { model.text.language = $0.isEmpty ? nil : $0 })) {
                 Text("Detect automatically").tag("")
                 ForEach(Self.languages(for: model.controller.loadedModelEntry ?? model.controller.models.defaultEntry), id: \.self) { code in
-                    Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                    Text(ChineseScript(languageCode: code)?.title ?? Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
                 }
             }
             Text("Choosing your language can help short dictations. The list shows what the current model (\(model.controller.modelName)) supports.")
@@ -611,7 +611,10 @@ struct SettingsView: View {
     static let releasesURL = URL(string: "https://github.com/vedjrr/Utter/releases")!
 
     static func languages(for entry: ModelEntry?) -> [String] {
-        (entry?.languages ?? ["en"]).sorted {
+        var codes = entry?.languages ?? ["en"]
+        // Chinese comes as a choice of script (PARITY D7).
+        if let i = codes.firstIndex(of: "zh") { codes.replaceSubrange(i...i, with: ChineseScript.allCases.map(\.rawValue)) }
+        return codes.sorted {
             (Locale.current.localizedString(forLanguageCode: $0) ?? $0) < (Locale.current.localizedString(forLanguageCode: $1) ?? $1)
         }
     }

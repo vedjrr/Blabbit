@@ -365,6 +365,10 @@ pub struct TextSettings {
     pub capitalize: bool,
     pub auto_punctuation: bool,
     pub spoken_line_breaks: bool,
+    /// The chosen language (ISO 639-1), or None for automatic.
+    pub language: Option<String>,
+    /// The model's languages; filler removal detects among them.
+    pub model_languages: Vec<String>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -391,6 +395,8 @@ pub fn process_text(raw: String, settings: TextSettings) -> ProcessedText {
         capitalize: settings.capitalize,
         auto_punctuation: settings.auto_punctuation,
         spoken_line_breaks: settings.spoken_line_breaks,
+        language: settings.language,
+        model_languages: settings.model_languages,
     };
     // A bug in a stage must never crash dictation (a panic would cross the FFI
     // boundary): fall back to the raw transcript and say so.

@@ -34,6 +34,10 @@ pub struct TextOptions {
     pub auto_punctuation: bool,
     /// Spoken "new line" / "new paragraph" become line breaks.
     pub spoken_line_breaks: bool,
+    /// The language the user chose (ISO 639-1), if any.
+    pub language: Option<String>,
+    /// What the model can output; detection picks among these.
+    pub model_languages: Vec<String>,
 }
 
 impl Default for TextOptions {
@@ -45,6 +49,8 @@ impl Default for TextOptions {
             remove_fillers: true,
             capitalize: true,
             auto_punctuation: true,
+            language: None,
+            model_languages: Vec::new(),
             spoken_line_breaks: true,
         }
     }
@@ -66,7 +72,10 @@ pub fn process(raw: &str, options: &TextOptions) -> Processed {
     let clean_like = matches!(options.mode, Mode::Clean | Mode::Professional | Mode::Custom);
     let code = options.mode == Mode::Code;
 
-    if (clean_like || code) && options.remove_fillers {
+    // The filler list is English: "um" is a German word ("around") and "er" means
+    // "he", so other languages keep them (PARITY D8).
+    let english = output_language(&text, options).is_none_or(|l| l == "en");
+    if (clean_like || code) && options.remove_fillers && english {
         let before = text.clone();
         text = remove_fillers(&text);
         text = remove_stutters(&text);
@@ -118,6 +127,56 @@ pub fn normalize_spacing(text: &str) -> String {
         out.push_str(&joined);
     }
     out
+}
+
+/// The language the text is in: the user's choice, the model's only language,
+/// or a confident detection among the model's languages (None when unsure).
+pub fn output_language(text: &str, options: &TextOptions) -> Option<String> {
+    if let Some(language) = &options.language {
+        return Some(language.clone());
+    }
+    match options.model_languages.as_slice() {
+        [] => None,
+        [only] => Some(only.clone()),
+        many => detect_language(text, many),
+    }
+}
+
+/// Minimum whatlang confidence, on top of its own reliability check: a wrong
+/// language would keep fillers in English text, so unsure means None.
+const MIN_CONFIDENCE: f64 = 0.5;
+
+/// Detects which of `candidates` (ISO 639-1) the text is written in.
+pub fn detect_language(text: &str, candidates: &[String]) -> Option<String> {
+    let allow: Vec<whatlang::Lang> = candidates.iter().filter_map(|c| lang_for_code(c)).collect();
+    if allow.is_empty() || text.split_whitespace().count() < 3 {
+        return None;
+    }
+    let info = whatlang::Detector::with_allowlist(allow).detect(text)?;
+    if !info.is_reliable() || info.confidence() < MIN_CONFIDENCE {
+        return None;
+    }
+    code_for_lang(info.lang()).map(str::to_string)
+}
+
+const LANG_CODES: &[(&str, whatlang::Lang)] = {
+    use whatlang::Lang::*;
+    &[
+        ("en", Eng), ("de", Deu), ("fr", Fra), ("es", Spa), ("it", Ita), ("pt", Por), ("nl", Nld), ("pl", Pol),
+        ("ru", Rus), ("uk", Ukr), ("cs", Ces), ("sk", Slk), ("sl", Slv), ("hr", Hrv), ("bg", Bul), ("ro", Ron),
+        ("hu", Hun), ("fi", Fin), ("sv", Swe), ("da", Dan), ("et", Est), ("lv", Lav), ("lt", Lit), ("el", Ell),
+        ("zh", Cmn), ("ja", Jpn), ("ko", Kor), ("tr", Tur), ("ar", Ara), ("he", Heb), ("hi", Hin), ("nb", Nob),
+        ("no", Nob), ("id", Ind), ("vi", Vie), ("th", Tha), ("fa", Pes), ("ca", Cat), ("sr", Srp), ("be", Bel),
+    ]
+};
+
+fn lang_for_code(code: &str) -> Option<whatlang::Lang> {
+    let base = code.split(['-', '_']).next().unwrap_or(code).to_ascii_lowercase();
+    LANG_CODES.iter().find(|(c, _)| *c == base).map(|(_, l)| *l)
+}
+
+fn code_for_lang(lang: whatlang::Lang) -> Option<&'static str> {
+    LANG_CODES.iter().find(|(_, l)| *l == lang).map(|(c, _)| *c)
 }
 
 const FILLERS: &[&str] = &["um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "hmm", "mm", "mhm"];
@@ -463,6 +522,29 @@ mod tests {
     fn spacing() {
         assert_eq!(normalize_spacing("  hello   world ,  ok .  "), "hello world, ok.");
         assert_eq!(normalize_spacing("a  b\n  c "), "a b\nc");
+    }
+
+    #[test]
+    fn fillers_only_come_out_of_english() {
+        let langs: Vec<String> = ["en", "de", "fr", "es"].iter().map(|s| s.to_string()).collect();
+        let mut o = TextOptions { model_languages: langs.clone(), ..TextOptions::default() };
+        // German: "um" (around) and "er" (he) are words.
+        let german = "ich komme um drei Uhr und er bringt den Kuchen mit, das wird schön";
+        assert_eq!(detect_language(german, &langs).as_deref(), Some("de"));
+        assert!(process(german, &o).text.contains("um drei Uhr und er bringt"));
+        // English with the same model: fillers go.
+        let english = "um so I think we should uh ship the new settings window on Friday";
+        assert_eq!(detect_language(english, &langs).as_deref(), Some("en"));
+        assert!(!process(english, &o).text.to_lowercase().contains(" uh "));
+        // The user's chosen language wins over detection.
+        o.language = Some("de".into());
+        assert!(process(english, &o).text.contains("uh"));
+        // An English-only model, or no model info: fillers go, as before.
+        let en_only = TextOptions { model_languages: vec!["en".into()], ..TextOptions::default() };
+        assert_eq!(process("um hello there", &en_only).text, "Hello there.");
+        assert_eq!(process("um hello there", &TextOptions::default()).text, "Hello there.");
+        // Too short to tell: unsure, so English behaviour.
+        assert_eq!(detect_language("um ok", &langs), None);
     }
 
     #[test]

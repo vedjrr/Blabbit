@@ -16,3 +16,4 @@ sha2 = "0.11"
 transcribe-cpp = { version = "0.2.3", default-features = false, features = ["metal"] }
 strsim = "0.11"
 rphonetic = "4"
+whatlang = "0.18.0"

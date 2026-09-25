@@ -107,7 +107,10 @@ import Testing
         let started = Date()
         let report = await ins.insert("text", bundleID: nil)
         #expect(report.result == .failed("The insertion script took longer than 1 second and was stopped."))
-        #expect(Date().timeIntervalSince(started) < 3)
+        // Worst case by design: 0.3 s limit + 1 s after SIGTERM + 1 s after SIGKILL
+        // = 2.3 s. Under the full parallel suite the exit callback has arrived up
+        // to ~0.7 s late (3.04 s seen twice), so allow scheduling slack.
+        #expect(Date().timeIntervalSince(started) < 4)
     }
 }
 
@@ -155,7 +158,10 @@ import Testing
         let started = Date()
         let result = TextInserter.runScriptBlocking(path: stubborn.path, text: "x", timeout: 0.3)
         #expect(result == .failed("The insertion script took longer than 1 second and was stopped."))
-        #expect(Date().timeIntervalSince(started) < 3)
+        // Worst case by design: 0.3 s limit + 1 s after SIGTERM + 1 s after SIGKILL
+        // = 2.3 s. Under the full parallel suite the exit callback has arrived up
+        // to ~0.7 s late (3.04 s seen twice), so allow scheduling slack.
+        #expect(Date().timeIntervalSince(started) < 4)
     }
 }
 

@@ -428,7 +428,7 @@ public final class DictationController {
         let allowed = processorSettings.isLocal || !privacySettings.localOnly
         let settingsForKey = processorSettings
         let processor: (any TextProcessor)? = text.mode.usesProcessor && allowed ? await Task.detached { settingsForKey.makeProcessor() }.value : nil
-        let processed = await TextPipeline(settings: text, processor: processor).run(result.text)
+        let processed = await TextPipeline(settings: text, processor: processor, modelLanguages: models.entry(modelID)?.languages ?? []).run(result.text)
         let mode = text.mode.rawValue
         let failed = await Task.detached {
             (try? store.value?.updateTranscription(id: historyID, raw: processed.raw, final: processed.final, model: modelID, mode: mode)) == nil
@@ -1048,7 +1048,7 @@ public final class DictationController {
                 ? "\(text.mode.title) mode has no AI processor set up, so the cleaned-up text is used. Set one up in Settings → Processing."
                 : "Local-only mode is on, so \(text.mode.title) mode uses the cleaned-up text. Change this in Settings → Privacy."
         }
-        let pipeline = TextPipeline(settings: text, processor: processor)
+        let pipeline = TextPipeline(settings: text, processor: processor, modelLanguages: loadedModelEntry?.languages ?? [])
         let processed = result.skipped == nil ? await pipeline.run(result.text) : PipelineResult(raw: result.text, final: "", changes: [])
         guard cancelledSerial != serial else { return }
         currentPipeline = processed
