@@ -347,7 +347,7 @@ public final class TextInserter {
         case .controlEnter: flags = .maskControl
         case .commandEnter: flags = .maskCommand
         }
-        guard let source = CGEventSource(stateID: .combinedSessionState),
+        guard let source = SyntheticKeys.source(),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false) else { return }
         down.flags = flags

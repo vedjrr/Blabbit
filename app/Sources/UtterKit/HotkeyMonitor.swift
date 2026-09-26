@@ -224,6 +224,10 @@ public final class HotkeyMonitor: @unchecked Sendable {
             Log.error("hotkey tap was disabled (\(type.rawValue)); re-enabled")
             return Unmanaged.passUnretained(event)
         case .keyDown, .keyUp, .flagsChanged:
+            // Utter's own ⌘V, typed text and Return: never a shortcut, and never
+            // "the user pressed another key", which would cancel the dictation
+            // they're typing for (typing as you speak pastes while fn is held).
+            if SyntheticKeys.isOurs(event) { return Unmanaged.passUnretained(event) }
             let kind: KeyEventKind = type == .keyDown ? .keyDown : (type == .keyUp ? .keyUp : .flagsChanged)
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
@@ -252,5 +256,23 @@ public final class HotkeyMonitor: @unchecked Sendable {
         default:
             return Unmanaged.passUnretained(event)
         }
+    }
+}
+
+/// Keystrokes Utter posts itself carry a marker, so the shortcut tap can tell
+/// them from the user's keys.
+public enum SyntheticKeys {
+    /// Arbitrary, "UTTR" in ASCII.
+    public static let marker: Int64 = 0x5554_5452
+
+    /// A keyboard event source whose events carry the marker.
+    public static func source() -> CGEventSource? {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        source?.userData = marker
+        return source
+    }
+
+    public static func isOurs(_ event: CGEvent) -> Bool {
+        event.getIntegerValueField(.eventSourceUserData) == marker
     }
 }

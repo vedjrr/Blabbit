@@ -52,7 +52,7 @@ public enum TypingInserter {
     /// Posts the pieces. Returns an error message or nil.
     @MainActor
     public static func type(_ text: String, secureInputActive: () -> Bool = { IsSecureEventInputEnabled() }) async -> String? {
-        guard let source = CGEventSource(stateID: .combinedSessionState) else { return "Could not create keyboard events." }
+        guard let source = SyntheticKeys.source() else { return "Could not create keyboard events." }
         // Keys the user is still releasing must not merge with the typed text.
         source.setLocalEventsFilterDuringSuppressionState([.permitLocalMouseEvents, .permitSystemDefinedEvents],
                                                           state: .eventSuppressionStateSuppressionInterval)

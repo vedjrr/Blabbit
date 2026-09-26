@@ -204,4 +204,44 @@ struct HeldShortcutTests {
         #expect(!f13.isPhysicallyDown())
         #expect(presses.withLock { $0 } == (down: 1, up: 1), "the tap saw one press and one release")
     }
+
+    /// Human-found (2026-09-26): typing as you speak pastes with ⌘V while a
+    /// modifier-only shortcut is held, and the tap took that for the user
+    /// typing a combo, cancelling the dictation. Utter's own keys must pass;
+    /// a real other key must still abort. Right ⌘ as the shortcut, F16 as the
+    /// key (it does nothing), through the real tap.
+    @Test func utterOwnKeystrokesDontAbortAHeldModifierShortcut() throws {
+        let rightCommand = Shortcut(keyCode: 54, modifiers: 0)
+        let monitor = HotkeyMonitor(shortcut: rightCommand)
+        let seen = OSAllocatedUnfairLock(initialState: (press: 0, abort: 0))
+        monitor.onPress = { _ in seen.withLock { $0.press += 1 } }
+        monitor.onAbort = { seen.withLock { $0.abort += 1 } }
+        try monitor.start()
+        defer { monitor.stop() }
+        let user = CGEventSource(stateID: .hidSystemState)
+        func post(_ source: CGEventSource?, _ key: CGKeyCode, _ down: Bool, flags: CGEventFlags) {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down)
+            if key == 54 { event?.type = .flagsChanged }
+            event?.flags = flags
+            event?.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        let held = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | 0x10)
+        post(user, 54, true, flags: held)
+        defer { post(user, 54, false, flags: []) }
+        #expect(seen.withLock { $0.press } == 1)
+        post(SyntheticKeys.source(), 106, true, flags: [])
+        post(SyntheticKeys.source(), 106, false, flags: [])
+        #expect(seen.withLock { $0.abort } == 0, "Utter's own keystroke aborted the dictation")
+        post(user, 106, true, flags: held)
+        post(user, 106, false, flags: held)
+        #expect(seen.withLock { $0.abort } == 1, "a real combo still aborts")
+    }
+
+    @Test func syntheticKeysAreMarked() throws {
+        let ours = try #require(CGEvent(keyboardEventSource: SyntheticKeys.source(), virtualKey: 9, keyDown: true))
+        let theirs = try #require(CGEvent(keyboardEventSource: CGEventSource(stateID: .hidSystemState), virtualKey: 9, keyDown: true))
+        #expect(SyntheticKeys.isOurs(ours))
+        #expect(!SyntheticKeys.isOurs(theirs))
+    }
 }

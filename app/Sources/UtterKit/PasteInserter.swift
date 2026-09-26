@@ -249,7 +249,7 @@ public final class PasteInserter: NSObject, NSPasteboardItemDataProvider {
     /// Posts ⌘V. Uses the key code that types "v" in the current layout.
     public static func postCommandV() -> String? {
         let keyCode = KeyboardLayout.keyCode(for: "v") ?? CGKeyCode(kVK_ANSI_V)
-        guard let source = CGEventSource(stateID: .combinedSessionState),
+        guard let source = SyntheticKeys.source(),
               let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
         else { return "Could not create the paste keystroke." }
