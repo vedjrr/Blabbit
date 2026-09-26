@@ -1,0 +1,4 @@
+# live_latency sweep, 12 human recordings >4 s, Parakeet V2 (args: feed_ms trailing_ms force_after_ms gap_ms)
+feed=250 trailing=500 force=0 gap=0: phrases=37 lag p50=447ms max=3568ms  wait p50=2508ms max=19987ms  WER vs one-pass=0.236
+feed=100 trailing=350 force=0 gap=0: phrases=38 lag p50=262ms max=3567ms  wait p50=2402ms max=20130ms  WER vs one-pass=0.233
+feed=100 trailing=350 force=2000 gap=100: phrases=57 lag p50=259ms max=934ms  wait p50=1897ms max=20131ms  WER vs one-pass=0.422
