@@ -1,0 +1,5 @@
+# scripts/probe-modifier-state.swift (swiftc -O -o /tmp/probe scripts/probe-modifier-state.swift && /tmp/probe): hold right ⌥ (posted, Utter marker), post F16 with flags [], read HID state
+start                              flagsState right⌥ bit: false  keyState(61): false
+right ⌥ held                       flagsState right⌥ bit: true  keyState(61): false
+after posting F16 with flags []    flagsState right⌥ bit: false  keyState(61): false
+right ⌥ released                   flagsState right⌥ bit: false  keyState(61): false
