@@ -2,38 +2,31 @@ import AppKit
 import SwiftUI
 import UtterCore
 
-/// The pages of the Utter window, in sidebar order.
+/// The pages of the Utter window, in sidebar order. Everyday settings are
+/// on General; everything else is under Advanced (like Handy).
 public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
-    case general, models, dictation, audio, insertion, language, processing, history, privacy, about
+    case general, history, models, advanced, processing, about
 
     public var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: "General"
-        case .models: "Models"
-        case .dictation: "Dictation"
-        case .audio: "Audio"
-        case .insertion: "Text Insertion"
-        case .language: "Language"
-        case .processing: "AI Processing"
         case .history: "History"
-        case .privacy: "Privacy"
+        case .models: "Models"
+        case .advanced: "Advanced"
+        case .processing: "AI Rewriting"
         case .about: "About"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .general: "Your shortcut, model and microphone."
-        case .models: "Speech models run on this Mac. Scores are measured, not guessed."
-        case .dictation: "How your words are cleaned up, and the words Utter should know."
-        case .audio: "Microphone, recording and sounds."
-        case .insertion: "How the text gets into the app you're typing in."
-        case .language: "The language you speak."
-        case .processing: "Optional AI rewriting for Professional and Custom modes."
+        case .general: "The settings you'll actually change."
         case .history: "Everything you've dictated, on this Mac only."
-        case .privacy: "What Utter keeps, and for how long."
+        case .models: "Speech models run on this Mac. Scores are measured, not guessed."
+        case .advanced: "Fine-tuning. The defaults work for most people."
+        case .processing: "Optional AI clean-up for Professional and Custom styles."
         case .about: "Version, updates and credits."
         }
     }
@@ -41,14 +34,10 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
-        case .models: "cpu.fill"
-        case .dictation: "text.bubble.fill"
-        case .audio: "mic.fill"
-        case .insertion: "character.cursor.ibeam"
-        case .language: "globe"
-        case .processing: "sparkles"
         case .history: "clock.fill"
-        case .privacy: "hand.raised.fill"
+        case .models: "cpu.fill"
+        case .advanced: "slider.horizontal.3"
+        case .processing: "sparkles"
         case .about: "info.circle.fill"
         }
     }
@@ -56,25 +45,87 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     var tint: Color {
         switch self {
         case .general: .gray
+        case .history: .orange
         case .models: .purple
-        case .dictation: .orange
-        case .audio: .red
-        case .insertion: .blue
-        case .language: .teal
+        case .advanced: .blue
         case .processing: .indigo
-        case .history: .brown
-        case .privacy: .blue
         case .about: .gray
         }
     }
 
     /// Sidebar groups, separated by a little space.
     static let groups: [[SettingsSection]] = [
-        [.general, .models],
-        [.dictation, .audio, .insertion, .language, .processing],
-        [.history, .privacy],
+        [.general, .history, .models],
+        [.advanced, .processing],
         [.about],
     ]
+}
+
+/// A small ⓘ next to a setting: hover (or click) it to read what the setting
+/// does, instead of a paragraph under every row.
+struct HelpTip: View {
+    let text: String
+    // @StateObject, not @State: the Command Line Tools SDK has no SwiftUI macro plugin.
+    @StateObject private var state = HelpTipState()
+
+    var body: some View {
+        Image(systemName: "questionmark.circle")
+            .font(.system(size: 12, weight: .regular))
+            .foregroundStyle(state.hovering || state.shown ? Color.accentColor : Color.secondary)
+            .contentShape(Circle())
+            .onHover { state.hover($0) }
+            .onTapGesture { state.shown.toggle() }
+            .popover(isPresented: $state.shown, arrowEdge: .bottom) {
+                Text(text)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 260, alignment: .leading)
+                    .padding(12)
+            }
+            .accessibilityElement()
+            .accessibilityLabel("More information")
+            .accessibilityValue(text)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { state.shown.toggle() }
+    }
+}
+
+@MainActor final class HelpTipState: ObservableObject {
+    @Published var shown = false
+    @Published var hovering = false
+    private var hide: Task<Void, Never>?
+
+    func hover(_ inside: Bool) {
+        hovering = inside
+        hide?.cancel()
+        if inside {
+            shown = true
+        } else {
+            // A short grace period so moving the pointer doesn't flicker it.
+            hide = Task { @MainActor [weak self] in
+                guard (try? await Task.sleep(for: .milliseconds(150))) != nil else { return }
+                self?.shown = false
+            }
+        }
+    }
+}
+
+/// A setting's name with its ⓘ.
+struct SettingLabel: View {
+    let title: String
+    let help: String?
+
+    init(_ title: String, help: String? = nil) {
+        self.title = title
+        self.help = help
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(title)
+            if let help { HelpTip(text: help) }
+        }
+    }
 }
 
 /// A System Settings–style tinted square behind an SF Symbol.
@@ -275,7 +326,7 @@ struct AboutPage: View {
                 }
             }
             Section {
-                Text("MIT licence. Speech recognition by transcribe.cpp (ggml). Inspired by [Handy](https://github.com/cjpais/Handy) by CJ Pais; Utter is a separate, Mac-native app.")
+                Text("MIT licence. Speech recognition by transcribe.cpp (ggml). The listening orb is a port of [thinking-orbs](https://github.com/Jakubantalik/Libraries.dev) by Jakub Antalik (MIT). Inspired by [Handy](https://github.com/cjpais/Handy) by CJ Pais; Utter is a separate, Mac-native app.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

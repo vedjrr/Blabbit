@@ -23,9 +23,9 @@ public enum OverlayStyle: String, Codable, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        case .none: "None"
-        case .minimal: "Meter and Timer"
-        case .live: "Live Text"
+        case .none: "Nothing"
+        case .minimal: "Orb and Timer"
+        case .live: "Orb, Timer and Words"
         }
     }
 

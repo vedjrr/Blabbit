@@ -83,8 +83,8 @@ import Testing
         // A history-changed notification may start a newer reload: wait for it.
         for _ in 0..<50 where model.entries.count < 2 { try await Task.sleep(for: .milliseconds(20)) }
         model.selection = latest.id
-        let rep = try snapshot(HistoryView(model: model), size: NSSize(width: 760, height: 480), name: "history")
-        #expect(model.entries.count == 2 && rep.pixelsWide >= 760)
+        let rep = try snapshot(HistoryView(model: model), size: NSSize(width: 646, height: 480), name: "history")
+        #expect(model.entries.count == 2 && rep.pixelsWide >= 646)
     }
 
     @Test func menuPanelRenders() throws {

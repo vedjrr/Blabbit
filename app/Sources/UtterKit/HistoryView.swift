@@ -15,6 +15,11 @@ final class HistoryModel {
     var starredOnly = false
     /// The entry being transcribed again.
     var retrying: HistoryEntry.ID?
+    /// The entry just copied (its button shows a tick for a moment).
+    var copied: HistoryEntry.ID?
+    /// Entries showing the text as transcribed, before clean-up.
+    var showingOriginal: Set<Int64> = []
+    @ObservationIgnored private var copiedReset: Task<Void, Never>?
     private var sound: NSSound?
 
     var shown: [HistoryEntry] { starredOnly ? entries.filter(\.saved) : entries }
@@ -100,9 +105,34 @@ final class HistoryModel {
         observer = nil
     }
 
-    func copy(_ text: String) {
+    func copy(_ text: String, from entry: HistoryEntry? = nil) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        guard let entry else { return }
+        copied = entry.id
+        copiedReset?.cancel()
+        copiedReset = Task { @MainActor [weak self] in
+            guard (try? await Task.sleep(for: .seconds(1.5))) != nil else { return }
+            self?.copied = nil
+        }
+    }
+
+    func toggleOriginal(_ entry: HistoryEntry) {
+        guard let id = entry.id else { return }
+        if showingOriginal.contains(id) { showingOriginal.remove(id) } else { showingOriginal.insert(id) }
+    }
+
+    /// Entries grouped by day, newest first: "Today", "Yesterday", then dates.
+    var days: [(title: String, entries: [HistoryEntry])] {
+        let calendar = Calendar.current
+        var groups: [(title: String, entries: [HistoryEntry])] = []
+        for entry in shown {
+            let title = calendar.isDateInToday(entry.createdAt) ? "Today"
+                : calendar.isDateInYesterday(entry.createdAt) ? "Yesterday"
+                : entry.createdAt.formatted(.dateTime.weekday(.wide).day().month(.wide))
+            if groups.last?.title == title { groups[groups.count - 1].entries.append(entry) } else { groups.append((title, [entry])) }
+        }
+        return groups
     }
 
     func delete(_ entry: HistoryEntry) {
@@ -127,103 +157,149 @@ final class HistoryModel {
     }
 }
 
+/// A feed of dictations, newest first, grouped by day (like Handy's).
 struct HistoryView: View {
     @Bindable var model: HistoryModel
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                TextField("Search", text: $model.query).textFieldStyle(.roundedBorder)
-                Toggle(isOn: $model.starredOnly) { Label("Starred", systemImage: "star") }
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Search dictations", text: $model.query).textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Toggle(isOn: $model.starredOnly) { Label("Starred", systemImage: model.starredOnly ? "star.fill" : "star") }
                     .toggleStyle(.button)
                     .help("Show only starred dictations")
-                Button("Delete All…", role: .destructive) { model.confirmDeleteAll = true }
-                    .disabled(model.entries.isEmpty)
+                Menu {
+                    Button("Delete All…", role: .destructive) { model.confirmDeleteAll = true }
+                        .disabled(model.entries.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("More")
             }
-            .padding(12)
+            .padding(.horizontal, 28)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
             if !model.enabled {
-                Text("History is off. Turn it on in Settings → Privacy.").font(.callout).foregroundStyle(.secondary).padding(.bottom, 8)
+                notice("History is off. Turn it on in Advanced → History and privacy.")
             }
             if let problem = model.problem {
-                Text(problem).foregroundStyle(.red).padding(.bottom, 8)
+                notice(problem, color: .red)
             }
-            Divider()
-            HStack(spacing: 0) {
-                List(model.shown, selection: $model.selection) { entry in
-                    HStack(alignment: .top, spacing: 6) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.final).lineLimit(2)
-                            Text("\(entry.createdAt.formatted(date: .abbreviated, time: .shortened)) · \(String(format: "%.1f s", entry.durationMs / 1000))")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 0)
-                        if entry.saved {
-                            Image(systemName: "star.fill").foregroundStyle(.yellow).accessibilityLabel("Starred")
+            if model.shown.isEmpty {
+                empty
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8, pinnedViews: []) {
+                        ForEach(model.days, id: \.title) { day in
+                            Text(day.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 10)
+                                .padding(.leading, 2)
+                            ForEach(day.entries) { entry in card(entry) }
                         }
                     }
-                    .contextMenu {
-                        Button("Copy") { model.copy(entry.final) }
-                        Button(entry.saved ? "Unstar" : "Star") { model.toggleSaved(entry) }
-                        if entry.audioFile != nil { Button("Transcribe Again") { model.retry(entry) } }
-                        Button("Delete", role: .destructive) { model.delete(entry) }
-                    }
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 20)
                 }
-                .frame(minWidth: 260, idealWidth: 300, maxWidth: 360)
-                Divider()
-                detail.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 640, minHeight: 420)
+        .frame(minWidth: 520, minHeight: 420)
         .onAppear { model.reload() }
         .confirmationDialog("Delete every dictation in history?", isPresented: $model.confirmDeleteAll) {
             Button("Delete All", role: .destructive) { model.deleteAll() }
         } message: { Text("Kept audio is deleted too. This can't be undone.") }
     }
 
-    @ViewBuilder private var detail: some View {
-        if let id = model.selection, let entry = model.entries.first(where: { $0.id == id }) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    LabeledContent("When", value: entry.createdAt.formatted(date: .complete, time: .standard))
-                    LabeledContent("Length", value: String(format: "%.1f s", entry.durationMs / 1000))
-                    LabeledContent("Model", value: entry.model)
-                    LabeledContent("Mode", value: entry.mode.capitalized)
-                    if let app = entry.app { LabeledContent("App", value: SettingsView.appName(app)) }
-                    GroupBox("Final text") {
-                        Text(entry.final).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+    private func notice(_ text: String, color: Color = .secondary) -> some View {
+        Text(text).font(.callout).foregroundStyle(color).padding(.horizontal, 28).padding(.bottom, 8)
+    }
+
+    private var empty: some View {
+        VStack(spacing: 8) {
+            Image(systemName: model.starredOnly ? "star" : "waveform").font(.system(size: 30)).foregroundStyle(.tertiary)
+            Text(model.starredOnly ? "No starred dictations." : model.query.isEmpty ? "No dictations yet." : "Nothing matches “\(model.query)”.")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func card(_ entry: HistoryEntry) -> some View {
+        let original = entry.id.map { model.showingOriginal.contains($0) } ?? false
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(meta(entry)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 8)
+                if let url = model.audioURL(entry) {
+                    iconButton(model.playing == entry.id ? "stop.fill" : "play.fill",
+                               help: model.playing == entry.id ? "Stop" : "Play the recording") {
+                        model.togglePlayback(entry, url: url)
                     }
-                    if entry.raw != entry.final {
-                        GroupBox("As transcribed") {
-                            Text(entry.raw).textSelection(.enabled).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    HStack {
-                        Button("Copy") { model.copy(entry.final) }
-                        if entry.raw != entry.final { Button("Copy Original") { model.copy(entry.raw) } }
-                        if let url = model.audioURL(entry) {
-                            Button(model.playing == entry.id ? "Stop" : "Play") { model.togglePlayback(entry, url: url) }
-                            Button("Show Audio in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                        }
-                        Spacer()
-                        Button { model.toggleSaved(entry) } label: {
-                            Label(entry.saved ? "Starred" : "Star", systemImage: entry.saved ? "star.fill" : "star")
-                        }
-                        .help("Starred dictations are kept whatever the history limit")
-                        Button("Delete", role: .destructive) { model.delete(entry) }
-                    }
-                    if model.audioURL(entry) != nil {
-                        HStack {
-                            Button("Transcribe Again with \(model.controller.modelName)") { model.retry(entry) }
-                                .disabled(model.retrying != nil)
-                            if model.retrying == entry.id { ProgressView().controlSize(.small) }
-                        }
+                    if model.retrying == entry.id {
+                        ProgressView().controlSize(.small).frame(width: 24)
+                    } else {
+                        iconButton("arrow.clockwise", help: "Transcribe again with \(model.controller.modelName)") { model.retry(entry) }
+                            .disabled(model.retrying != nil)
                     }
                 }
-                .padding(16)
+                iconButton(model.copied == entry.id ? "checkmark" : "doc.on.doc",
+                           help: model.copied == entry.id ? "Copied" : "Copy") { model.copy(entry.final, from: entry) }
+                iconButton(entry.saved ? "star.fill" : "star",
+                           help: entry.saved ? "Unstar" : "Star (starred dictations are always kept)",
+                           tint: entry.saved ? .yellow : nil) { model.toggleSaved(entry) }
+                iconButton("trash", help: "Delete") { model.delete(entry) }
             }
-        } else {
-            Text(model.shown.isEmpty ? (model.starredOnly ? "No starred dictations." : "No dictations yet.") : "Select a dictation.")
-                .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text(original ? entry.raw : entry.final)
+                .font(.body)
+                .foregroundStyle(original ? .secondary : .primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            if entry.raw != entry.final {
+                Button(original ? "Show cleaned-up text" : "Show as transcribed") { model.toggleOriginal(entry) }
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
         }
+        .padding(14)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+        .contextMenu {
+            Button("Copy") { model.copy(entry.final, from: entry) }
+            if entry.raw != entry.final { Button("Copy as Transcribed") { model.copy(entry.raw) } }
+            if let url = model.audioURL(entry) { Button("Show Audio in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
+            Divider()
+            Button("Delete", role: .destructive) { model.delete(entry) }
+        }
+    }
+
+    /// "10:42 · 4.6 s · TextEdit · Parakeet"
+    private func meta(_ entry: HistoryEntry) -> String {
+        var parts = [entry.createdAt.formatted(date: .omitted, time: .shortened),
+                     String(format: "%.1f s", entry.durationMs / 1000)]
+        if let app = entry.app { parts.append(SettingsView.appName(app)) }
+        parts.append(model.controller.models.entry(entry.model)?.name ?? entry.model)
+        return parts.joined(separator: " · ")
+    }
+
+    private func iconButton(_ symbol: String, help: String, tint: Color? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(tint ?? Color.secondary)
+                .frame(width: 24, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }

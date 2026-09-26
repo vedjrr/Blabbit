@@ -261,285 +261,339 @@ struct SettingsView: View {
     @ViewBuilder private func page(_ section: SettingsSection) -> some View {
         switch section {
         case .general: general
-        case .dictation: dictation
-        case .models: ModelManagerView(manager: model.controller.models)
-        case .audio: audio
-        case .insertion: insertion
-        case .language: language
-        case .processing: processing
         case .history: HistoryView(model: model.history).onAppear { model.history.reload() }
-        case .privacy: privacy
+        case .models: ModelManagerView(manager: model.controller.models)
+        case .advanced: advanced
+        case .processing: processing
         case .about: AboutPage(model: model)
         }
     }
 
-    // MARK: General
+    // MARK: General — the everyday settings
 
     private var general: some View {
         Form {
-            Section {
-                LabeledContent("Dictation shortcut") {
+            Section("Dictation") {
+                LabeledContent {
                     HStack(spacing: 8) {
                         KeyCap(text: model.shortcut.displayString)
                         Button("Change…") { changeShortcut(.dictate) }
-                        Button("Reset") { model.controller.resetShortcut() }
-                            .disabled(model.shortcut == .optionSpace)
-                            .help("Go back to ⌥Space")
+                        if model.shortcut != .optionSpace {
+                            Button("Reset") { model.controller.resetShortcut() }
+                        }
                     }
+                } label: {
+                    SettingLabel("Shortcut", help: "Press this anywhere to dictate; the text appears where your cursor is. Press Esc while dictating to cancel. Reset goes back to ⌥Space.")
                 }
-                Picker("Shortcut mode", selection: $model.dictationMode) {
+                Picker(selection: $model.dictationMode) {
                     ForEach(DictationMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                } label: {
+                    SettingLabel("Shortcut mode", help: "Hold to Talk: record while you hold the shortcut. Press to Start and Stop: press once to start, again to stop. The third choice does both: hold for a quick note, or tap to keep recording until the next tap.")
                 }
                 if model.dictationMode == .holdOrToggle {
                     Stepper(value: $model.holdThresholdMs, in: DictationMode.holdThresholdRange, step: 50) {
-                        LabeledContent("A tap is shorter than", value: "\(model.holdThresholdMs) ms")
-                    }
-                }
-                Picker("Model", selection: Binding(get: { model.controller.models.defaultModelID },
-                                                   set: { model.controller.models.setDefault($0) })) {
-                    ForEach(model.controller.models.installedEntries, id: \.id) { Text($0.name).tag($0.id) }
-                }
-                Picker("Microphone", selection: Binding(get: { model.controller.preferredMicrophoneUID ?? "" },
-                                                        set: { model.controller.selectMicrophone(uid: $0.isEmpty ? nil : $0) })) {
-                    Text("System Default").tag("")
-                    ForEach(AudioDeviceCache.shared.devices, id: \.uid) { Text($0.name).tag($0.uid) }
-                }
-            } header: {
-                Text("Dictation")
-            } footer: {
-                Text("\(model.dictationMode == .toggle ? "Press" : "Hold") \(model.shortcut.displayString) and speak; the text appears where your cursor is. Press Esc while dictating to cancel.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("While dictating") {
-                Picker("Show", selection: $model.overlayStyle) {
-                    ForEach(OverlayStyle.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                Text(Self.overlayNote(model.overlayStyle, entry: model.controller.loadedModelEntry))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Play a sound when recording starts and stops", isOn: $model.sounds.enabled)
-            }
-            Section {
-                Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-                Picker("Appearance", selection: $model.general.appearance) {
-                    ForEach(GeneralSettings.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                Toggle("Show the menu bar icon when idle", isOn: $model.general.showMenuBarIcon)
-                Toggle("Open setup at launch when a permission is missing", isOn: $model.general.showSetupWhenNeeded)
-                Toggle("Allow utter:// links to control dictation", isOn: $model.general.allowURLCommands)
-                    .help("For Shortcuts, Raycast or scripts: utter://toggle, utter://start, utter://stop, utter://cancel. Off by default, because any web page can open a link.")
-            } header: {
-                Text("App")
-            } footer: {
-                Text("The icon always appears while you dictate. With it hidden, open Settings by launching Utter again.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    // MARK: Dictation
-
-    private var dictation: some View {
-        Form {
-            Section("AI shortcut") {
-                Text("A second shortcut that dictates and then runs an AI mode, whatever your everyday mode is.")
-                    .font(.caption).foregroundStyle(.secondary)
-                LabeledContent("Shortcut") {
-                    HStack {
-                        Text(model.processShortcut?.displayString ?? "None").monospaced()
-                        Button(model.processShortcut == nil ? "Set…" : "Change…") { changeShortcut(.process) }
-                        if model.processShortcut != nil {
-                            Button("Remove") { model.controller.setProcessShortcut(nil) }
+                        LabeledContent {
+                            Text("\(model.holdThresholdMs) ms")
+                        } label: {
+                            SettingLabel("A tap is shorter than", help: "Presses shorter than this count as a tap (start and keep recording); longer ones as a hold.")
                         }
                     }
                 }
-                Picker("Runs", selection: $model.processMode) {
-                    ForEach(TextPipelineSettings.Mode.allCases.filter(\.usesProcessor), id: \.self) { Text($0.title).tag($0) }
+                Toggle(isOn: $model.insertion.typeWhileSpeaking) {
+                    SettingLabel("Type as you speak", help: Self.typeWhileSpeakingHelp(entry: model.controller.loadedModelEntry))
                 }
             }
-            Section("Text") {
-                Picker("Mode", selection: $model.text.mode) {
-                    ForEach(TextPipelineSettings.Mode.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                Text(model.text.mode.summary).font(.caption).foregroundStyle(.secondary)
-                Toggle("Remove filler words (um, uh)", isOn: $model.text.removeFillers)
-                Toggle("Capitalize sentences", isOn: $model.text.capitalize)
-                Toggle("Add a full stop at the end", isOn: $model.text.autoPunctuation)
-                Toggle("“New line” / “new paragraph” start a new line", isOn: $model.text.spokenLineBreaks)
-                if model.text.mode == .custom { promptEditor }
-            }
-            Section("Personal vocabulary") {
-                Text("Names and terms Utter should spell your way. Close mishearings are corrected, and Whisper models are primed with them.")
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    TextField("Add a word or phrase", text: $model.newTerm).onSubmit { model.addTerm() }
-                    Button("Add") { model.addTerm() }.disabled(model.newTerm.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                ForEach(model.text.vocabulary, id: \.self) { term in
-                    HStack {
-                        Text(term)
-                        Spacer()
-                        Button(role: .destructive) { model.text.vocabulary.removeAll { $0 == term } } label: { Image(systemName: "minus.circle") }
-                            .buttonStyle(.borderless)
+            Section("Speech") {
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        Picker("Model", selection: Binding(get: { model.controller.models.defaultModelID },
+                                                           set: { model.controller.models.setDefault($0) })) {
+                            ForEach(model.controller.models.installedEntries, id: \.id) { Text($0.name).tag($0.id) }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        Button("Manage…") { model.section = .models }
                     }
+                } label: {
+                    SettingLabel("Model", help: "The speech model that turns your voice into text. It runs on this Mac. Models shows how accurate and fast each one is.")
+                }
+                Picker(selection: Binding(get: { model.text.language ?? "" }, set: { model.text.language = $0.isEmpty ? nil : $0 })) {
+                    Text("Detect automatically").tag("")
+                    ForEach(Self.languages(for: model.controller.loadedModelEntry ?? model.controller.models.defaultEntry), id: \.self) { code in
+                        Text(ChineseScript(languageCode: code)?.title ?? Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                    }
+                } label: {
+                    SettingLabel("Language", help: "The language you speak. Choosing it can help short dictations. The list shows what \(model.controller.modelName) supports.")
+                }
+                Picker(selection: $model.text.mode) {
+                    ForEach(TextPipelineSettings.Mode.allCases, id: \.self) { Text($0.title).tag($0) }
+                } label: {
+                    SettingLabel("Text style", help: TextPipelineSettings.Mode.allCases.map { "\($0.title): \($0.summary)" }.joined(separator: "\n\n"))
+                }
+            }
+            Section("Sound") {
+                Picker(selection: Binding(get: { model.controller.preferredMicrophoneUID ?? "" },
+                                          set: { model.controller.selectMicrophone(uid: $0.isEmpty ? nil : $0) })) {
+                    Text("System Default").tag("")
+                    ForEach(AudioDeviceCache.shared.devices, id: \.uid) { Text($0.name).tag($0.uid) }
+                } label: {
+                    SettingLabel("Microphone", help: "Which microphone to record from. System Default follows the input chosen in System Settings → Sound.")
+                }
+                Toggle(isOn: $model.sounds.enabled) {
+                    SettingLabel("Sound effects", help: "A short sound when recording starts and stops. Choose the sound and volume in Advanced.")
+                }
+                Toggle(isOn: $model.sounds.muteWhileRecording) {
+                    SettingLabel("Mute other audio while recording", help: "Music and videos go quiet while you speak, and come back as they were when you stop.")
+                }
+            }
+            Section("App") {
+                Toggle(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) })) {
+                    SettingLabel("Launch at login", help: "Start Utter when you log in, so the shortcut always works.")
                 }
             }
         }
         .formStyle(.grouped)
     }
 
-    /// Custom mode's saved prompts (PARITY D5): pick one, edit it, add or delete.
-    @ViewBuilder private var promptEditor: some View {
-        Picker("Prompt", selection: $model.text.selectedPromptID) {
-            ForEach(model.text.prompts) { Text($0.name).tag($0.id) }
+    static func typeWhileSpeakingHelp(entry: ModelEntry?) -> String {
+        var text = "Each phrase is typed where your cursor is at the pause after it, while you keep talking. When you stop, only the last phrase is left. Turn off to insert everything at once when you stop."
+        if let entry, !LiveTypingPolicy.applies(settings: InsertionSettings(), mode: .clean, family: entry.family, measuredRTF: entry.measuredRtf) {
+            text += "\n\n\(entry.name) is too slow for this, so text goes in when you stop. Parakeet, SenseVoice and Moonshine support it."
+        } else {
+            text += "\n\nProfessional and Custom styles always insert when you stop, because the AI needs the whole text."
         }
-        if let index = model.text.prompts.firstIndex(where: { $0.id == model.text.selectedPrompt?.id }) {
-            TextField("Name", text: $model.text.prompts[index].name)
-            TextField("Instruction", text: $model.text.prompts[index].instruction, axis: .vertical)
-                .lineLimit(2...5)
-        }
-        HStack {
-            Button("New Prompt") {
-                let prompt = SavedPrompt(name: "New prompt", instruction: "Rewrite this as ")
-                model.text.prompts.append(prompt)
-                model.text.selectedPromptID = prompt.id
-            }
-            Button("Delete", role: .destructive) {
-                model.text.prompts.removeAll { $0.id == model.text.selectedPrompt?.id }
-                model.text.selectedPromptID = model.text.prompts.first?.id ?? ""
-            }
-            .disabled(model.text.prompts.count <= 1)
-        }
+        return text
     }
 
-    // MARK: Audio
+    // MARK: Advanced — everything else, grouped like Handy's
 
-    private var audio: some View {
+    private var advanced: some View {
         Form {
-            Section("Microphone") {
-                Picker("Input device", selection: Binding(get: { model.controller.preferredMicrophoneUID ?? "" },
-                                                          set: { model.controller.selectMicrophone(uid: $0.isEmpty ? nil : $0) })) {
-                    Text("System Default").tag("")
-                    ForEach(AudioDeviceCache.shared.devices, id: \.uid) { Text($0.name).tag($0.uid) }
+            Section("App") {
+                Picker(selection: $model.overlayStyle) {
+                    ForEach(OverlayStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                } label: {
+                    SettingLabel("While dictating, show", help: Self.overlayNote(model.overlayStyle, entry: model.controller.loadedModelEntry))
                 }
-                LabeledContent("In use", value: model.controller.microphoneName ?? "—")
+                Toggle(isOn: $model.general.showMenuBarIcon) {
+                    SettingLabel("Menu bar icon", help: "Show Utter's icon in the menu bar when idle. It always appears while you dictate. With it hidden, open Settings by launching Utter again.")
+                }
+                Picker(selection: $model.general.appearance) {
+                    ForEach(GeneralSettings.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
+                } label: {
+                    SettingLabel("Appearance", help: "Light or dark windows, or follow your Mac.")
+                }
+                Toggle(isOn: $model.general.showSetupWhenNeeded) {
+                    SettingLabel("Open setup when a permission is missing", help: "At launch, open the permissions window if Utter can't use the microphone or type into apps.")
+                }
+                Toggle(isOn: $model.general.allowURLCommands) {
+                    SettingLabel("Allow utter:// links", help: "For Shortcuts, Raycast or scripts: utter://toggle, utter://start, utter://stop, utter://cancel. Off by default, because any web page can open a link.")
+                }
+            }
+            Section("Text") {
+                Toggle(isOn: $model.text.removeFillers) {
+                    SettingLabel("Remove filler words", help: "Drops “um”, “uh” and similar from English text.")
+                }
+                Toggle(isOn: $model.text.capitalize) {
+                    SettingLabel("Capitalize sentences", help: "Starts each sentence with a capital letter.")
+                }
+                Toggle(isOn: $model.text.autoPunctuation) {
+                    SettingLabel("Full stop at the end", help: "Adds a full stop if the dictation doesn't end with punctuation.")
+                }
+                Toggle(isOn: $model.text.spokenLineBreaks) {
+                    SettingLabel("Spoken line breaks", help: "Say “new line” or “new paragraph” to start one.")
+                }
+                Toggle(isOn: $model.text.translateToEnglish) {
+                    SettingLabel("Translate to English", help: "Speak any language Whisper knows and get English text. Only Whisper models do this; others ignore it.")
+                }
+                vocabulary
+            }
+            Section("Inserting text") {
+                Picker(selection: $model.insertion.method) {
+                    Text("Type into the app").tag(InsertionSettings.Method.automatic)
+                    Text("Copy to the clipboard only").tag(InsertionSettings.Method.clipboardOnly)
+                    Text("Run a script").tag(InsertionSettings.Method.externalScript)
+                } label: {
+                    SettingLabel("Insert text by", help: "Type into the app puts the text where your cursor is (recommended). Clipboard only copies it for you to paste. Run a script sends it to your own script on stdin.")
+                }
+                if model.insertion.method == .externalScript {
+                    TextField("Script path", text: Binding(get: { model.insertion.externalScriptPath ?? "" },
+                                                           set: { model.insertion.externalScriptPath = $0.isEmpty ? nil : $0 }))
+                }
+                Toggle(isOn: $model.insertion.restoreClipboard) {
+                    SettingLabel("Restore my clipboard after pasting", help: "Some apps get text by pasting. This puts back what was on your clipboard before.")
+                }
+                Toggle(isOn: $model.insertion.copyToClipboard) {
+                    SettingLabel("Also leave the text on the clipboard", help: "After inserting, the dictation stays on the clipboard so you can paste it again.")
+                }
+                Toggle(isOn: $model.insertion.appendTrailingSpace) {
+                    SettingLabel("Add a space after the text", help: "Handy when you dictate several times in a row.")
+                }
+                Picker(selection: $model.insertion.newlines) {
+                    Text("Keep").tag(InsertionSettings.Newlines.keep)
+                    Text("Replace with spaces").tag(InsertionSettings.Newlines.spaces)
+                } label: {
+                    SettingLabel("Line breaks", help: "Replace with spaces for chat apps, where Return sends the message.")
+                }
+                Picker(selection: $model.insertion.autoSubmit) {
+                    Text("Nothing").tag(InsertionSettings.AutoSubmit.off)
+                    Text("Return").tag(InsertionSettings.AutoSubmit.enter)
+                    Text("⌃Return").tag(InsertionSettings.AutoSubmit.controlEnter)
+                    Text("⌘Return").tag(InsertionSettings.AutoSubmit.commandEnter)
+                } label: {
+                    SettingLabel("Then press", help: "Press a key after the text goes in, for example to send a chat message. Never pressed if Utter couldn't confirm the text went in.")
+                }
+                perAppMethods
+            }
+            Section("Microphone and recording") {
                 if model.controller.microphoneChannels > 1 || model.capture.inputChannel != nil {
-                    Picker("Channel", selection: $model.capture.inputChannel) {
+                    Picker(selection: $model.capture.inputChannel) {
                         Text("All channels (mixed)").tag(Int?.none)
                         ForEach(0..<max(model.controller.microphoneChannels, (model.capture.inputChannel ?? 0) + 1), id: \.self) {
                             Text("Channel \($0 + 1)").tag(Int?.some($0))
                         }
+                    } label: {
+                        SettingLabel("Channel", help: "For audio interfaces with several inputs: record just one of them.")
                     }
                 }
                 if Clamshell.isLaptop {
-                    Picker("With the lid closed, use", selection: $model.capture.clamshellDeviceUID) {
+                    Picker(selection: $model.capture.clamshellDeviceUID) {
                         Text("The same microphone").tag(String?.none)
                         ForEach(AudioDeviceCache.shared.devices, id: \.uid) { Text($0.name).tag(String?.some($0.uid)) }
+                    } label: {
+                        SettingLabel("With the lid closed, use", help: "The built-in microphone doesn't work with the lid closed; choose another one to switch to automatically.")
                     }
                 }
-            }
-            Section("Recording") {
-                Toggle("Keep the microphone ready (instant start)", isOn: Binding(get: { model.controller.keepMicrophoneReady },
-                                                                                 set: { model.controller.setKeepMicrophoneReady($0) }))
-                Text("Recording starts instantly and includes the moment before you press the shortcut. macOS shows the microphone indicator the whole time, and a Bluetooth headset stays in call mode. Audio is never stored unless you keep audio in History.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Keep the microphone open for 30 s after dictating", isOn: $model.capture.lazyClose)
-                    .disabled(model.controller.keepMicrophoneReady)
-                Text("Back-to-back dictations start instantly; the microphone indicator stays on for those 30 s.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Stepper(value: $model.capture.extraBufferMs, in: CaptureSettings.extraBufferRange, step: 50) {
-                    LabeledContent("Keep recording after release", value: model.capture.extraBufferMs == 0 ? "Off" : "\(model.capture.extraBufferMs) ms")
+                Toggle(isOn: Binding(get: { model.controller.keepMicrophoneReady },
+                                     set: { model.controller.setKeepMicrophoneReady($0) })) {
+                    SettingLabel("Keep the microphone ready", help: "Recording starts instantly and includes the moment before you press the shortcut. macOS shows the microphone indicator the whole time, and a Bluetooth headset stays in call mode. Audio is never stored unless you keep audio in History.")
                 }
-                Toggle("Remove long silences before transcribing", isOn: $model.capture.trimSilence)
+                Toggle(isOn: $model.capture.lazyClose) {
+                    SettingLabel("Keep the microphone open for 30 s after dictating", help: "Back-to-back dictations start instantly; the microphone indicator stays on for those 30 s.")
+                }
+                .disabled(model.controller.keepMicrophoneReady)
+                Stepper(value: $model.capture.extraBufferMs, in: CaptureSettings.extraBufferRange, step: 50) {
+                    LabeledContent {
+                        Text(model.capture.extraBufferMs == 0 ? "Off" : "\(model.capture.extraBufferMs) ms")
+                    } label: {
+                        SettingLabel("Keep recording after release", help: "Catches a last word you're still finishing as you let go of the shortcut.")
+                    }
+                }
+                Toggle(isOn: $model.capture.trimSilence) {
+                    SettingLabel("Remove long silences", help: "Cuts long pauses out before transcribing, which is faster for long dictations.")
+                }
             }
             Section("Sounds") {
-                Toggle("Play a sound when recording starts and stops", isOn: $model.sounds.enabled)
-                Picker("Sound", selection: $model.sounds.theme) {
+                Picker(selection: $model.sounds.theme) {
                     ForEach(SoundSettings.Theme.allCases, id: \.self) { Text($0.title).tag($0) }
+                } label: {
+                    SettingLabel("Sound", help: "The start and stop sounds. Custom Files lets you pick your own.")
                 }
+                .disabled(!model.sounds.enabled)
                 if model.sounds.theme == .custom {
-                    LabeledContent("Start") {
-                        HStack {
-                            Text(model.sounds.customStartPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Not chosen")
-                                .lineLimit(1).truncationMode(.middle)
-                            Button("Choose…") { model.chooseSound(.start) }
-                        }
-                    }
-                    LabeledContent("Stop") {
-                        HStack {
-                            Text(model.sounds.customStopPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Not chosen")
-                                .lineLimit(1).truncationMode(.middle)
-                            Button("Choose…") { model.chooseSound(.stop) }
-                        }
-                    }
+                    soundFile("Start", path: model.sounds.customStartPath, cue: .start)
+                    soundFile("Stop", path: model.sounds.customStopPath, cue: .stop)
                 }
-                Slider(value: $model.sounds.volume, in: 0...1) { Text("Volume") }
-                Picker("Play on", selection: $model.sounds.outputDeviceUID) {
+                Slider(value: $model.sounds.volume, in: 0...1) { SettingLabel("Volume") }
+                    .disabled(!model.sounds.enabled)
+                Picker(selection: $model.sounds.outputDeviceUID) {
                     Text("System Output").tag(String?.none)
                     ForEach(AudioDevices.outputDevices(), id: \.uid) { Text($0.name).tag(String?.some($0.uid)) }
+                } label: {
+                    SettingLabel("Play on", help: "Which speakers or headphones play the sounds.")
                 }
+                .disabled(!model.sounds.enabled)
                 HStack {
                     Spacer()
                     Button("Play Start") { model.controller.playTestSound(.start) }
                     Button("Play Stop") { model.controller.playTestSound(.stop) }
                 }
             }
-            Section("Other audio") {
-                Toggle("Mute other audio while recording", isOn: $model.sounds.muteWhileRecording)
-                Text("Music and videos go quiet while you speak and come back as it was when you stop.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    // MARK: Text insertion
-
-    private var insertion: some View {
-        Form {
-            Picker("Insert text by", selection: $model.insertion.method) {
-                Text("Typing into the app (recommended)").tag(InsertionSettings.Method.automatic)
-                Text("Copying to the clipboard only").tag(InsertionSettings.Method.clipboardOnly)
-                Text("Running a script").tag(InsertionSettings.Method.externalScript)
-            }
-            if model.insertion.method == .externalScript {
-                TextField("Script path (receives the text on stdin)", text: Binding(
-                    get: { model.insertion.externalScriptPath ?? "" },
-                    set: { model.insertion.externalScriptPath = $0.isEmpty ? nil : $0 }))
-            }
-            Toggle("Restore my clipboard after pasting", isOn: $model.insertion.restoreClipboard)
-            Toggle("Also leave the text on the clipboard", isOn: $model.insertion.copyToClipboard)
-            Picker("Line breaks", selection: $model.insertion.newlines) {
-                Text("Keep").tag(InsertionSettings.Newlines.keep)
-                Text("Replace with spaces (chat apps)").tag(InsertionSettings.Newlines.spaces)
-            }
-            Toggle("Add a space after the text", isOn: $model.insertion.appendTrailingSpace)
-            Picker("Then press", selection: $model.insertion.autoSubmit) {
-                Text("Nothing").tag(InsertionSettings.AutoSubmit.off)
-                Text("Return").tag(InsertionSettings.AutoSubmit.enter)
-                Text("⌃Return").tag(InsertionSettings.AutoSubmit.controlEnter)
-                Text("⌘Return").tag(InsertionSettings.AutoSubmit.commandEnter)
-            }
-            Section("Per-app method") {
-                Text("Accessibility is used first in native apps, paste in terminals, browsers and Electron apps. Override an app here.")
-                    .font(.caption).foregroundStyle(.secondary)
-                ForEach(model.overrides.keys.sorted(), id: \.self) { bundleID in
-                    HStack {
-                        Text(Self.appName(bundleID)).lineLimit(1)
-                        Spacer()
-                        Picker("", selection: Binding(get: { model.overrides[bundleID]?.first ?? .paste },
-                                                      set: { model.overrides[bundleID] = Self.chain(startingWith: $0) })) {
-                            ForEach(InsertionStrategy.allCases, id: \.self) { Text($0.displayName).tag($0) }
-                        }
-                        .labelsHidden().frame(width: 140)
-                        Button(role: .destructive) { model.overrides[bundleID] = nil } label: { Image(systemName: "minus.circle") }
-                            .buttonStyle(.borderless)
+            Section("History and privacy") {
+                Toggle(isOn: $model.privacy.localOnly) {
+                    SettingLabel("Local-only mode", help: "Never send text to a cloud AI, even in Professional or Custom style. Speech is always transcribed on this Mac either way.")
+                }
+                Toggle(isOn: $model.privacy.historyEnabled) {
+                    SettingLabel("Keep a history", help: "Save each dictation in History, on this Mac only (~/Library/Application Support/Utter).")
+                }
+                Toggle(isOn: $model.privacy.keepAudio) {
+                    SettingLabel("Keep the audio", help: "Also save each recording, so you can play it back or transcribe it again with another model.")
+                }
+                .disabled(!model.privacy.historyEnabled)
+                Picker(selection: $model.privacy.retention) {
+                    ForEach(HistoryRetention.allCases, id: \.self) { Text($0.title).tag($0) }
+                } label: {
+                    SettingLabel("Keep dictations for", help: "Older dictations and their audio are deleted automatically. Starred ones are always kept.")
+                }
+                .disabled(!model.privacy.historyEnabled)
+                if model.privacy.retention == .limit {
+                    Picker("How many", selection: $model.privacy.historyLimit) {
+                        ForEach(PrivacySettings.historyLimitChoices, id: \.self) { Text("\($0)").tag($0) }
                     }
                 }
-                Button("Add App…") { addOverride() }
+                LabeledContent {
+                    Button("Clear…", role: .destructive) { model.confirmClear = true }
+                        .confirmationDialog("Delete all history and kept audio?", isPresented: $model.confirmClear) {
+                            Button("Delete", role: .destructive) { model.clearLocalData() }
+                        } message: {
+                            Text("This can't be undone. Models and settings are kept.")
+                        }
+                } label: {
+                    SettingLabel("Saved dictations: \(model.historyCount.map(String.init) ?? "—")", help: "Delete all history and kept audio from this Mac.")
+                }
             }
         }
         .formStyle(.grouped)
+        .onAppear { model.refreshHistoryCount() }
+    }
+
+    private func soundFile(_ title: String, path: String?, cue: SoundCue) -> some View {
+        LabeledContent(title) {
+            HStack {
+                Text(path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Not chosen")
+                    .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                Button("Choose…") { model.chooseSound(cue) }
+            }
+        }
+    }
+
+    @ViewBuilder private var vocabulary: some View {
+        LabeledContent {
+            HStack {
+                TextField("Add a word", text: $model.newTerm)
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 200)
+                    .onSubmit { model.addTerm() }
+                Button("Add") { model.addTerm() }.disabled(model.newTerm.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } label: {
+            SettingLabel("Personal vocabulary", help: "Names and terms Utter should spell your way, like HoldMyCode or PostgreSQL. Close mishearings are corrected, and Whisper models are primed with them.")
+        }
+        if !model.text.vocabulary.isEmpty {
+            FlowTags(tags: model.text.vocabulary) { term in model.text.vocabulary.removeAll { $0 == term } }
+        }
+    }
+
+    @ViewBuilder private var perAppMethods: some View {
+        LabeledContent {
+            Button("Add App…") { addOverride() }
+        } label: {
+            SettingLabel("Per-app method", help: "Utter uses Accessibility in native apps and paste in terminals, browsers and Electron apps. If an app gets text wrong, choose its method here.")
+        }
+        ForEach(model.overrides.keys.sorted(), id: \.self) { bundleID in
+            HStack {
+                Text(Self.appName(bundleID)).lineLimit(1)
+                Spacer()
+                Picker("", selection: Binding(get: { model.overrides[bundleID]?.first ?? .paste },
+                                              set: { model.overrides[bundleID] = Self.chain(startingWith: $0) })) {
+                    ForEach(InsertionStrategy.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden().frame(width: 140)
+                Button(role: .destructive) { model.overrides[bundleID] = nil } label: { Image(systemName: "minus.circle") }
+                    .buttonStyle(.borderless)
+            }
+        }
     }
 
     /// The override chain for a chosen first method (later methods are fallbacks;
@@ -565,35 +619,14 @@ struct SettingsView: View {
         model.overrides[id] = [.paste, .typing]
     }
 
-    // MARK: Language
-
-    private var language: some View {
-        Form {
-            Picker("Language", selection: Binding(get: { model.text.language ?? "" }, set: { model.text.language = $0.isEmpty ? nil : $0 })) {
-                Text("Detect automatically").tag("")
-                ForEach(Self.languages(for: model.controller.loadedModelEntry ?? model.controller.models.defaultEntry), id: \.self) { code in
-                    Text(ChineseScript(languageCode: code)?.title ?? Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
-                }
-            }
-            Text("Choosing your language can help short dictations. The list shows what the current model (\(model.controller.modelName)) supports.")
-                .font(.caption).foregroundStyle(.secondary)
-            Toggle("Translate to English (Whisper models)", isOn: $model.text.translateToEnglish)
-            Text("Speak any language Whisper knows and get English text. Other models ignore this.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        .formStyle(.grouped)
-    }
-
     static func overlayNote(_ style: OverlayStyle, entry: ModelEntry?) -> String {
         switch style {
         case .none: return "No pill while you speak. Notices (secure input, text that couldn't be confirmed) still appear."
-        case .minimal: return "A small pill with a level meter and timer."
+        case .minimal: return "A small pill with the listening orb and a timer."
         case .live:
-            guard let entry else { return "The words appear as you speak." }
-            if let window = LivePreviewPolicy.windowSeconds(measuredRTF: entry.measuredRtf) {
-                return "The words appear as you speak (the last \(Int(window)) s with \(entry.name)). The final text is transcribed again when you stop."
-            }
-            return "\(entry.name) is too slow for live text, so the meter and timer are shown. Parakeet, SenseVoice and Moonshine support it."
+            let base = "The orb and timer, plus the words so far when they can't be typed as you speak (Professional and Custom styles, or with Type as You Speak off)."
+            guard let entry, LivePreviewPolicy.windowSeconds(measuredRTF: entry.measuredRtf) == nil else { return base }
+            return base + " \(entry.name) is too slow for live words; Parakeet, SenseVoice and Moonshine support them."
         }
     }
 
@@ -620,55 +653,104 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Processing
+    // MARK: AI rewriting
 
     private var processing: some View {
         Form {
-            Text("Professional and Custom modes can use an AI processor after Utter's own clean-up. Exact, Clean and Code never do. If the processor fails, the cleaned-up text is used.")
-                .font(.caption).foregroundStyle(.secondary)
-            Picker("Processor", selection: $model.processing.provider) {
-                ForEach(ProcessorSettings.Provider.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            switch model.processing.provider {
-            case .none:
-                EmptyView()
-            case .appleIntelligence:
-                Text(AppleIntelligenceProcessor.unavailableReason ?? "Uses Apple's on-device model. Nothing leaves your Mac.")
-                    .font(.callout).foregroundStyle(AppleIntelligenceProcessor.unavailableReason == nil ? Color.secondary : Color.orange)
-            case .ollama:
-                TextField("Ollama address", text: $model.processing.ollamaURL)
-                modelField($model.processing.ollamaModel)
-                if model.privacy.localOnly && !model.processing.isLocal {
-                    Text("This address isn't on this Mac. Local-only mode is on (Privacy), so it won't be used.")
-                        .font(.callout).foregroundStyle(.orange)
+            Section("Processor") {
+                Picker(selection: $model.processing.provider) {
+                    ForEach(ProcessorSettings.Provider.allCases, id: \.self) { Text($0.title).tag($0) }
+                } label: {
+                    SettingLabel("Processor", help: "Professional and Custom styles can use an AI after Utter's own clean-up. Exact, Clean and Code never do. If the AI fails, the cleaned-up text is used.")
                 }
-            case .anthropic:
-                if model.privacy.localOnly {
-                    Text("Local-only mode is on (Privacy), so the cloud processor won't be used.")
-                        .font(.callout).foregroundStyle(.orange)
-                }
-                modelField($model.processing.anthropicModel)
-                if model.hasAPIKey {
-                    LabeledContent("API key") {
-                        HStack { Text("Saved in Keychain"); Button("Remove") { model.removeAPIKey() } }
+                switch model.processing.provider {
+                case .none:
+                    EmptyView()
+                case .appleIntelligence:
+                    Text(AppleIntelligenceProcessor.unavailableReason ?? "Uses Apple's on-device model. Nothing leaves your Mac.")
+                        .font(.callout).foregroundStyle(AppleIntelligenceProcessor.unavailableReason == nil ? Color.secondary : Color.orange)
+                case .ollama:
+                    TextField("Ollama address", text: $model.processing.ollamaURL)
+                    modelField($model.processing.ollamaModel)
+                    if model.privacy.localOnly && !model.processing.isLocal {
+                        Text("This address isn't on this Mac. Local-only mode is on, so it won't be used.")
+                            .font(.callout).foregroundStyle(.orange)
                     }
-                } else {
+                case .anthropic:
+                    if model.privacy.localOnly {
+                        Text("Local-only mode is on (Advanced), so the cloud processor won't be used.")
+                            .font(.callout).foregroundStyle(.orange)
+                    }
+                    modelField($model.processing.anthropicModel)
+                    if model.hasAPIKey {
+                        LabeledContent {
+                            HStack { Text("Saved in Keychain").foregroundStyle(.secondary); Button("Remove") { model.removeAPIKey() } }
+                        } label: {
+                            SettingLabel("API key", help: "Your text is sent to Anthropic only when you dictate in Professional or Custom style.")
+                        }
+                    } else {
+                        HStack {
+                            SecureField("API key", text: $model.apiKeyDraft)
+                            Button("Save") { model.saveAPIKey() }.disabled(model.apiKeyDraft.isEmpty)
+                        }
+                    }
+                }
+                if model.processing.provider != .none {
                     HStack {
-                        SecureField("API key", text: $model.apiKeyDraft)
-                        Button("Save") { model.saveAPIKey() }.disabled(model.apiKeyDraft.isEmpty)
+                        Button("Test") { model.testProcessor() }
+                        if let result = model.connectionResult { Text(result).font(.caption).lineLimit(2) }
                     }
                 }
-                Text("Your text is sent to Anthropic only when you dictate in Professional or Custom mode.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-            if model.processing.provider != .none {
-                HStack {
-                    Button("Test") { model.testProcessor() }
-                    if let result = model.connectionResult { Text(result).font(.caption).lineLimit(2) }
+            Section("AI shortcut") {
+                LabeledContent {
+                    HStack {
+                        if let shortcut = model.processShortcut { KeyCap(text: shortcut.displayString) } else { Text("None").foregroundStyle(.secondary) }
+                        Button(model.processShortcut == nil ? "Set…" : "Change…") { changeShortcut(.process) }
+                        if model.processShortcut != nil {
+                            Button("Remove") { model.controller.setProcessShortcut(nil) }
+                        }
+                    }
+                } label: {
+                    SettingLabel("Shortcut", help: "A second shortcut that dictates and then runs an AI style, whatever your everyday text style is.")
                 }
+                Picker(selection: $model.processMode) {
+                    ForEach(TextPipelineSettings.Mode.allCases.filter(\.usesProcessor), id: \.self) { Text($0.title).tag($0) }
+                } label: {
+                    SettingLabel("Runs", help: "Which AI style the AI shortcut uses.")
+                }
+            }
+            Section("Custom style prompts") {
+                promptEditor
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Custom style's saved prompts (PARITY D5): pick one, edit it, add or delete.
+    @ViewBuilder private var promptEditor: some View {
+        Picker(selection: $model.text.selectedPromptID) {
+            ForEach(model.text.prompts) { Text($0.name).tag($0.id) }
+        } label: {
+            SettingLabel("Prompt", help: "The instruction the AI follows in Custom style. Keep several and switch between them.")
+        }
+        if let index = model.text.prompts.firstIndex(where: { $0.id == model.text.selectedPrompt?.id }) {
+            TextField("Name", text: $model.text.prompts[index].name)
+            TextField("Instruction", text: $model.text.prompts[index].instruction, axis: .vertical)
+                .lineLimit(2...5)
+        }
+        HStack {
+            Button("New Prompt") {
+                let prompt = SavedPrompt(name: "New prompt", instruction: "Rewrite this as ")
+                model.text.prompts.append(prompt)
+                model.text.selectedPromptID = prompt.id
+            }
+            Button("Delete", role: .destructive) {
+                model.text.prompts.removeAll { $0.id == model.text.selectedPrompt?.id }
+                model.text.selectedPromptID = model.text.prompts.first?.id ?? ""
+            }
+            .disabled(model.text.prompts.count <= 1)
+        }
     }
 
     /// A model name with a menu of what the provider reported (PARITY D9).
@@ -688,37 +770,70 @@ struct SettingsView: View {
             if let note = model.providerModelsNote { Text(note).font(.caption).foregroundStyle(.secondary) }
         }
     }
+}
 
-    // MARK: Privacy
+/// Vocabulary terms as removable chips.
+struct FlowTags: View {
+    let tags: [String]
+    let remove: (String) -> Void
 
-    private var privacy: some View {
-        Form {
-            Toggle("Local-only mode (never use cloud processing)", isOn: $model.privacy.localOnly)
-            Toggle("Keep a history of dictations", isOn: $model.privacy.historyEnabled)
-            Toggle("Keep the audio of each dictation", isOn: $model.privacy.keepAudio)
-                .disabled(!model.privacy.historyEnabled)
-            Picker("Keep dictations for", selection: $model.privacy.retention) {
-                ForEach(HistoryRetention.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            .disabled(!model.privacy.historyEnabled)
-            if model.privacy.retention == .limit {
-                Picker("How many", selection: $model.privacy.historyLimit) {
-                    ForEach(PrivacySettings.historyLimitChoices, id: \.self) { Text("\($0)").tag($0) }
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(tags, id: \.self) { tag in
+                HStack(spacing: 4) {
+                    Text(tag).font(.callout)
+                    Button { remove(tag) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Remove \(tag)")
                 }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(Color.primary.opacity(0.07), in: Capsule())
             }
-            Text("Older dictations and their audio are deleted automatically. Starred ones are always kept.")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("Everything stays on this Mac, in ~/Library/Application Support/Utter.").font(.caption).foregroundStyle(.secondary)
-            LabeledContent("Saved dictations", value: model.historyCount.map(String.init) ?? "—")
-            Button("Clear Local Data…", role: .destructive) { model.confirmClear = true }
-                .confirmationDialog("Delete all history and kept audio?", isPresented: $model.confirmClear) {
-                    Button("Delete", role: .destructive) { model.clearLocalData() }
-                } message: {
-                    Text("This can't be undone. Models and settings are kept.")
-                }
         }
-        .formStyle(.grouped)
-        .onAppear { model.refreshHistoryCount() }
+    }
+}
+
+/// Lays children out in rows, wrapping when a row is full.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0,
+                      height: rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            if !rows[rows.count - 1].indices.isEmpty && rows[rows.count - 1].width + spacing + size.width > width {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width += (row.indices.isEmpty ? 0 : spacing) + size.width
+            row.height = max(row.height, size.height)
+            row.indices.append(index)
+            rows[rows.count - 1] = row
+        }
+        return rows.filter { !$0.indices.isEmpty }
     }
 }
 
