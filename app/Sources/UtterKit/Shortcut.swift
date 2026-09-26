@@ -52,8 +52,12 @@ public struct Shortcut: Equatable, Sendable, Codable {
     /// Reads the hardware (HID) state: the session state never sees a key our
     /// tap swallows, so it reports a held shortcut as up (that cut every
     /// hold-to-talk recording after 0.5 s).
+    /// A modifier-only key whose state Utter's own keystrokes have overwritten
+    /// counts as down: its real release still reaches the tap as flagsChanged.
     public func isPhysicallyDown() -> Bool {
-        if isModifierOnly { return modifierIsDown(in: CGEventSource.flagsState(.hidSystemState)) }
+        if isModifierOnly {
+            return SyntheticKeys.modifierStateIsStale || modifierIsDown(in: CGEventSource.flagsState(.hidSystemState))
+        }
         return CGEventSource.keyState(.hidSystemState, key: CGKeyCode(keyCode))
     }
 

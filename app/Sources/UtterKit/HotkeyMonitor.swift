@@ -228,6 +228,7 @@ public final class HotkeyMonitor: @unchecked Sendable {
             // "the user pressed another key", which would cancel the dictation
             // they're typing for (typing as you speak pastes while fn is held).
             if SyntheticKeys.isOurs(event) { return Unmanaged.passUnretained(event) }
+            if type == .flagsChanged { SyntheticKeys.noteRealModifierChange() }
             let kind: KeyEventKind = type == .keyDown ? .keyDown : (type == .keyUp ? .keyUp : .flagsChanged)
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
@@ -265,12 +266,28 @@ public enum SyntheticKeys {
     /// Arbitrary, "UTTR" in ASCII.
     public static let marker: Int64 = 0x5554_5452
 
-    /// A keyboard event source whose events carry the marker.
+    /// A keyboard event source whose events carry the marker. Callers post
+    /// with it right away, so this also marks the modifier state as stale.
     public static func source() -> CGEventSource? {
         let source = CGEventSource(stateID: .combinedSessionState)
         source?.userData = marker
+        state.withLock { $0 = true }
         return source
     }
+
+    /// True from Utter's last posted keystroke until the next real modifier
+    /// change. A posted key's flags replace the system's held-modifier state
+    /// (`CGEventSource.flagsState`): after typing a phrase, a held fn read as
+    /// released, and the watchdog cut the recording at every pause
+    /// (evidence/m7/modifier_state_probe.log).
+    public static var modifierStateIsStale: Bool { state.withLock { $0 } }
+
+    /// The user pressed or released a modifier: the system state is real again.
+    public static func noteRealModifierChange() {
+        state.withLock { $0 = false }
+    }
+
+    private static let state = OSAllocatedUnfairLock(initialState: false)
 
     public static func isOurs(_ event: CGEvent) -> Bool {
         event.getIntegerValueField(.eventSourceUserData) == marker

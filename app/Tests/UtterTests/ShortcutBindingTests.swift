@@ -244,4 +244,19 @@ struct HeldShortcutTests {
         #expect(SyntheticKeys.isOurs(ours))
         #expect(!SyntheticKeys.isOurs(theirs))
     }
+
+    /// Utter's own ⌘V wipes a held fn from the system's modifier state; the
+    /// watchdog must not read that as the user letting go (it cut every
+    /// typing-as-you-speak recording at the first pause).
+    @Test func aHeldModifierShortcutSurvivesUtterTypingAPhrase() throws {
+        let fn = Shortcut(keyCode: 63, modifiers: 0)
+        let key = Shortcut(keyCode: 49, modifiers: CGEventFlags.maskAlternate.rawValue) // ⌥Space
+        _ = try #require(SyntheticKeys.source()) // what every paste and typed key does first
+        #expect(SyntheticKeys.modifierStateIsStale)
+        #expect(fn.isPhysicallyDown(), "stale state: trust the tap, which sees the real release")
+        #expect(!key.isPhysicallyDown(), "a key shortcut reads its own key, which posting doesn't touch")
+        SyntheticKeys.noteRealModifierChange()
+        #expect(!SyntheticKeys.modifierStateIsStale)
+        #expect(!fn.isPhysicallyDown(), "real state again: fn isn't held during tests")
+    }
 }
