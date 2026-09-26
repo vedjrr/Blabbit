@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/icon-1024.png" width="128" alt="Utter icon"></p>
 
-# Utter
+# Say Less
 
 Local-first dictation for macOS. Hold a shortcut, speak, release: your words appear at the cursor in any app. Transcription runs entirely on your Mac (Apple Silicon, Metal); nothing is sent anywhere unless you turn on an optional cloud processor.
 
