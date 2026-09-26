@@ -45,10 +45,20 @@ public final class StatusMenuController: NSObject, NSMenuDelegate, NSPopoverDele
         // Global mouse monitors see other apps' clicks only (no permission needed),
         // so clicks inside the panel and on the status item still work.
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            MainActor.assumeIsolated { self?.popover.performClose(nil) }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // A click in the panel itself can reach here while Utter isn't
+                // active yet; closing then would swallow the button's action.
+                if let frame = self.popover.contentViewController?.view.window?.frame,
+                   NSMouseInRect(NSEvent.mouseLocation, frame, false) { return }
+                self.popover.performClose(nil)
+            }
         }
         appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            // Clicking the panel activates Utter itself: that's not leaving it.
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             MainActor.assumeIsolated { self?.popover.performClose(nil) }
         }
     }
