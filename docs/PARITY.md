@@ -1,15 +1,15 @@
-# Handy ↔ Say Less parity
+# Handy ↔ Blabbit parity
 
 Reference: Handy **v0.9.7** (latest release, 2026-09-18, https://github.com/cjpais/Handy/releases/tag/v0.9.7), source at `8f9cf53` (main, 2026-09-19).
 `H/` = `https://github.com/cjpais/Handy/blob/8f9cf53cd1410cda26beea39ff802ac306e39585/`. `S.x` = field `x` of `AppSettings` in `H/src-tauri/src/settings.rs`.
 
 Status: **Missing** (not built yet) · **Built** (implemented and covered by automated tests; live check with a human still pending, see TEST_CHECKLIST) · **Matched** (same behaviour, evidence linked) · **Better** (measured win, evidence linked) · **N/A** (reason given).
 Nothing may be Missing at DONE. New Handy features found later get new rows.
-Sources are file paths (with line where useful), a settings field `S.x`, or a Tauri command name (all defined under `H/src-tauri/src/commands/` unless another file is given). Rows marked "—" in the source column are Say Less-only features Handy does not have.
+Sources are file paths (with line where useful), a settings field `S.x`, or a Tauri command name (all defined under `H/src-tauri/src/commands/` unless another file is given). Rows marked "—" in the source column are Blabbit-only features Handy does not have.
 
 ## A. Dictation and shortcuts
 
-| # | Feature | Handy source | How Handy does it | Say Less plan | M | Status | Can we do better? |
+| # | Feature | Handy source | How Handy does it | Blabbit plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
 | A1 | Push-to-talk (hold to record, release to transcribe) | `H/src-tauri/src/shortcut/mod.rs`, `S.shortcut_activation` | handy-keys CGEventTap or Tauri global-shortcut | Active CGEventTap, swallow matching events (ADR-005) | M1 | Built (M1: CGEventTap PTT + watchdog; `ShortcutMatcherTests`) | Measure key-down → first buffer (< 50 ms target) |
 | A2 | Toggle mode | `S.shortcut_activation = Toggle` | tap to start, tap to stop | Same | M4 | Built (Shortcut → Press to Start and Stop; `HotkeyPolicy`, `HotkeyModeTests`) | — |
@@ -37,7 +37,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 ## B. Text insertion
 
-| # | Feature | Handy source | How Handy does it | Say Less plan | M | Status | Can we do better? |
+| # | Feature | Handy source | How Handy does it | Blabbit plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
 | B1 | Paste via clipboard + ⌘V | `H/src-tauri/src/clipboard.rs:55` | enigo key chord | CGEvent ⌘V (ADR-006) | M1 | Built (`PasteInserter`; `ClipboardTests`) | — |
 | B2 | Paste method options: ⌘V, direct typing, none, Shift+Insert, Ctrl+Shift+V, external script | `S.paste_method` | enum | ⌘V, type, AX, none, external script; Shift+Insert/Ctrl+Shift+V are Windows/Linux chords | M2 | Built (automatic chain / clipboard-only / external script (`InsertionSettings.Method`); Shift+Insert, Ctrl+Shift+V are Windows/Linux chords → N/A on Mac; direct typing runs automatically only when ⌘V can't be sent, otherwise via a per-app override (ADR-006); `InsertionSettingsBehaviourTests`) | AX insertion (Handy has none) |
@@ -53,15 +53,15 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 ## C. Models
 
-| # | Feature | Handy source | How Handy does it | Say Less plan | M | Status | Can we do better? |
+| # | Feature | Handy source | How Handy does it | Blabbit plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
-| C1 | Curated catalog (69 GGUF models, pinned HF revision, SHA-256) | `H/src-tauri/src/catalog/catalog.json` | bundled JSON | Own `models.json`; only fixture-verified models marked Supported (ADR-007) | M3 | Built (`core/sayless-core/models.json`, 8 fixture-verified models with measured WER/p50) | Verified-only badge + WER shown |
+| C1 | Curated catalog (69 GGUF models, pinned HF revision, SHA-256) | `H/src-tauri/src/catalog/catalog.json` | bundled JSON | Own `models.json`; only fixture-verified models marked Supported (ADR-007) | M3 | Built (`core/blabbit-core/models.json`, 8 fixture-verified models with measured WER/p50) | Verified-only badge + WER shown |
 | C2 | Download with progress, resume (HTTP Range), SHA-256 verify | `H/src-tauri/src/managers/model/download.rs` | reqwest + hf-hub | Rust `ureq` downloader, `.partial` + sidecar | M3 | Built (segmented Range resume, SHA-256; `tests/download.rs`, `ModelManagerTests`) | — |
 | C3 | Cancel download | `cancel_download` command | — | Pause / cancel / retry | M3 | Built (pause / resume / cancel incl. paused rows / retry) | Pause (Handy has cancel only) |
 | C4 | Delete model | `delete_model` | — | Same | M3 | Built | — |
 | C5 | Select / switch active model (also from tray) | `switch_active_model`, `H/src-tauri/src/tray.rs:539` | — | Same; unload old, RSS measured | M3 | Built (Model Manager + menu submenu; unload old, RSS 1051 → 265 MB) | — |
-| C6 | Quantisation choice per model | catalog `files[]`, `default_quant` | — | Default quant + "Advanced: quant" picker | M7 | Matched (2026-09-26): a smaller Q4_K_M file for 7 models (Moonshine is already 77 MB), shown inside the model card with its own measured scores, download and Use; pinned revisions + SHA-256 from the HF LFS hashes, all 7 downloaded and hash-checked, then measured with `sayless-cli --repeat 3` on the same 5 clips (`evidence/m7/q4_variants.log`); Rust `variants_point_at_a_catalog_model_and_are_smaller` | Measured scores per quantisation (Handy has none per quant) |
-| C7 | Discover local models (HF cache, custom dir) | `rescan_local_models`, `managers/model.rs:328` | scans HF cache + dir | "Add model file…" + rescan of models dir | M7 | Matched (2026-09-25): Models → Add Model File… copies a .gguf (checked for the GGUF header; an APFS clone) into Models/Custom, and any .gguf dropped there is listed on refresh; shown as "Not measured"; removing one moves it to the Trash; `CustomModelTests` adds a real Moonshine file and transcribes with it | Handy scans the HF cache; Say Less takes any file and never deletes it for good |
+| C6 | Quantisation choice per model | catalog `files[]`, `default_quant` | — | Default quant + "Advanced: quant" picker | M7 | Matched (2026-09-26): a smaller Q4_K_M file for 7 models (Moonshine is already 77 MB), shown inside the model card with its own measured scores, download and Use; pinned revisions + SHA-256 from the HF LFS hashes, all 7 downloaded and hash-checked, then measured with `blabbit-cli --repeat 3` on the same 5 clips (`evidence/m7/q4_variants.log`); Rust `variants_point_at_a_catalog_model_and_are_smaller` | Measured scores per quantisation (Handy has none per quant) |
+| C7 | Discover local models (HF cache, custom dir) | `rescan_local_models`, `managers/model.rs:328` | scans HF cache + dir | "Add model file…" + rescan of models dir | M7 | Matched (2026-09-25): Models → Add Model File… copies a .gguf (checked for the GGUF header; an APFS clone) into Models/Custom, and any .gguf dropped there is listed on refresh; shown as "Not measured"; removing one moves it to the Trash; `CustomModelTests` adds a real Moonshine file and transcribes with it | Handy scans the HF cache; Blabbit takes any file and never deletes it for good |
 | C8 | Speed / accuracy scores, recommended flag | catalog `speed_score`, `accuracy_score` | static scores | Show **our measured** RTF + WER on this Mac | M3 | Built (measured WER + p50 on this Mac, Recommended badge) | **Better**: measured, not static |
 | C9 | Model unload after idle timeout | `S.model_unload_timeout` | never / immediately / 2 min … 1 h | Same | — | Not planned: hard rule 3 keeps the model resident; the memory it frees is measured instead (G3) | — |
 | C10 | Manual unload from tray | `H/src-tauri/src/tray.rs:549` | — | Same | — | Not planned: same reason as C9 (switching models unloads the old one) | — |
@@ -75,7 +75,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 ## D. Post-processing
 
-| # | Feature | Handy source | How Handy does it | Say Less plan | M | Status | Can we do better? |
+| # | Feature | Handy source | How Handy does it | Blabbit plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
 | D1 | Custom words fuzzy correction with threshold | `H/src-tauri/src/audio_toolkit/text.rs:151`, `S.custom_words`, `S.word_correction_threshold` | n-grams ≤ 3, Soundex + string similarity | Own implementation (ADR-010) + Whisper initial prompt | M5 | Built (Jaro-Winkler + Double Metaphone on 1–3 word n-grams, threshold, false-positive guards; `text.rs` tests; WER on all 8 models → evidence/m5/vocabulary_wer.log) | Measure on the 7 GOAL words |
 | D2 | Filler-word removal + custom filler list | `S.filler_word_removal_enabled`, `S.custom_filler_words` | language-aware list | "Clean" mode | M5 | Partly built (built-in filler list + stutter removal; a user-editable filler list is not built yet, M7) | — |
@@ -89,7 +89,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 ## E. History
 
-| # | Feature | Handy source | How Handy does it | Say Less plan | M | Status | Can we do better? |
+| # | Feature | Handy source | How Handy does it | Blabbit plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
 | E1 | History list with transcript + post-processed text | `H/src-tauri/src/managers/history.rs:22-34` | SQLite | GRDB SQLite: timestamp, duration, model, raw, final (ADR-009) | M5 | Built (GRDB + FTS5; raw and final; `HistoryTests`) | Raw vs final side by side + FTS search (Handy has no search) |
 | E2 | Play back recording audio | `get_audio_file_path` | WAV per entry, kept by default | Only if "Keep audio" enabled | M5 | Built (Play/Stop for kept audio) | Private by default |
@@ -103,7 +103,7 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 
 ## F. App shell
 
-| # | Feature | Handy source | How Handy does it | Say Less plan | M | Status | Can we do better? |
+| # | Feature | Handy source | How Handy does it | Blabbit plan | M | Status | Can we do better? |
 |---|---|---|---|---|---|---|---|
 | F1 | Tray icon with idle / recording / transcribing states | `H/src-tauri/src/tray.rs`, `resources/*.png` | PNG icons | Own SF Symbol-style template icons | M1 | Built (status item with idle/recording/transcribing/error icons (M1)) | — |
 | F2 | Tray menu: model switcher, unload, cancel, settings, check updates, copy last, quit | `H/src-tauri/src/tray.rs:471-552` | — | Menu per GOAL G5 (+ mode, microphone, history, shortcut) | M5 | Partly built (model switcher, mode, microphone, settings, history, copy last; unload/cancel/check-updates M7) | — |
@@ -118,20 +118,20 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | F11 | Onboarding (mic + accessibility permissions) | `H/src/components/onboarding/` | — | Native onboarding with deep links + live re-check | M4 | Built (setup window, deep links, 1 s / 2 s live re-check) | — |
 | F12 | Update checks + "What's new" | `S.update_checks_enabled`, `S.show_whats_new_on_update` | tauri-plugin-updater | Sparkle 2 (release notes shown by Sparkle) | M7 | Built (Sparkle 2.10, EdDSA-signed appcast; Check for Updates in the menu and Settings; "What's new" via the release notes Sparkle shows) | — |
 | F13 | Debug mode (⌘⇧D), log level, keyboard diagnostic | `S.debug_mode`, `S.log_level`, `secure_input.rs` diagnostic | — | Debug pane: log level, open logs, latency breakdown of last dictation | M7 | Partly built (Open Log in the menu; no debug mode) | Per-stage latency view |
-| F14 | CLI remote control: `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--start-hidden`, `--no-tray`, `--debug` | README "CLI Parameters" | single-instance plugin | Same flags forwarded to running instance via `NSDistributedNotificationCenter`; also `sayless://` URL scheme | M7 | Matched (2026-09-25): `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--start-hidden`, `--no-tray`, `--debug` (+ `--start-/--stop-transcription`, `--settings`) forwarded to the running app by distributed notification; `RemoteCommandTests`; live: `remote command start` → `cancel` → `dictation cancelled reason=remote` in sayless.log | Better: `sayless://toggle|start|stop|cancel|settings` for Shortcuts/Raycast, off by default (a web page could open it); live: `url command toggle ignored` while off |
+| F14 | CLI remote control: `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--start-hidden`, `--no-tray`, `--debug` | README "CLI Parameters" | single-instance plugin | Same flags forwarded to running instance via `NSDistributedNotificationCenter`; also `blabbit://` URL scheme | M7 | Matched (2026-09-25): `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--start-hidden`, `--no-tray`, `--debug` (+ `--start-/--stop-transcription`, `--settings`) forwarded to the running app by distributed notification; `RemoteCommandTests`; live: `remote command start` → `cancel` → `dictation cancelled reason=remote` in blabbit.log | Better: `blabbit://toggle|start|stop|cancel|settings` for Shortcuts/Raycast, off by default (a web page could open it); live: `url command toggle ignored` while off |
 | F15 | Single instance | tauri-plugin-single-instance | — | `NSRunningApplication` check | M5 | Built (second launch activates the running one and quits) | — |
 | F16 | Open app-data / log directory | `open_app_data_dir`, `open_log_dir` | — | Settings → Privacy / Debug buttons | M5 | Partly built (Open Log; models folder in Settings → Models) | — |
 | F17 | Clear local data | — | — | Settings → Privacy | M5 | Built (Settings → Privacy → Clear Local Data) | — |
-| F18 | Homebrew cask | README | community cask | Cask draft in repo | M7 | Draft (`packaging/homebrew/sayless.rb`: livecheck via the Sparkle feed, zap paths); published after the first notarised release (H) | — |
+| F18 | Homebrew cask | README | community cask | Cask draft in repo | M7 | Draft (`packaging/homebrew/blabbit.rb`: livecheck via the Sparkle feed, zap paths); published after the first notarised release (H) | — |
 | F19 | Portable mode | `H/src-tauri/src/portable.rs` | Windows only | — | — | N/A | Windows only |
 | F20 | Keyboard implementation choice (Tauri vs handy-keys) | `S.keyboard_implementation` | two backends | One native backend with Carbon fallback | — | N/A | Implementation detail, no user-facing need |
 | F21 | Experimental toggle / lazy stream close | `S.experimental_enabled`, `S.lazy_stream_close` | — | Covered by always-on mic (A11) | M7 | Built (Settings → Audio → Keep the microphone open for 30 s after dictating, Handy's timeout; the next dictation in that window starts warm with pre-roll; `lazyCloseKeepsTheNextDictationWarmThenCloses`) | — |
-| F22 | Windows / Linux builds | — | Tauri | — | — | N/A | Say Less is Mac-only by design |
+| F22 | Windows / Linux builds | — | Tauri | — | — | N/A | Blabbit is Mac-only by design |
 | F23 | Update checks locked by admin/managed config | `is_update_checks_locked` in `H/src-tauri/src/commands/mod.rs:27` | managed setting disables the toggle | Honour a managed `UpdateChecksDisabled` default (`defaults write` / MDM profile) | M7 | Matched (2026-09-25): `UpdateChecksDisabled` (managed profile or `defaults write`) starts Sparkle stopped, hides Check for Updates, About says "Turned off by your administrator"; `UpdatePolicyTests` | Scheduled checks also wait while you dictate (`SPUUpdaterDelegate mayPerform`) |
 
 ## G. G8 check: what Handy already has (recorded in M0)
 
-| Say Less differentiator from GOAL G8 | Does Handy have it? | Evidence |
+| Blabbit differentiator from GOAL G8 | Does Handy have it? | Evidence |
 |---|---|---|
 | Personal vocabulary correction | **Yes** (custom words, fuzzy, threshold) | `H/src-tauri/src/audio_toolkit/text.rs:151` |
 | Clean mode | **Partly**: filler-word removal toggle | `S.filler_word_removal_enabled` |
@@ -143,13 +143,13 @@ Sources are file paths (with line where useful), a settings field `S.x`, or a Ta
 | Searchable history | **No** search command | `H/src-tauri/src/commands/history.rs` (get/delete/save/retry only) |
 | Native (non-web) UI | **No** (Tauri webview) | `H/src-tauri/Cargo.toml` |
 
-## G8 results: where Say Less is better, with evidence (M7)
+## G8 results: where Blabbit is better, with evidence (M7)
 
-| G8 item | Say Less | Handy | Evidence | Status |
+| G8 item | Blabbit | Handy | Evidence | Status |
 |---|---|---|---|---|
 | Lower idle RAM, faster launch (side by side) | Launch → model ready ~490 ms (warm), RSS ~930 MB with Parakeet V3 resident (`docs/BENCHMARKS.md`) | not yet measured | `scripts/compare-handy.sh` measures both the same way (time to settled memory, settled RSS, idle CPU from CPU-time deltas) | **(H)**: needs Handy installed with Parakeet V3 selected (PROGRESS → Blocked on human) |
 | Native settings, overlay, menu (no web view) | SwiftUI/AppKit throughout: `SettingsView`, `OverlayPanel` (`.nonactivatingPanel`), `NSStatusItem` menu | Tauri webview (`H/src-tauri/Cargo.toml`) | `evidence/m4/overlay_*.png`, `evidence/m5/settings_*.png`; `OverlayTests` (never takes focus) | **Better** (architecture, verified in code) |
 | Smarter insertion | Per-app strategy table (AX → paste → type), full clipboard restore (all items × types), secure-field detection, receipt-verified paste | one global paste method; text-only restore; no AX | `InsertionTests`, `ClipboardTests`, `AXIntegrationTests`; Handy: `clipboard.rs:63-106`, 0 `AXUIElement` hits | Better in capability; **(H)** per-app live comparison (`docs/TEST_CHECKLIST.md`) |
-| Vocabulary + modes | Jaro-Winkler + Double Metaphone with false-positive guards; Exact/Clean/Code/Professional/Custom; Whisper sentence prompt | fuzzy custom words; filler toggle; LLM prompts; no Code mode | `evidence/m5/vocabulary_wer.log`: Whisper Large v3 0.114 → 0.000 with prompt + correction. **Baseline: Say Less with no vocabulary**, not Handy; Handy's custom-word correction was not run on these clips | **Better** only for what Handy lacks (Code mode; the Whisper prompt); vocabulary correction itself: both have it, not compared head-to-head |
+| Vocabulary + modes | Jaro-Winkler + Double Metaphone with false-positive guards; Exact/Clean/Code/Professional/Custom; Whisper sentence prompt | fuzzy custom words; filler toggle; LLM prompts; no Code mode | `evidence/m5/vocabulary_wer.log`: Whisper Large v3 0.114 → 0.000 with prompt + correction. **Baseline: Blabbit with no vocabulary**, not Handy; Handy's custom-word correction was not run on these clips | **Better** only for what Handy lacks (Code mode; the Whisper prompt); vocabulary correction itself: both have it, not compared head-to-head |
 | Searchable history, raw vs final side by side | FTS5 prefix search over raw and final; detail shows both | list only, no search | `HistoryTests`, `evidence/m5/history.png`; Handy `commands/history.rs` | **Better** |
-| Other measured improvements | Incremental transcription at pauses: 5 min dictation 15.0 s → 0.28 s after release (Parakeet V3). **Baseline: Say Less's own one-shot path**, which is how Handy also transcribes (after release); Handy itself was not timed. Worst case (release just after a segment starts): about the same as one-shot, e.g. 290 vs 270 ms on 16 s, 6313 vs 6543 ms on Whisper Large. Keep Microphone Ready: capture start 0.0–0.1 ms vs 40–68 ms cold (baseline: Say Less cold start; Handy's equivalent "always-on microphone" exists, not timed). Recording continues across a device change | transcribes after release; mic starts per recording unless always-on | `docs/BENCHMARKS.md`, ADR-013, `CaptureStartLatencyTests`, `DeviceChangeTests` | **Better** for long dictations (measured against the one-shot method Handy uses); equal in the worst case |
+| Other measured improvements | Incremental transcription at pauses: 5 min dictation 15.0 s → 0.28 s after release (Parakeet V3). **Baseline: Blabbit's own one-shot path**, which is how Handy also transcribes (after release); Handy itself was not timed. Worst case (release just after a segment starts): about the same as one-shot, e.g. 290 vs 270 ms on 16 s, 6313 vs 6543 ms on Whisper Large. Keep Microphone Ready: capture start 0.0–0.1 ms vs 40–68 ms cold (baseline: Blabbit cold start; Handy's equivalent "always-on microphone" exists, not timed). Recording continues across a device change | transcribes after release; mic starts per recording unless always-on | `docs/BENCHMARKS.md`, ADR-013, `CaptureStartLatencyTests`, `DeviceChangeTests` | **Better** for long dictations (measured against the one-shot method Handy uses); equal in the worst case |

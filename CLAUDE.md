@@ -1,9 +1,9 @@
-# CLAUDE.md — Say Less (local-first macOS dictation)
+# CLAUDE.md — Blabbit (local-first macOS dictation)
 
 Always-loaded project rules. Read this, then `PROGRESS.md`, at the start of every session.
 
 ## What we are building
-A native macOS menu-bar dictation app with Handy-class behaviour: hold a hotkey, speak, release, and local text appears at the cursor in any app. Fully offline after model download. Working name **Say Less** (rename freely; never use Handy's name, icon, or assets).
+A native macOS menu-bar dictation app with Handy-class behaviour: hold a hotkey, speak, release, and local text appears at the cursor in any app. Fully offline after model download. Working name **Blabbit** (rename freely; never use Handy's name, icon, or assets).
 
 Reference implementation: Handy — https://github.com/cjpais/Handy (note: the repo is `cjpais/Handy`, not `jaccas/handy`). Handy is MIT-licensed. Study its design; write our own code. Handy is Tauri (Rust + web UI); we are Swift/AppKit + Rust core, so its Rust inference layer is the most transferable part.
 
@@ -37,7 +37,7 @@ Reference implementation: Handy — https://github.com/cjpais/Handy (note: the r
 ## Commands (create these in M0, keep them working)
 - `make build` — build Rust core + Xcode app (Release, arm64)
 - `make test` — Rust `cargo test` + `xcodebuild test`
-- `make bench` — run `sayless-bench` and write `bench/results/<date>.json`
+- `make bench` — run `blabbit-bench` and write `bench/results/<date>.json`
 - `make dmg` — signed, notarised DMG (needs human creds)
 
 ## Style

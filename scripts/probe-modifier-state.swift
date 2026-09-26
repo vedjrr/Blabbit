@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 let src = CGEventSource(stateID: .combinedSessionState)!
-src.userData = 0x5554_5452 // Say Less's marker: the running app ignores these
+src.userData = 0x5554_5452 // Blabbit's marker: the running app ignores these
 func show(_ label: String) {
     usleep(50_000)
     let f = CGEventSource.flagsState(.hidSystemState)

@@ -5,7 +5,7 @@ The loop ends only when every box below is checked **with evidence** recorded in
 ## G0. Handy parity (feature-for-feature)
 - [ ] `docs/PARITY.md` exists: every user-facing feature, setting, supported model and shortcut behaviour in the current Handy release (from its source code, README and releases, with links), each marked Matched / Better / Not applicable (with reason).
 - [ ] Zero rows left "Missing" at DONE. New Handy features found later get added as rows.
-- [ ] (H) Side-by-side test: same machine, same model, same 5 fixture clips, Handy vs Say Less. Latency and word error rate recorded in `docs/BENCHMARKS.md`. Say Less is equal or better on both.
+- [ ] (H) Side-by-side test: same machine, same model, same 5 fixture clips, Handy vs Blabbit. Latency and word error rate recorded in `docs/BENCHMARKS.md`. Blabbit is equal or better on both.
 
 Parity means the same features and the same feel. It does not mean copying Handy's code, name, icon or UI assets. Handy is MIT-licensed, so reading its code is fine and reusing a snippet is allowed with the MIT notice kept, but our UI and branding must be our own.
 
@@ -54,13 +54,13 @@ Parity means the same features and the same feel. It does not mean copying Handy
 - [ ] Hardened runtime; entitlements minimal and justified in ARCHITECTURE.md.
 - [ ] `make dmg`: build → sign → notarise (`notarytool`) → staple → DMG. (H) run with real Developer ID.
 - [ ] Sparkle 2 feed with EdDSA signing.
-- [ ] Original app icon, `README.md`, `docs/RELEASING.md`, Homebrew Cask draft, uninstall instructions (app + `~/Library/Application Support/SayLess` + models).
+- [ ] Original app icon, `README.md`, `docs/RELEASING.md`, Homebrew Cask draft, uninstall instructions (app + `~/Library/Application Support/Blabbit` + models).
 
 ## G8. Better than Handy (where it's measurable)
-Handy is cross-platform (Tauri + web UI). Say Less is Mac-only and native, so it should win in these areas. Each one needs a number or a demo:
+Handy is cross-platform (Tauri + web UI). Blabbit is Mac-only and native, so it should win in these areas. Each one needs a number or a demo:
 - [ ] Lower idle RAM and faster app launch than Handy (measured side by side).
 - [ ] Native SwiftUI/AppKit settings, overlay and menu, following macOS conventions (no web view).
-- [ ] Smarter insertion: per-app strategy table, full clipboard restore, secure-field detection. Demonstrate apps where Handy's insertion fails and Say Less's works, or show they are equal.
+- [ ] Smarter insertion: per-app strategy table, full clipboard restore, secure-field detection. Demonstrate apps where Handy's insertion fails and Blabbit's works, or show they are equal.
 - [ ] Personal vocabulary correction and the Clean/Professional/Code/Custom modes. Check in M0 which of these Handy already has and record it in PARITY.md.
 - [ ] Searchable history with raw and final text side by side.
 - [ ] Any other improvement is logged in PARITY.md as "Better" with evidence. Only claim "better" when it's measured.

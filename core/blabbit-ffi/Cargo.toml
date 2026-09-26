@@ -1,0 +1,15 @@
+[package]
+name = "blabbit-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "lib"]
+name = "blabbit_ffi"
+
+[dependencies]
+blabbit-core = { path = "../blabbit-core" }
+uniffi = "0.32"
+thiserror.workspace = true
+log.workspace = true

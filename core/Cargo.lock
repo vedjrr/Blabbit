@@ -154,6 +154,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
+name = "blabbit-cli"
+version = "0.1.0"
+dependencies = [
+ "blabbit-core",
+ "clap",
+ "serde_json",
+]
+
+[[package]]
+name = "blabbit-core"
+version = "0.1.0"
+dependencies = [
+ "hound",
+ "libc",
+ "log",
+ "rphonetic",
+ "serde",
+ "serde_json",
+ "sha2",
+ "silero-vad-crs",
+ "strsim",
+ "thiserror",
+ "transcribe-cpp",
+ "ureq",
+ "whatlang",
+]
+
+[[package]]
+name = "blabbit-ffi"
+version = "0.1.0"
+dependencies = [
+ "blabbit-core",
+ "log",
+ "thiserror",
+ "uniffi",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -853,44 +891,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "sayless-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "sayless-core",
- "serde_json",
-]
-
-[[package]]
-name = "sayless-core"
-version = "0.1.0"
-dependencies = [
- "hound",
- "libc",
- "log",
- "rphonetic",
- "serde",
- "serde_json",
- "sha2",
- "silero-vad-crs",
- "strsim",
- "thiserror",
- "transcribe-cpp",
- "ureq",
- "whatlang",
-]
-
-[[package]]
-name = "sayless-ffi"
-version = "0.1.0"
-dependencies = [
- "log",
- "sayless-core",
- "thiserror",
- "uniffi",
 ]
 
 [[package]]

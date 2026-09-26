@@ -1,0 +1,5 @@
+[bindings.swift]
+module_name = "BlabbitCore"
+ffi_module_name = "BlabbitFFI"
+ffi_module_filename = "BlabbitFFI"
+generate_module_map = true

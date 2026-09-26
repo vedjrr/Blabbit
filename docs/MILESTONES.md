@@ -13,7 +13,7 @@ Work strictly in order. Each has an **exit gate**; do not start the next until t
 
 ## M1 — Vertical slice (the one that matters)
 Hotkey → mic → Parakeet V3 (or Whisper Small if Parakeet is blocked) → text in TextEdit.
-- Rust core: load model once, `transcribe(pcm_f32_16k)`. CLI `sayless-cli file.wav` for testing without UI.
+- Rust core: load model once, `transcribe(pcm_f32_16k)`. CLI `blabbit-cli file.wav` for testing without UI.
 - Swift: status item, CGEventTap push-to-talk, AVAudioEngine capture → 16 kHz mono f32, clipboard-paste insertion.
 - **Gate:** fixture WAV transcribes via CLI with recorded WER; (H) human confirms spoken sentence lands in TextEdit; latency logged.
 
@@ -35,7 +35,7 @@ Pipeline + modes, vocabulary, TextProcessor providers, GRDB history, full settin
 - **Gate:** G4 + remaining G5 pass.
 
 ## M6 — Benchmarks & performance pass
-`sayless-bench`, BENCHMARKS.md, profile with Instruments where needed, fix the slowest stage.
+`blabbit-bench`, BENCHMARKS.md, profile with Instruments where needed, fix the slowest stage.
 - **Gate:** G6 pass.
 
 ## M7 — Distribution & polish

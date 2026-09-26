@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["sayless-core", "sayless-cli", "sayless-ffi", "uniffi-bindgen"]
+members = ["blabbit-core", "blabbit-cli", "blabbit-ffi", "uniffi-bindgen"]
 
 [workspace.package]
 version = "0.1.0"

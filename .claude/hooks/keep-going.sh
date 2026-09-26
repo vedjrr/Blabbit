@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 PROGRESS="$ROOT/PROGRESS.md"
 COUNTER="$ROOT/.claude/.loop-count"
-MAX_ITERS="${SAYLESS_MAX_ITERS:-200}"
+MAX_ITERS="${BLABBIT_MAX_ITERS:-200}"
 
 cat >/dev/null  # consume hook JSON on stdin
 

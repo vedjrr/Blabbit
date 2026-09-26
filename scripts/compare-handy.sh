@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# G8: Say Less vs Handy side by side, measured the same way on this Mac.
-# Usage: scripts/compare-handy.sh /path/to/Handy.app [/path/to/SayLess.app]
+# G8: Blabbit vs Handy side by side, measured the same way on this Mac.
+# Usage: scripts/compare-handy.sh /path/to/Handy.app [/path/to/Blabbit.app]
 # Before running: in Handy, download Parakeet V3, select it, and set model
 # unloading to "Never", so both apps idle with the same model resident.
 # Both apps are quit first and after. Output: evidence/m7/handy_comparison.log
 set -euo pipefail
 cd "$(dirname "$0")/.."
-[[ -d "${1:-}" ]] || { echo "usage: scripts/compare-handy.sh /path/to/Handy.app [/path/to/SayLess.app]" >&2; exit 2; }
-handy="${1:?usage: scripts/compare-handy.sh /path/to/Handy.app [/path/to/SayLess.app]}"
-sayless="${2:-build/SayLess.app}"
+[[ -d "${1:-}" ]] || { echo "usage: scripts/compare-handy.sh /path/to/Handy.app [/path/to/Blabbit.app]" >&2; exit 2; }
+handy="${1:?usage: scripts/compare-handy.sh /path/to/Handy.app [/path/to/Blabbit.app]}"
+blabbit="${2:-build/Blabbit.app}"
 out=evidence/m7/handy_comparison.log
 mkdir -p evidence/m7
 
@@ -77,14 +77,14 @@ measure() { # app → "launch_to_settled_ms settled_rss_mb idle_cpu_percent"
 }
 
 {
-  echo "# $(date -u +%FT%TZ) Say Less vs Handy on $(sysctl -n machdep.cpu.brand_string), $(sw_vers -productVersion)"
-  echo "# Say Less: $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$sayless/Contents/Info.plist") ($sayless)"
+  echo "# $(date -u +%FT%TZ) Blabbit vs Handy on $(sysctl -n machdep.cpu.brand_string), $(sw_vers -productVersion)"
+  echo "# Blabbit: $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$blabbit/Contents/Info.plist") ($blabbit)"
   echo "# Handy: $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$handy/Contents/Info.plist") ($handy)"
   echo "app  run  launch_to_settled_ms  settled_rss_mb  idle_cpu_percent"
   echo "# launch_to_settled includes one triggered dictation (model resident in both); rss sums WebKit helpers started after launch"
   for run in 1 2 3; do
-    u=$(measure "$sayless") || { echo "sayless $run failed"; continue; }
-    echo "sayless $run $u"
+    u=$(measure "$blabbit") || { echo "blabbit $run failed"; continue; }
+    echo "blabbit $run $u"
     h=$(measure "$handy") || { echo "handy $run failed"; continue; }
     echo "handy $run $h"
   done

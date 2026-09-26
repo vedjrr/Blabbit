@@ -1,0 +1,14 @@
+[package]
+name = "blabbit-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "blabbit-cli"
+path = "src/main.rs"
+
+[dependencies]
+blabbit-core = { path = "../blabbit-core" }
+clap = { version = "4", features = ["derive"] }
+serde_json.workspace = true
