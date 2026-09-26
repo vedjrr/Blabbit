@@ -1,0 +1,26 @@
+ 0.00– 1.96s speech=true  vad= 1.5ms  "Hello, my God."
+ 1.96– 3.28s speech=false vad= 1.9ms  "Get up."
+ 3.28– 5.12s speech=false vad= 3.1ms  "That's me."
+ 5.12– 6.40s speech=false vad= 1.8ms  "Hopefully."
+ 6.40– 7.54s speech=false vad= 1.3ms  "Okay."
+ 7.54– 9.88s speech=false vad= 2.5ms  ""
+ 9.88–11.08s speech=false vad= 1.3ms  "No, no."
+11.08–12.30s speech=false vad= 1.3ms  "Oh."
+12.30–14.52s speech=false vad= 2.4ms  "It's but"
+=== 374C84
+ 3.68– 7.62s speech=false vad= 6.1ms  "In general the settings app, it's just too complicated."
+=== B69B99
+ 6.82– 7.88s speech=false vad= 1.2ms  "Yeah."
+15.48–16.48s speech=false vad= 1.1ms  "Intersell extra."
+=== AC578F
+=== 733627
+=== 4AEB83
+=== A64B9B
+=== 3806AE
+ 0.00– 1.17s speech=false vad= 1.4ms  "Just on anything."
+=== 0F5BED
+ 0.00– 1.26s speech=false vad= 1.5ms  "Okay."
+=== 167714
+ 0.00– 0.86s speech=false vad= 1.1ms  "Okay."
+=== 0989A9
+ 4.00– 4.87s speech=false vad= 1.0ms  "Yeah."
