@@ -1,4 +1,4 @@
-STATUS: IN_PROGRESS
+STATUS: WAITING_ON_HUMAN
 
 # Progress (loop state — Claude owns this file)
 
@@ -255,6 +255,7 @@ All feedback items U1–U5 are done, and every PARITY row but F10 is Matched/Bui
 - [M6] Critic re-review #3 → **PASS** (its own probe: release ≤ 1.03× one-shot on Whisper Large v3 and Turbo across 17–35 s; 3/3 reruns of the incremental suite green). MINORs fixed: the worst-case rows now end the recording where the segment started and use the median of 3 runs each, with Moonshine, SenseVoice and Whisper Large added (`bench/results/2026-09-25.json`, git `32a5914`): parakeet-tdt-0.6b-v3 16 s 289.8 vs 270 ms; moonshine-base 16 s 603.9 vs 1578.5 ms; SenseVoiceSmall 16 s 188.2 vs 161.1 ms; whisper-medium 27.2 s 1661.2 vs 1652.9 ms; whisper-medium 32 s 2874.2 vs 2916.5 ms; whisper-large-v3 32 s 6312.9 vs 6543.1 ms. `append` is documented for one serial queue and re-checks `busy`.
 
 ## Blocked on human
+- **Paused by the human (2026-09-26):** "stop the loop". The M7 critic re-review was started and stopped before it finished; rerun it on resume (`/loop`).
 - **Check the menu bar panel (30 s):** click the waveform icon. After your screenshot the panel was fixed (62c58d3) and the running app replaced. The panel should fit inside its frame, with Model / Mode / Microphone pickers the same width. Right-click shows the full menu.
 - **Decision: F10 localisation.** OK to ship 1.0 in English only (details under Proposed goal changes)?
 - **Decision: recommended model.** On Utter's clips, Nemotron Speech (English) scored 87 accuracy / 90 speed against Parakeet V3's 74 / 90. That's only 62 words, so Parakeet V3 stays recommended (multilingual, tested through every gate). With your own voice clips I could settle it.
