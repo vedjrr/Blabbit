@@ -18,6 +18,18 @@ fn rms(frame: &[f32]) -> f32 {
 /// (the 10th percentile of frame levels), and never above an absolute -40 dBFS,
 /// so room noise and quiet microphones both work.
 pub fn find_pause(pcm: &[f32], from: usize, min_segment: usize, min_silence: usize) -> Option<usize> {
+    find_cut(pcm, from, min_segment, min_silence, None)
+}
+
+/// Like `find_pause`, but a silence still going at the end also counts once
+/// it has lasted `min_trailing` samples: typing as you speak wants the phrase
+/// as soon as the user pauses, not when they start the next one. The cut is
+/// in that silence, `min_silence / 2` into it, so the phrase's last word is whole.
+pub fn find_pause_or_trailing(pcm: &[f32], from: usize, min_segment: usize, min_silence: usize, min_trailing: usize) -> Option<usize> {
+    find_cut(pcm, from, min_segment, min_silence, Some(min_trailing.max(min_silence)))
+}
+
+fn find_cut(pcm: &[f32], from: usize, min_segment: usize, min_silence: usize, trailing: Option<usize>) -> Option<usize> {
     if from >= pcm.len() || pcm.len() - from < min_segment + min_silence {
         return None;
     }
@@ -40,9 +52,17 @@ pub fn find_pause(pcm: &[f32], from: usize, min_segment: usize, min_silence: usi
                 // A run still going at the end is the user pausing right now:
                 // only cut once speech follows it.
                 let ongoing = end + 1 == levels.len();
-                if !ongoing && end + 1 - start >= need && start >= first_allowed.max(1) {
-                    best = Some(from + (start + end + 1) / 2 * FRAME);
-                    break;
+                if start >= first_allowed.max(1) {
+                    if !ongoing && end + 1 - start >= need {
+                        best = Some(from + (start + end + 1) / 2 * FRAME);
+                        break;
+                    }
+                    if let Some(trailing) = trailing {
+                        if ongoing && end + 1 - start >= trailing.div_ceil(FRAME) {
+                            best = Some(from + (start + need / 2) * FRAME);
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -94,6 +114,21 @@ mod tests {
         // The user is pausing right now: don't cut until they speak again.
         let pcm = signal(&[(true, 5.0), (false, 1.0)]);
         assert_eq!(find_pause(&pcm, 0, 16_000, 5_600), None);
+    }
+
+    #[test]
+    fn trailing_silence_counts_when_asked_once_long_enough() {
+        let pcm = signal(&[(true, 2.0), (false, 0.7)]);
+        // 0.5 s of pause is enough: cut 0.175 s into it (half the 0.35 s minimum).
+        let cut = find_pause_or_trailing(&pcm, 0, 16_000, 5_600, 8_000).expect("trailing pause");
+        assert!((cut as f32 / 16_000.0 - 2.18).abs() < 0.03, "cut at {} s", cut as f32 / 16_000.0);
+        // Only 0.3 s of it so far: not yet.
+        let pcm = signal(&[(true, 2.0), (false, 0.3)]);
+        assert_eq!(find_pause_or_trailing(&pcm, 0, 16_000, 5_600, 8_000), None);
+        // A finished pause is still preferred over nothing, as before.
+        let pcm = signal(&[(true, 2.0), (false, 0.5), (true, 1.0)]);
+        let cut = find_pause_or_trailing(&pcm, 0, 16_000, 5_600, 8_000).expect("a pause");
+        assert!((cut as f32 / 16_000.0 - 2.25).abs() < 0.03);
     }
 
     #[test]

@@ -74,7 +74,7 @@ public final class OverlayModel {
     public var phase: OverlayPhase = .hidden
     /// Live Text style: the words so far (nil hides the line).
     public var liveText: String?
-    /// Recent input levels (0…1), newest last, for the meter.
+    /// Recent input levels (0…1), newest last, for the orb.
     public private(set) var levels: [Float] = Array(repeating: 0, count: OverlayModel.barCount)
 
     public static let barCount = 16
@@ -92,6 +92,12 @@ public final class OverlayModel {
     public func push(rms: Float) {
         levels.removeFirst()
         levels.append(Self.displayLevel(rms: rms))
+    }
+
+    /// The last few levels averaged, so the orb swells smoothly with the voice.
+    public var voiceLevel: Float {
+        let recent = levels.suffix(4)
+        return recent.reduce(0, +) / Float(max(recent.count, 1))
     }
 
     public func resetLevels() {
@@ -116,8 +122,8 @@ public final class OverlayController {
     /// Returns the current input RMS (the recorder's level).
     private let levelProvider: () -> Float
 
-    public static let size = NSSize(width: 240, height: 48)
-    public static let liveSize = NSSize(width: 460, height: 84)
+    public static let size = NSSize(width: 176, height: 52)
+    public static let liveSize = NSSize(width: 460, height: 80)
     /// Live Text style: the recording pill is wider and has a text line.
     public var live = false
     public static let noticeSize = NSSize(width: 420, height: 64)
@@ -244,10 +250,10 @@ struct OverlayView: View {
 
     var body: some View {
         content
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.12)))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(.white.opacity(0.12)))
             .environment(\.colorScheme, .dark)
     }
 
@@ -256,10 +262,9 @@ struct OverlayView: View {
         case .hidden:
             EmptyView()
         case .recording(let startedAt):
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 HStack(spacing: 12) {
-                    Circle().fill(.red).frame(width: 10, height: 10)
-                    LevelMeter(levels: model.levels)
+                    OrbView(level: model.voiceLevel, size: 44)
                     TimelineView(.periodic(from: startedAt, by: 1)) { context in
                         Text(Self.elapsed(from: startedAt, to: context.date))
                             .font(.system(.callout, design: .monospaced))
@@ -279,7 +284,7 @@ struct OverlayView: View {
             .accessibilityLabel(model.liveText.map { "Utter is listening: \($0)" } ?? "Utter is listening")
         case .transcribing:
             HStack(spacing: 10) {
-                ProgressView().controlSize(.small)
+                OrbView(speed: 0.45, size: 44)
                 Text("Transcribing…").font(.callout)
             }
             .accessibilityElement(children: .combine)
@@ -296,21 +301,5 @@ struct OverlayView: View {
     static func elapsed(from start: Date, to now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(start)))
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
-}
-
-private struct LevelMeter: View {
-    let levels: [Float]
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 3) {
-            ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
-                Capsule()
-                    .fill(.white.opacity(0.85))
-                    .frame(width: 4, height: 4 + CGFloat(level) * 20)
-            }
-        }
-        .frame(height: 24)
-        .animation(.linear(duration: 1.0 / 30), value: levels)
     }
 }

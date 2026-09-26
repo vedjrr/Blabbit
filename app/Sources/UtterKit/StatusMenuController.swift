@@ -4,7 +4,7 @@ import UtterCore
 
 /// The menu bar item: icon reflects dictation state; menu is rebuilt on open.
 @MainActor
-public final class StatusMenuController: NSObject, NSMenuDelegate {
+public final class StatusMenuController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let controller: DictationController
 
@@ -30,8 +30,37 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
             // Utter isn't activated: the app you were typing in stays frontmost,
             // so a dictation started from the panel lands there.
             popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+            watchForOutsideActivity()
         }
     }
+
+    private var outsideClickMonitor: Any?
+    private var appSwitchObserver: NSObjectProtocol?
+
+    /// `.transient` only notices clicks inside Utter, and the panel never
+    /// activates Utter, so a click in another app or switching apps left it
+    /// open. Watch for both while it's shown.
+    private func watchForOutsideActivity() {
+        stopWatchingOutsideActivity()
+        // Global mouse monitors see other apps' clicks only (no permission needed),
+        // so clicks inside the panel and on the status item still work.
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.popover.performClose(nil) }
+        }
+        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.popover.performClose(nil) }
+        }
+    }
+
+    private func stopWatchingOutsideActivity() {
+        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+        outsideClickMonitor = nil
+        if let appSwitchObserver { NSWorkspace.shared.notificationCenter.removeObserver(appSwitchObserver) }
+        appSwitchObserver = nil
+    }
+
+    public func popoverDidClose(_ notification: Notification) { stopWatchingOutsideActivity() }
 
     public init(controller: DictationController) {
         self.controller = controller
@@ -42,6 +71,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         panel.openPermissions = { [weak self] in self?.showPermissions() }
         panel.close = { [weak self] in self?.popover.performClose(nil) }
         popover.behavior = .transient
+        popover.delegate = self
         popover.animates = true
         let hosting = NSHostingController(rootView: MenuPanelView(model: panel))
         // The popover follows the panel's own size (it grows when a notice or

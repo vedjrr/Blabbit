@@ -85,16 +85,24 @@ public final class TextInserter {
         }
     }
 
-    public func insert(_ rawText: String, bundleID: String?) async -> InsertReport {
+    /// `isPart`: one phrase of a dictation typed while speaking. It gets no
+    /// trailing space, auto-submit or clipboard copy; those belong to the end.
+    /// `wholeText`: the full dictation, for "also leave it on the clipboard",
+    /// when `rawText` is only its last phrase.
+    public func insert(_ rawText: String, bundleID: String?, isPart: Bool = false, wholeText: String? = nil) async -> InsertReport {
         // Noise can transcribe to nothing; never paste an empty string or send a bare Enter.
         guard !TranscriptPolicy.isBlank(rawText) else {
             return InsertReport(result: .skipped, bundleID: bundleID)
         }
-        let text = settings.finalText(rawText)
+        let text = settings.finalText(rawText, isPart: isPart)
         var report = await insertWithoutExtras(text, bundleID: bundleID)
+        if isPart { return report }
         switch report.result {
         case .inserted, .unverified, .handledByScript:
-            if settings.copyToClipboard { paste.board.clearContents(); paste.board.setString(text, forType: .string) }
+            if settings.copyToClipboard {
+                paste.board.clearContents()
+                paste.board.setString(wholeText.map { settings.finalText($0) } ?? text, forType: .string)
+            }
             // Never submit something we couldn't verify, or text a script consumed.
             if settings.autoSubmit != .off, case .inserted = report.result {
                 keys(settings.autoSubmit)
@@ -102,6 +110,25 @@ public final class TextInserter {
             }
         case .copiedToClipboard, .blockedBySecureInput, .failed, .skipped:
             break
+        }
+        return report
+    }
+
+    /// A dictation typed as it was spoken, with nothing left at the end: add
+    /// what the final insert would have (trailing space, clipboard copy, auto-submit).
+    public func endTypedDictation(_ wholeText: String, bundleID: String?) async -> InsertReport {
+        var report = settings.appendTrailingSpace
+            ? await insertWithoutExtras(" ", bundleID: bundleID)
+            : InsertReport(result: .inserted(.typing), bundleID: bundleID)
+        report.attempts.append("typed while speaking; nothing left at the end")
+        guard case .inserted = report.result else { return report }
+        if settings.copyToClipboard {
+            paste.board.clearContents()
+            paste.board.setString(settings.finalText(wholeText), forType: .string)
+        }
+        if settings.autoSubmit != .off {
+            keys(settings.autoSubmit)
+            report.attempts.append("auto-submit: \(settings.autoSubmit.rawValue)")
         }
         return report
     }

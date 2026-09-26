@@ -16,6 +16,9 @@ public final class IncrementalTranscriber: @unchecked Sendable {
         public var maxSegmentSeconds: Double?
         /// No segment starts before the recording is this long.
         public var startAfterSeconds: Double
+        /// Also cut in a pause that's still going once it is this long (nil:
+        /// only once speech follows it).
+        public var trailingPauseSeconds: Double? = nil
 
         /// Parakeet, Moonshine, SenseVoice: cost grows with length, so any
         /// segment ≥ 10 s taken off the release is a gain.
@@ -24,6 +27,9 @@ public final class IncrementalTranscriber: @unchecked Sendable {
         /// window, and segmenting only starts once one-shot would need two
         /// (otherwise segment + tail = two windows where one-shot is one).
         public static let whisperWindow = Policy(minSegmentSeconds: 20, maxSegmentSeconds: 29.5, startAfterSeconds: 30)
+        /// Typing as you speak: every phrase goes in at the pause after it.
+        public static let live = Policy(minSegmentSeconds: 0.8, maxSegmentSeconds: nil, startAfterSeconds: 0,
+                                        trailingPauseSeconds: 0.5)
 
         public static func forModelFamily(_ family: String?) -> Policy {
             family == "whisper" ? .whisperWindow : .proportional
@@ -51,6 +57,12 @@ public final class IncrementalTranscriber: @unchecked Sendable {
     private var inferenceMs = 0.0
     private var trimmedMs: UInt64 = 0
     private var segmentCount = 0
+    /// Set by `finish`: no new segment may start (its words would be in the tail too).
+    private var closed = false
+
+    /// Called on the transcriber's queue with each segment's text, in order,
+    /// as soon as it's transcribed (index = position in `Result.segmentTexts`).
+    public var onSegment: (@Sendable (Int, String) -> Void)?
 
     public init(engine: UtterEngine, options: DictationOptions, policy: Policy = .proportional) {
         self.engine = engine
@@ -79,7 +91,7 @@ public final class IncrementalTranscriber: @unchecked Sendable {
         lock.lock()
         pending.append(contentsOf: chunk)
         received += chunk.count
-        guard !busy, !failed, Double(received) > policy.startAfterSeconds * 16_000 else { lock.unlock(); return }
+        guard !busy, !failed, !closed, Double(received) > policy.startAfterSeconds * 16_000 else { lock.unlock(); return }
         let offset: Int
         let recent: [Float]
         if let maxSegment = policy.maxSegmentSeconds {
@@ -94,11 +106,15 @@ public final class IncrementalTranscriber: @unchecked Sendable {
         }
         lock.unlock()
         let minSegment = max(0, Int(policy.minSegmentSeconds * 16_000) - offset)
-        guard let cutInRecent = findPause(pcm: recent, from: 0, minSegmentSamples: UInt64(minSegment),
-                                          minSilenceSamples: UInt64(Self.minPauseSeconds * 16_000)) else { return }
+        let minSilence = UInt64(Self.minPauseSeconds * 16_000)
+        let found = policy.trailingPauseSeconds.map {
+            findPauseOrTrailing(pcm: recent, from: 0, minSegmentSamples: UInt64(minSegment),
+                                minSilenceSamples: minSilence, minTrailingSamples: UInt64($0 * 16_000))
+        } ?? findPause(pcm: recent, from: 0, minSegmentSamples: UInt64(minSegment), minSilenceSamples: minSilence)
+        guard let cutInRecent = found else { return }
         let cut = offset + Int(cutInRecent)
         lock.lock()
-        guard !busy, cut <= pending.count else { lock.unlock(); return }
+        guard !busy, !closed, cut <= pending.count else { lock.unlock(); return }
         let segment = Array(pending[..<cut])
         busy = true
         let options = self.options
@@ -106,10 +122,20 @@ public final class IncrementalTranscriber: @unchecked Sendable {
         queue.async { [self] in
             let outcome = Swift.Result { try engine.transcribe(pcm: segment, options: options) }
             lock.lock()
-            defer { busy = false; lock.unlock() }
+            var typed: (Int, String)?
+            defer {
+                busy = false
+                let onSegment = self.onSegment
+                lock.unlock()
+                if let typed { onSegment?(typed.0, typed.1) }
+            }
             switch outcome {
             case .success(let result):
-                if !result.text.isEmpty { texts.append(result.text) }
+                let text = result.text.trimmingCharacters(in: .whitespaces)
+                if !text.isEmpty {
+                    texts.append(text)
+                    typed = (texts.count - 1, text)
+                }
                 // Whisper detects the language per call: keep the first detection
                 // so later segments of the same dictation agree.
                 if self.options.language == nil, let language = result.language, !language.isEmpty {
@@ -139,6 +165,9 @@ public final class IncrementalTranscriber: @unchecked Sendable {
         public var language: String?
         /// Silence removed across all segments (ms).
         public var trimmedMs: UInt64 = 0
+        /// The text of each segment transcribed while recording, then the tail's.
+        public var segmentTexts: [String] = []
+        public var tailText = ""
 
         public init(text: String, tailInferenceMs: Double, totalInferenceMs: Double, segments: Int, skipped: SkipReason?, language: String?) {
             self.text = text
@@ -153,6 +182,7 @@ public final class IncrementalTranscriber: @unchecked Sendable {
     /// Call after the recording stops with its complete audio: waits for a
     /// running segment, transcribes the rest, joins everything.
     public func finish(complete: [Float]) async throws -> Result {
+        lock.withLock { closed = true }
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             queue.async { done.resume() } // a running segment finishes first
         }
@@ -168,6 +198,8 @@ public final class IncrementalTranscriber: @unchecked Sendable {
                             totalInferenceMs: doneMs + tail.inferenceMs, segments: count,
                             skipped: parts.isEmpty ? tail.skipped : nil, language: options.language ?? tail.language)
         result.trimmedMs = lock.withLock { trimmedMs } + tail.trimmedMs
+        result.segmentTexts = before
+        result.tailText = tail.text.trimmingCharacters(in: .whitespaces)
         return result
     }
 

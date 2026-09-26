@@ -140,6 +140,7 @@ public final class DictationController {
             stopWatchdog()
             stopIncrementalFeed()
             incremental = nil
+            liveTyping = nil
             cancelledSerial = dictationSerial
             let recorder = self.recorder
             audioQueue.async { _ = recorder.stop(releaseNs: MonoClock.nowNs()) }
@@ -207,10 +208,11 @@ public final class DictationController {
         case .recording:
             // "None": no pill while dictating; notices below still show.
             guard overlayStyle != .none else { break }
-            overlay.live = livePreviewWindow != nil
+            // Typing as you speak: the words go into the app, not the pill.
+            overlay.live = liveTyping == nil && livePreviewWindow != nil
             overlay.show(.recording(startedAt: Date()))
             overlayShownNs = MonoClock.nowNs()
-            startLivePreview()
+            if liveTyping == nil { startLivePreview() }
         case .transcribing:
             guard overlayStyle != .none else { overlay.hide(); break }
             overlay.show(.transcribing)
@@ -591,12 +593,22 @@ public final class DictationController {
     private func startIncremental() {
         stopIncrementalFeed()
         let family = loadedModelID.flatMap { models.entry($0)?.family }
+        let session = liveTyping
         let inc = IncrementalTranscriber(engine: engine, options: dictationOptions(noticeUnsupportedLanguage: false),
-                                         policy: .forModelFamily(family))
+                                         policy: session == nil ? .forModelFamily(family) : .live)
+        if let session {
+            inc.onSegment = { [weak self] index, text in
+                // FIFO onto main, so phrases are queued in the order they were spoken.
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { self?.typePhrase(index: index, raw: text, session: session) }
+                }
+            }
+        }
         incremental = inc
         let recorder = self.recorder
         let queue = audioQueue
-        let timer = Timer(timeInterval: 2, repeats: true) { _ in
+        // Typing as you speak looks for a pause 4× a second; otherwise every 2 s is plenty.
+        let timer = Timer(timeInterval: session == nil ? 2 : 0.25, repeats: true) { _ in
             queue.async {
                 guard recorder.isRecording else { return }
                 inc.append(recorder.samplesSoFar(from: inc.fed))
@@ -609,6 +621,46 @@ public final class DictationController {
     private func stopIncrementalFeed() {
         feedTimer?.invalidate()
         feedTimer = nil
+    }
+
+    // MARK: Typing as you speak
+
+    /// The current dictation's phrases typed so far (nil: text goes in on release).
+    private var liveTyping: LiveTypingSession?
+
+    private func makeLiveTypingSession(binding: ShortcutBinding) -> LiveTypingSession? {
+        let mode = binding == .process ? processMode : textSettings.mode
+        let entry = loadedModelEntry
+        guard LiveTypingPolicy.applies(settings: inserter.settings, mode: mode, family: entry?.family,
+                                       measuredRTF: entry?.measuredRtf) else { return nil }
+        return LiveTypingSession(serial: dictationSerial, settings: textSettings, languages: entry?.languages ?? [])
+    }
+
+    /// Cleans up one phrase and types it where the cursor is, after the phrases before it.
+    private func typePhrase(index: Int, raw: String, session: LiveTypingSession) {
+        let previous = session.chain
+        session.chain = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self, !session.stopped, self.cancelledSerial != session.serial else { return }
+            let pipeline = TextPipeline(settings: session.partSettings, processor: nil, modelLanguages: session.languages)
+            let phrase = await pipeline.run(raw).final.trimmingCharacters(in: .whitespaces)
+            guard !TranscriptPolicy.isBlank(phrase), self.cancelledSerial != session.serial else { return }
+            let text = LiveTypingPolicy.separator(after: session.typedText, before: phrase) + phrase
+            let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            let report = await self.inserter.insert(text, bundleID: bundleID, isPart: true)
+            session.lastReport = report
+            switch report.result {
+            case .inserted:
+                session.recordTyped(index: index, inserted: text)
+            case .unverified:
+                session.recordTyped(index: index, inserted: text)
+                session.unverified = true
+            default:
+                // Try again with the rest on release (a password field drops it there).
+                session.stopped = true
+            }
+            Log.info("typed phrase index=\(index) chars=\(text.count) result=\(report.result)")
+        }
     }
 
     // MARK: Sounds, mute, capture options (PARITY A9 A10 A13 A14 A15 A17 A22 F21)
@@ -883,6 +935,7 @@ public final class DictationController {
         // Microphone first: nothing (overlay, menu) may delay key-down → first audio.
         let recorder = self.recorder
         defer {
+            liveTyping = makeLiveTypingSession(binding: timing.binding)
             state = .recording
             recordingSource = timing.source
             startWatchdog()
@@ -1003,9 +1056,12 @@ public final class DictationController {
         let options = dictationOptions(noticeUnsupportedLanguage: true)
         let incremental = self.incremental
         self.incremental = nil
+        let session = liveTyping?.serial == serial ? liveTyping : nil
+        liveTyping = nil
         let result: TranscriptionResult
+        var parts: IncrementalTranscriber.Result?
         do {
-            result = try await Task.detached(priority: .userInitiated) { () throws -> TranscriptionResult in
+            (result, parts) = try await Task.detached(priority: .userInitiated) { () throws -> (TranscriptionResult, IncrementalTranscriber.Result?) in
                 // A long dictation was already transcribed up to its last pause:
                 // only the tail is left (see IncrementalTranscriber).
                 // Also when a segment is still running: a one-shot pass would wait
@@ -1013,10 +1069,10 @@ public final class DictationController {
                 if let incremental, incremental.hasStarted {
                     let r = try await incremental.finish(complete: samples)
                     Log.info("incremental segments=\(r.segments) tail_inference_ms=\(Int(r.tailInferenceMs)) total_inference_ms=\(Int(r.totalInferenceMs))")
-                    return TranscriptionResult(text: r.text, skipped: r.skipped, language: r.language,
-                                               audioMs: UInt64(samples.count / 16), inferenceMs: r.tailInferenceMs, trimmedMs: r.trimmedMs)
+                    return (TranscriptionResult(text: r.text, skipped: r.skipped, language: r.language,
+                                                audioMs: UInt64(samples.count / 16), inferenceMs: r.tailInferenceMs, trimmedMs: r.trimmedMs), r)
                 }
-                return try engine.transcribe(pcm: samples, options: options)
+                return (try engine.transcribe(pcm: samples, options: options), nil)
             }.value
         } catch let error as CoreError {
             Log.error("transcribe failed: \(error.logDetail)")
@@ -1062,7 +1118,23 @@ public final class DictationController {
                 : "Local-only mode is on, so \(text.mode.title) mode uses the cleaned-up text. Change this in Settings → Privacy."
         }
         let pipeline = TextPipeline(settings: text, processor: processor, modelLanguages: loadedModelEntry?.languages ?? [])
-        let processed = result.skipped == nil ? await pipeline.run(result.text) : PipelineResult(raw: result.text, final: "", changes: [])
+        // Phrases typed while speaking are in already: only the rest is left to insert.
+        await session?.chain?.value
+        let typed = session.map(\.typedText) ?? ""
+        var toInsert = result.text
+        if let session, !typed.isEmpty, let parts {
+            toInsert = LiveTypingPolicy.remainder(segments: parts.segmentTexts, typed: session.typedIndices, tail: parts.tailText)
+        }
+        var processed = result.skipped == nil || !typed.isEmpty
+            ? await pipeline.run(toInsert) : PipelineResult(raw: result.text, final: "", changes: [])
+        if TranscriptPolicy.isBlank(toInsert) { processed.final = "" }
+        let insertText = typed.isEmpty ? processed.final
+            : LiveTypingPolicy.separator(after: typed, before: processed.final) + processed.final
+        if !typed.isEmpty {
+            // History, Copy Last and the clipboard fallback get the whole dictation.
+            processed = PipelineResult(raw: result.text, final: typed + insertText, changes: processed.changes,
+                                       processor: processed.processor, processorProblem: processed.processorProblem)
+        }
         guard cancelledSerial != serial else { return }
         currentPipeline = processed
         processedNs = MonoClock.nowNs()
@@ -1091,7 +1163,11 @@ public final class DictationController {
             recordHistory(processed, recording: recording, app: nil)
             return
         }
-        let report = await inserter.insert(processed.final, bundleID: bundleID)
+        var report = TranscriptPolicy.isBlank(insertText)
+            ? await inserter.endTypedDictation(processed.final, bundleID: bundleID)
+            : await inserter.insert(insertText, bundleID: bundleID, wholeText: typed.isEmpty ? nil : processed.final)
+        // A phrase that may not have gone in: keep the whole text on the clipboard.
+        if session?.unverified == true, case .inserted(let strategy) = report.result { report.result = .unverified(strategy) }
         if let problem = processed.processorProblem {
             lastMessage = problem
             overlay.show(.notice(problem, .unconfirmed))

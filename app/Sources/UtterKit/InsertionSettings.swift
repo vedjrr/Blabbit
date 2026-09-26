@@ -36,6 +36,9 @@ public struct InsertionSettings: Codable, Equatable, Sendable {
     /// Restore the previous clipboard after a paste.
     public var restoreClipboard = true
     public var newlines: Newlines = .keep
+    /// Type each phrase into the app at the pause after it, while still
+    /// dictating (fast models, no AI rewriting); otherwise the text goes in on release.
+    public var typeWhileSpeaking = true
 
     public init() {}
 
@@ -52,16 +55,19 @@ public struct InsertionSettings: Codable, Equatable, Sendable {
         externalScriptPath = try c.decodeIfPresent(String.self, forKey: .externalScriptPath)
         restoreClipboard = try c.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? d.restoreClipboard
         newlines = try c.decodeIfPresent(Newlines.self, forKey: .newlines) ?? d.newlines
+        typeWhileSpeaking = try c.decodeIfPresent(Bool.self, forKey: .typeWhileSpeaking) ?? d.typeWhileSpeaking
     }
 
     /// Text actually inserted, after formatting options.
-    public func finalText(_ text: String) -> String {
+    public func finalText(_ text: String, isPart: Bool = false) -> String {
         var text = text
         if newlines == .spaces {
-            text = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            // A later phrase starts with the space that joins it to the one before.
+            let lead = isPart && text.first == " " ? " " : ""
+            text = lead + text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }.joined(separator: " ")
         }
-        guard appendTrailingSpace, !text.isEmpty, text.last?.isWhitespace == false else { return text }
+        guard !isPart, appendTrailingSpace, !text.isEmpty, text.last?.isWhitespace == false else { return text }
         return text + " "
     }
 

@@ -499,3 +499,11 @@ pub fn process_memory() -> ProcessMemory {
 pub fn find_pause(pcm: Vec<f32>, from: u64, min_segment_samples: u64, min_silence_samples: u64) -> Option<u64> {
     utter_core::segment::find_pause(&pcm, from as usize, min_segment_samples as usize, min_silence_samples as usize).map(|i| i as u64)
 }
+
+/// `find_pause`, where a pause still going on counts once it's `min_trailing_samples`
+/// long (typing as you speak). See `utter_core::segment::find_pause_or_trailing`.
+#[uniffi::export]
+pub fn find_pause_or_trailing(pcm: Vec<f32>, from: u64, min_segment_samples: u64, min_silence_samples: u64, min_trailing_samples: u64) -> Option<u64> {
+    utter_core::segment::find_pause_or_trailing(&pcm, from as usize, min_segment_samples as usize, min_silence_samples as usize, min_trailing_samples as usize)
+        .map(|i| i as u64)
+}
