@@ -607,8 +607,9 @@ public final class DictationController {
         incremental = inc
         let recorder = self.recorder
         let queue = audioQueue
-        // Typing as you speak looks for a pause 4× a second; otherwise every 2 s is plenty.
-        let timer = Timer(timeInterval: session == nil ? 2 : 0.25, repeats: true) { _ in
+        // Typing as you speak looks for a pause 10× a second (a scan is well
+        // under 1 ms); otherwise every 2 s is plenty.
+        let timer = Timer(timeInterval: session == nil ? 2 : 0.1, repeats: true) { _ in
             queue.async {
                 guard recorder.isRecording else { return }
                 inc.append(recorder.samplesSoFar(from: inc.fed))
