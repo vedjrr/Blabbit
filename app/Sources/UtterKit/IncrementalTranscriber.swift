@@ -51,6 +51,12 @@ public final class IncrementalTranscriber: @unchecked Sendable {
     /// Total samples received, and how many of them are transcribed.
     private var received = 0
     private var committed = 0
+    /// The first samples of `pending` that had no voice in them: kept, not
+    /// typed, and heard again with the next phrase that has one. Transcribed
+    /// alone, background chatter becomes invented words; with the speaker's
+    /// phrase, the model ignores it (and a phrase too quiet for the speech
+    /// check on its own isn't lost).
+    private var held = 0
     private var texts: [String] = []
     private var busy = false
     private var failed = false
@@ -104,8 +110,10 @@ public final class IncrementalTranscriber: @unchecked Sendable {
             offset = max(0, pending.count - window)
             recent = Array(pending[offset...])
         }
+        let minSegmentSamples = Int(policy.minSegmentSeconds * 16_000)
+        // A new cut needs a phrase's worth of audio after the held part.
+        let minSegment = max(0, minSegmentSamples - offset, held + minSegmentSamples - offset)
         lock.unlock()
-        let minSegment = max(0, Int(policy.minSegmentSeconds * 16_000) - offset)
         let minSilence = UInt64(Self.minPauseSeconds * 16_000)
         let found = policy.trailingPauseSeconds.map {
             findPauseOrTrailing(pcm: recent, from: 0, minSegmentSamples: UInt64(minSegment),
@@ -130,6 +138,8 @@ public final class IncrementalTranscriber: @unchecked Sendable {
                 if let typed { onSegment?(typed.0, typed.1) }
             }
             switch outcome {
+            case .success(let result) where result.skipped == .noSpeech:
+                held = segment.count
             case .success(let result):
                 let text = result.text.trimmingCharacters(in: .whitespaces)
                 if !text.isEmpty {
@@ -145,6 +155,7 @@ public final class IncrementalTranscriber: @unchecked Sendable {
                 trimmedMs += result.trimmedMs
                 pending.removeFirst(segment.count)
                 committed += segment.count
+                held = 0
                 segmentCount += 1
             case .failure(let error):
                 // Leave everything to the release pass, which reports the error

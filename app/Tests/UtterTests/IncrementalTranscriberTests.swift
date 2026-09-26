@@ -140,6 +140,41 @@ import UtterCore
         await #expect(throws: CoreError.self) { try await inc.finish(complete: audio) } // surfaced the normal way
     }
 
+    /// Typing as you speak: a phrase of background noise isn't typed or
+    /// dropped; it's held and heard again with the next phrase that has a voice.
+    @Test func aPhraseWithoutAVoiceIsHeldForTheNextOne() async throws {
+        let engine = try Self.engine()
+        var seed: UInt32 = 12345
+        let noise = (0..<32_000).map { _ -> Float in
+            seed = seed &* 1_664_525 &+ 1_013_904_223
+            return (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.06
+        }
+        let speech = try loadWav16kMono(path: Self.fixturesDir.appendingPathComponent("tts_01.wav").path)
+        let pause = [Float](repeating: 0, count: 12_800)
+        let audio = noise + pause + speech + pause
+        let inc = IncrementalTranscriber(engine: engine, options: Self.options, policy: .live)
+        let typed = LockedTexts()
+        inc.onSegment = { _, text in typed.append(text) }
+        var fed = 0
+        var heldChecked = false
+        while fed < audio.count {
+            let next = min(fed + 1_600, audio.count)
+            inc.append(Array(audio[fed..<next]))
+            fed = next
+            while inc.isBusy { try await Task.sleep(for: .milliseconds(5)) }
+            if !heldChecked, fed >= noise.count + pause.count {
+                // The noise phrase was cut and checked: nothing typed, nothing committed.
+                #expect(inc.segments == 0 && typed.all.isEmpty)
+                #expect(inc.committedSnapshot.samples == 0)
+                heldChecked = true
+            }
+        }
+        let result = try await inc.finish(complete: audio)
+        #expect(result.segments == 1, "noise and sentence went in as one phrase")
+        #expect(typed.all.count == 1)
+        #expect(result.text.lowercased().contains("testing"), "\(result.text)")
+    }
+
     @Test func shortDictationsNeverSegment() {
         let inc = IncrementalTranscriber(engine: UtterEngine(), options: Self.options)
         inc.append([Float](repeating: 0.1, count: 16_000 * 5))
@@ -151,4 +186,12 @@ import UtterCore
         #expect(IncrementalTranscriber.join(["Hello there.", "How are you?"]) == "Hello there. How are you?")
         #expect(IncrementalTranscriber.join(["ok.", "日本語"]) == "ok. 日本語")
     }
+}
+
+/// Texts typed by `onSegment`, which runs on the transcriber's queue.
+final class LockedTexts: @unchecked Sendable {
+    private let lock = NSLock()
+    private var texts: [String] = []
+    func append(_ text: String) { lock.withLock { texts.append(text) } }
+    var all: [String] { lock.withLock { texts } }
 }
