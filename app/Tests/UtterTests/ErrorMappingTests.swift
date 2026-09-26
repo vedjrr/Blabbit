@@ -52,7 +52,8 @@ import UtterCore
         try #require(FileManager.default.fileExists(atPath: model), "run `make models` first")
         let engine = UtterEngine()
         _ = try engine.loadModel(path: model)
-        let speech = (0..<32_000).map { Float(sin(Double($0) * 0.05)) * 0.3 } // 2 s, not silent
+        // Real speech: a tone would now be skipped as "no speech" before the model runs.
+        let speech = try EngineBridgeTests().loadFixture("tts_01").samples
         do {
             _ = try engine.transcribe(pcm: speech, options: DictationOptions(language: "de", translate: false, initialPrompt: nil, trimSilence: false))
             Issue.record("Moonshine (English only) must refuse German")

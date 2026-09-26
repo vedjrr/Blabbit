@@ -2,6 +2,10 @@
 //! (PARITY A16). transcribe.cpp ships no VAD model, so this is a frame-energy
 //! detector with an adaptive noise floor and generous hangover; it only ever
 //! removes stretches that are well below the speech level around them.
+//!
+//! `contains_speech` is the other half: a Silero VAD check (the model Handy
+//! uses) that tells a voice from background chatter, keyboard and room noise,
+//! which are often as loud as a quiet speaker.
 use crate::audio::{rms, SAMPLE_RATE, SILENCE_RMS};
 
 /// 20 ms analysis frames.
@@ -52,6 +56,59 @@ pub fn trim_silence(pcm: &[f32]) -> Option<Trimmed> {
     }
     let removed_samples = pcm.len() - out.len();
     Some(Trimmed { pcm: out, removed_ms: removed_samples as u64 * 1000 / SAMPLE_RATE as u64 })
+}
+
+/// Silero speech probability that counts as speech; Handy uses the same.
+/// On the user's recordings, background chatter peaked at 0.16 and quiet
+/// real speech reached 0.33+ (scored in `WINDOW`s, below).
+pub const SPEECH_PROBABILITY: f32 = 0.3;
+/// Speech is looked for in windows of this many samples (2 s), each scored
+/// from a fresh model state, one second apart. Silero's state sticks: after
+/// a stretch of chatter it scored a clear "Hi, my name is …" 0.16 instead of
+/// 1.0, and after a quiet phrase it missed 10 s of soft speech (0.24 vs 0.61).
+const WINDOW: usize = 2 * SAMPLE_RATE as usize;
+const HOP: usize = SAMPLE_RATE as usize;
+
+/// True when `pcm` (16 kHz mono) has a voice in it. Newest windows first and
+/// stops at the first speech, so a real dictation costs a few milliseconds.
+/// If the VAD can't run, says yes: a dictation is never dropped because of it.
+pub fn contains_speech(pcm: &[f32]) -> bool {
+    let mut vad = match silero_vad_crs::SileroVad::new() {
+        Ok(vad) => vad,
+        Err(e) => {
+            log::warn!("speech detector unavailable, transcribing anyway: {e:?}");
+            return true;
+        }
+    };
+    let step = vad.source_window_samples();
+    let starts = (0..pcm.len().saturating_sub(WINDOW - HOP).max(1)).step_by(HOP);
+    for start in starts.rev() {
+        vad.reset();
+        let window = &pcm[start..(start + WINDOW).min(pcm.len())];
+        for chunk in window.chunks(step) {
+            if chunk.len() < step / 2 {
+                break;
+            }
+            let mut padded;
+            let chunk = if chunk.len() == step {
+                chunk
+            } else {
+                // A last partial step of real audio: pad it with silence.
+                padded = chunk.to_vec();
+                padded.resize(step, 0.0);
+                &padded
+            };
+            match vad.forward_chunk(chunk) {
+                Ok(p) if p >= SPEECH_PROBABILITY => return true,
+                Ok(_) => {}
+                Err(e) => {
+                    log::warn!("speech detector failed, transcribing anyway: {e:?}");
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Noise floor = the 10th-percentile frame level; speech sits well above it
@@ -110,6 +167,14 @@ mod tests {
         let loud_in = pcm.iter().filter(|s| s.abs() > 0.08).count();
         let loud_out = t.pcm.iter().filter(|s| s.abs() > 0.08).count();
         assert!(loud_out as f32 >= loud_in as f32 * 0.99, "{loud_out}/{loud_in}");
+    }
+
+    #[test]
+    fn tones_noise_and_silence_are_not_speech() {
+        assert!(!contains_speech(&[]));
+        assert!(!contains_speech(&vec![0.0; 32_000]));
+        assert!(!contains_speech(&noise(3.0, 0.02)));
+        assert!(!contains_speech(&tone(2.0, 0.2)));
     }
 
     #[test]

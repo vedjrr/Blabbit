@@ -80,6 +80,8 @@ pub struct DictationOptions {
 pub enum SkipReason {
     TooShort,
     Silent,
+    /// Sound, but no voice in it (background chatter, typing, a fan).
+    NoSpeech,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -184,6 +186,7 @@ impl UtterEngine {
             skipped: t.skipped.map(|s| match s {
                 utter_core::audio::SkipReason::TooShort => SkipReason::TooShort,
                 utter_core::audio::SkipReason::Silent => SkipReason::Silent,
+                utter_core::audio::SkipReason::NoSpeech => SkipReason::NoSpeech,
             }),
             language: t.language,
             audio_ms: t.audio_ms,

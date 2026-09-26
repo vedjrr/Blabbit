@@ -120,7 +120,12 @@ impl Engine {
     }
 
     pub fn transcribe(&self, pcm_16k_mono: &[f32], options: &TranscribeOptions) -> Result<Transcription> {
-        if let Some(reason) = skip_reason(pcm_16k_mono) {
+        // Speech models turn background chatter into invented words, worst on
+        // the short phrases of typing as you speak: only a voice goes in.
+        let skip = skip_reason(pcm_16k_mono).or_else(|| {
+            (self.is_loaded() && !crate::vad::contains_speech(pcm_16k_mono)).then_some(crate::audio::SkipReason::NoSpeech)
+        });
+        if let Some(reason) = skip {
             return Ok(Transcription {
                 text: String::new(),
                 skipped: Some(reason),
@@ -168,7 +173,10 @@ impl Engine {
     /// 0.2.3), the real one waits for this preview, so callers keep previews
     /// short (the app caps the window from the model's measured speed).
     pub fn preview(&self, pcm_16k_mono: &[f32], options: &TranscribeOptions) -> Result<Option<Transcription>> {
-        if self.pending_real.load(Ordering::SeqCst) > 0 || skip_reason(pcm_16k_mono).is_some() {
+        if self.pending_real.load(Ordering::SeqCst) > 0
+            || skip_reason(pcm_16k_mono).is_some()
+            || !crate::vad::contains_speech(pcm_16k_mono)
+        {
             return Ok(None);
         }
         let mut slot = match self.model.try_lock() {

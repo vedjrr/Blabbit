@@ -50,6 +50,8 @@ pub const SILENCE_RMS: f32 = 0.002;
 pub enum SkipReason {
     TooShort,
     Silent,
+    /// Sound, but no voice in it (background chatter, typing, a fan).
+    NoSpeech,
 }
 
 /// Decides whether a recording is worth sending to the model. Silence is
