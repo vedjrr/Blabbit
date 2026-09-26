@@ -97,6 +97,12 @@ import Testing
         #expect(OverlayView.elapsed(from: start, to: start.addingTimeInterval(75)) == "1:15")
     }
 
+    /// Hiding Utter (⌘H, Hide Others) must not hide the pill (human-found, 2026-09-26).
+    @Test func pillSurvivesTheAppBeingHidden() {
+        let overlay = OverlayController(levelProvider: { 0 })
+        #expect(overlay.panel.canHide == false)
+    }
+
     /// Offscreen renders of each phase (kept as evidence with UTTER_SNAPSHOT_DIR).
     @Test func rendersEveryPhase() throws {
         let model = OverlayModel()

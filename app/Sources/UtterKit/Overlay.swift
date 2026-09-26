@@ -140,6 +140,9 @@ public final class OverlayController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
+        // ⌘H in Settings, or "Hide Others" in another app, hides Utter; the
+        // pill must still appear, or dictating looks like it does nothing.
+        panel.canHide = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
