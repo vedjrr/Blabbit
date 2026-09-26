@@ -1,0 +1,5 @@
+[bindings.swift]
+module_name = "SayLessCore"
+ffi_module_name = "SayLessFFI"
+ffi_module_filename = "SayLessFFI"
+generate_module_map = true

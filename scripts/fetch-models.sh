@@ -6,7 +6,7 @@
 # Turbo + Moonshine (switch test), Moonshine (Model Manager download tests),
 # Whisper Medium (incremental transcription on a padded-window model).
 set -euo pipefail
-dir="${UTTER_MODELS_DIR:-$HOME/Library/Application Support/Utter/Models}"
+dir="${SAYLESS_MODELS_DIR:-$HOME/Library/Application Support/SayLess/Models}"
 
 # id | repo | revision | file | sha256
 models=(

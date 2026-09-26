@@ -1,4 +1,4 @@
-// Draws Utter's original app icon (no third-party assets) and writes
+// Draws Say Less's original app icon (no third-party assets) and writes
 // app/Resources/AppIcon.icns. Run: swift scripts/make-icon.swift
 // Design: macOS rounded-square tile, deep indigo → teal gradient, a white
 // waveform whose bars rise and fall like a spoken word.

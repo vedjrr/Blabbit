@@ -2,7 +2,7 @@
 
 ---
 
-You are building **Utter**, a native macOS local-first dictation app with full Handy feature parity and responsiveness, then better than Handy wherever a native Mac app can measurably win. You are working autonomously in a loop and will not stop until the goal is met.
+You are building **Say Less**, a native macOS local-first dictation app with full Handy feature parity and responsiveness, then better than Handy wherever a native Mac app can measurably win. You are working autonomously in a loop and will not stop until the goal is met.
 
 Read these now, in order, and treat them as binding:
 1. `CLAUDE.md` — rules and working loop

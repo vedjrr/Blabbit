@@ -9,7 +9,7 @@ mkdir -p "$out"
 
 make_clip() {
   local id=$1 voice=$2 text=$3
-  local aiff; aiff=$(mktemp -t utterfx).aiff
+  local aiff; aiff=$(mktemp -t saylessfx).aiff
   say -v "$voice" -o "$aiff" "$text"
   afconvert -f WAVE -d LEI16@16000 -c 1 "$aiff" "$out/$id.wav"
   rm -f "$aiff"

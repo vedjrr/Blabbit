@@ -1,4 +1,4 @@
-// Utter landing page: the hero dictation loop and the score bars.
+// Say Less landing page: the hero dictation loop and the score bars.
 // Progressive enhancement: without JS the page reads the same, minus motion.
 (() => {
   document.documentElement.classList.add("js");
@@ -51,7 +51,7 @@
     keys.forEach((k) => k && k.classList.remove("down"));
     pill.classList.remove("on");
     await sleep(160);
-    // Utter inserts at once; the words appear in quick succession for the eye.
+    // Say Less inserts at once; the words appear in quick succession for the eye.
     const words = line.split(" ");
     for (let i = 0; i < words.length; i++) {
       typed.textContent = base + words.slice(0, i + 1).join(" ");

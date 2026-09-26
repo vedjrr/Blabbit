@@ -1,8 +1,8 @@
 // End-to-end dry run of the dictation path without a human voice:
-// holds the Utter shortcut (synthetic ⌥Space), plays a fixture through the
+// holds the Say Less shortcut (synthetic ⌥Space), plays a fixture through the
 // speakers so the real microphone hears it, releases, then reads what landed in
 // TextEdit via Accessibility and checks the clipboard is unchanged.
-// Requires: Utter running with permissions; this process Accessibility-trusted.
+// Requires: Say Less running with permissions; this process Accessibility-trusted.
 // Usage: swift scripts/e2e-textedit.swift <scratch.txt> <clip.wav>...
 import AppKit
 import ApplicationServices
@@ -95,7 +95,7 @@ for clip in args.dropFirst() {
     print("clip=\(clip)\nreference=\(reference)\ninserted=\(inserted)\nobserved_release_to_text_ms≈\(Int(Date().timeIntervalSince(released) * 1000)) (upper bound, polling)")
     post(36, down: true, flags: []); post(36, down: false, flags: []) // newline between clips
     previous += "\n"
-    Thread.sleep(forTimeInterval: 2.5) // let Utter finish restoring the clipboard
+    Thread.sleep(forTimeInterval: 2.5) // let Say Less finish restoring the clipboard
 }
 let clipboardAfter = clipboardText()
 print("clipboard_unchanged=\(clipboardBefore == clipboardAfter)")

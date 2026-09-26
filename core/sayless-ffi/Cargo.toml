@@ -1,0 +1,15 @@
+[package]
+name = "sayless-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "lib"]
+name = "sayless_ffi"
+
+[dependencies]
+sayless-core = { path = "../sayless-core" }
+uniffi = "0.32"
+thiserror.workspace = true
+log.workspace = true

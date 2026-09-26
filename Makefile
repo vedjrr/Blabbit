@@ -1,4 +1,4 @@
-# Utter build entry points. See docs/ARCHITECTURE.md ADR-001 for why this is
+# Say Less build entry points. See docs/ARCHITECTURE.md ADR-001 for why this is
 # SwiftPM + Makefile rather than an .xcodeproj.
 
 SHELL := /bin/bash
@@ -13,7 +13,7 @@ APP       := $(ROOT)/app
 BUILD     := $(ROOT)/build
 RUST_OUT  := $(CORE)/target/release
 BINDINGS  := $(BUILD)/bindings
-APP_NAME  := Utter
+APP_NAME  := SayLess
 BUNDLE    := $(BUILD)/$(APP_NAME).app
 # SwiftPM's default "swiftbuild" backend intermittently fails under the CLT
 # ("plugin for module 'TestingMacros' not found", "unable to resolve Swift module
@@ -27,7 +27,7 @@ SWIFT_OUT = $(shell cd "$(APP)" && swift build $(SWIFT_FLAGS) --show-bin-path)
 
 # Dev signing: a local "Apple Development" identity keeps the designated
 # requirement stable so macOS privacy grants survive rebuilds; else ad-hoc.
-SIGN_ID ?= $(or $(UTTER_SIGN_IDENTITY),$(shell security find-identity -v -p codesigning 2>/dev/null | grep -m1 -o '"Apple Development[^"]*"' | tr -d '"'),-)
+SIGN_ID ?= $(or $(SAYLESS_SIGN_IDENTITY),$(shell security find-identity -v -p codesigning 2>/dev/null | grep -m1 -o '"Apple Development[^"]*"' | tr -d '"'),-)
 
 .PHONY: build core bindings app bundle test test-rust test-swift bench models dmg dmg-preflight release clean
 
@@ -38,11 +38,11 @@ core:
 
 bindings: core
 	cd "$(CORE)" && ./target/release/uniffi-bindgen generate \
-		--library target/release/libutter_ffi.a --language swift --out-dir "$(BINDINGS)"
-	mkdir -p "$(APP)/Sources/UtterFFI/include" "$(APP)/Sources/UtterCore"
-	install -m 644 "$(BINDINGS)/UtterFFI.h" "$(APP)/Sources/UtterFFI/include/UtterFFI.h"
-	install -m 644 "$(BINDINGS)/UtterFFI.modulemap" "$(APP)/Sources/UtterFFI/include/module.modulemap"
-	install -m 644 "$(BINDINGS)/UtterCore.swift" "$(APP)/Sources/UtterCore/UtterCore.swift"
+		--library target/release/libsayless_ffi.a --language swift --out-dir "$(BINDINGS)"
+	mkdir -p "$(APP)/Sources/SayLessFFI/include" "$(APP)/Sources/SayLessCore"
+	install -m 644 "$(BINDINGS)/SayLessFFI.h" "$(APP)/Sources/SayLessFFI/include/SayLessFFI.h"
+	install -m 644 "$(BINDINGS)/SayLessFFI.modulemap" "$(APP)/Sources/SayLessFFI/include/module.modulemap"
+	install -m 644 "$(BINDINGS)/SayLessCore.swift" "$(APP)/Sources/SayLessCore/SayLessCore.swift"
 
 app: bindings
 	cd "$(APP)" && swift build $(SWIFT_FLAGS)
@@ -66,7 +66,7 @@ bundle: app
 	codesign --force --sign "$(SIGN_ID)" --options runtime "$(SPARKLE)/Updater.app"
 	codesign --force --sign "$(SIGN_ID)" --options runtime "$(BUNDLE)/Contents/Frameworks/Sparkle.framework"
 	codesign --force --sign "$(SIGN_ID)" --options runtime \
-		--entitlements "$(APP)/Resources/Utter.entitlements" "$(BUNDLE)"
+		--entitlements "$(APP)/Resources/SayLess.entitlements" "$(BUNDLE)"
 	@echo "Built $(BUNDLE)"
 
 test: test-rust test-swift
@@ -77,22 +77,22 @@ test-rust: models
 test-swift: bindings
 	@# Tests use throwaway UserDefaults suites; macOS leaves their empty .plist
 	@# files behind even after removePersistentDomain, so sweep them either way.
-	cd "$(APP)" && UTTER_LOG_FILE="$${TMPDIR:-/tmp}/utter-tests.log" swift test $(SWIFT_FLAGS) $(SWIFT_TEST_FLAGS); \
-		status=$$?; find "$$HOME/Library/Preferences" -maxdepth 1 -name 'dev.utter.test.*.plist' -delete; exit $$status
+	cd "$(APP)" && SAYLESS_LOG_FILE="$${TMPDIR:-/tmp}/sayless-tests.log" swift test $(SWIFT_FLAGS) $(SWIFT_TEST_FLAGS); \
+		status=$$?; find "$$HOME/Library/Preferences" -maxdepth 1 -name 'dev.sayless.test.*.plist' -delete; exit $$status
 
 bench: build
-	cd "$(APP)" && swift build $(SWIFT_FLAGS) --product utter-bench
-	cd "$(APP)" && swift build $(SWIFT_FLAGS) --product UtterAXHost
-	"$(APP)/.build/arm64-apple-macosx/release/utter-bench"; \
-		status=$$?; rm -f "$$HOME/Library/Preferences/dev.utter.bench.plist"; exit $$status
+	cd "$(APP)" && swift build $(SWIFT_FLAGS) --product sayless-bench
+	cd "$(APP)" && swift build $(SWIFT_FLAGS) --product SayLessAXHost
+	"$(APP)/.build/arm64-apple-macosx/release/sayless-bench"; \
+		status=$$?; rm -f "$$HOME/Library/Preferences/dev.sayless.bench.plist"; exit $$status
 
 models:
 	./scripts/fetch-models.sh
 
 # Fail fast on missing release credentials before the rebuild.
 dmg-preflight:
-	@test -n "$$UTTER_DEVELOPER_ID" || { echo "Cannot make a release DMG: set UTTER_DEVELOPER_ID to your 'Developer ID Application: …' signing identity." >&2; exit 2; }
-	@test -n "$$UTTER_NOTARY_PROFILE" || { echo "Cannot notarise: set UTTER_NOTARY_PROFILE to a profile created with 'xcrun notarytool store-credentials'." >&2; exit 2; }
+	@test -n "$$SAYLESS_DEVELOPER_ID" || { echo "Cannot make a release DMG: set SAYLESS_DEVELOPER_ID to your 'Developer ID Application: …' signing identity." >&2; exit 2; }
+	@test -n "$$SAYLESS_NOTARY_PROFILE" || { echo "Cannot notarise: set SAYLESS_NOTARY_PROFILE to a profile created with 'xcrun notarytool store-credentials'." >&2; exit 2; }
 
 dmg: dmg-preflight bundle
 	./scripts/make-dmg.sh

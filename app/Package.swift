@@ -1,15 +1,15 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-// The Rust core is prebuilt by `make core` into core/target/release/libutter_ffi.a
-// and its UniFFI bindings are generated into Sources/UtterFFI + Sources/UtterCore.
+// The Rust core is prebuilt by `make core` into core/target/release/libsayless_ffi.a
+// and its UniFFI bindings are generated into Sources/SayLessFFI + Sources/SayLessCore.
 let rustLib = "../core/target/release"
 
 let package = Package(
-    name: "Utter",
+    name: "SayLess",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Utter", targets: ["Utter"]),
+        .executable(name: "SayLess", targets: ["SayLess"]),
     ],
     dependencies: [
         // History (SQLite + FTS5), ADR-009. MIT.
@@ -19,11 +19,11 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "UtterFFI",
-            path: "Sources/UtterFFI",
+            name: "SayLessFFI",
+            path: "Sources/SayLessFFI",
             linkerSettings: [
                 .unsafeFlags(["-L\(rustLib)"]),
-                .linkedLibrary("utter_ffi"),
+                .linkedLibrary("sayless_ffi"),
                 .linkedLibrary("c++"),
                 .linkedFramework("Accelerate"),
                 .linkedFramework("Foundation"),
@@ -34,20 +34,20 @@ let package = Package(
             ]
         ),
         .target(
-            name: "UtterCore",
-            dependencies: ["UtterFFI"],
-            path: "Sources/UtterCore",
+            name: "SayLessCore",
+            dependencies: ["SayLessFFI"],
+            path: "Sources/SayLessCore",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // Catches AVAudioEngine's Objective-C exceptions, which Swift can't.
         .target(
-            name: "UtterObjC",
-            path: "Sources/UtterObjC"
+            name: "SayLessObjC",
+            path: "Sources/SayLessObjC"
         ),
         .target(
-            name: "UtterKit",
-            dependencies: ["UtterCore", "UtterObjC", .product(name: "GRDB", package: "GRDB.swift"), .product(name: "Sparkle", package: "Sparkle")],
-            path: "Sources/UtterKit",
+            name: "SayLessKit",
+            dependencies: ["SayLessCore", "SayLessObjC", .product(name: "GRDB", package: "GRDB.swift"), .product(name: "Sparkle", package: "Sparkle")],
+            path: "Sources/SayLessKit",
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("ApplicationServices"),
@@ -56,27 +56,27 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "Utter",
-            dependencies: ["UtterKit"],
-            path: "Sources/Utter",
+            name: "SayLess",
+            dependencies: ["SayLessKit"],
+            path: "Sources/SayLess",
             // Sparkle.framework is embedded in Contents/Frameworks (see `make bundle`).
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         // `make bench`: measures the real app, models, capture and insertion (never bundled).
         .executableTarget(
-            name: "utter-bench",
-            dependencies: ["UtterKit", "UtterCore"],
-            path: "Sources/UtterBench"
+            name: "sayless-bench",
+            dependencies: ["SayLessKit", "SayLessCore"],
+            path: "Sources/SayLessBench"
         ),
         // Test-only helper app hosting real AppKit text controls (never bundled).
         .executableTarget(
-            name: "UtterAXHost",
-            path: "Sources/UtterAXHost"
+            name: "SayLessAXHost",
+            path: "Sources/SayLessAXHost"
         ),
         .testTarget(
-            name: "UtterTests",
-            dependencies: ["UtterCore", "UtterKit", "UtterObjC"],
-            path: "Tests/UtterTests"
+            name: "SayLessTests",
+            dependencies: ["SayLessCore", "SayLessKit", "SayLessObjC"],
+            path: "Tests/SayLessTests"
         ),
     ]
 )

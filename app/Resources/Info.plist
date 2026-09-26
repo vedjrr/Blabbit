@@ -5,17 +5,17 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Utter</string>
+	<string>Say Less</string>
 	<key>CFBundleExecutable</key>
-	<string>Utter</string>
+	<string>SayLess</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.utter.mac</string>
+	<string>dev.sayless.mac</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Utter</string>
+	<string>Say Less</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -24,10 +24,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>dev.utter.mac</string>
+			<string>dev.sayless.mac</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>utter</string>
+				<string>sayless</string>
 			</array>
 		</dict>
 	</array>
@@ -38,15 +38,15 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Utter uses this only when your own insertion script (Settings → Text Insertion) controls another app.</string>
+	<string>Say Less uses this only when your own insertion script (Settings → Text Insertion) controls another app.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 Utter contributors. MIT License.</string>
+	<string>© 2026 Say Less contributors. MIT License.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Utter records your voice only while you hold the dictation shortcut, and transcribes it on this Mac.</string>
+	<string>Say Less records your voice only while you hold the dictation shortcut, and transcribes it on this Mac.</string>
 	<key>SUFeedURL</key>
-	<string>https://github.com/vedjrr/Utter/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/vedjrr/SayLess/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>S3w7gf/+R83bFMQ4nl70jhd/2QPKo54vt/cU7xcE6XY=</string>
 </dict>

@@ -1,6 +1,6 @@
-<p align="center"><img src="docs/icon-1024.png" width="128" alt="Utter icon"></p>
+<p align="center"><img src="docs/icon-1024.png" width="128" alt="Say Less icon"></p>
 
-# Utter
+# Say Less
 
 Local-first dictation for macOS. Hold a shortcut, speak, release: your words appear at the cursor in any app. Transcription runs entirely on your Mac (Apple Silicon, Metal); nothing is sent anywhere unless you turn on an optional cloud processor.
 
@@ -12,12 +12,12 @@ Local-first dictation for macOS. Hold a shortcut, speak, release: your words app
 
 ## Install
 
-1. Download `Utter-<version>.dmg` from [Releases](https://github.com/vedjrr/Utter/releases), open it, and drag **Utter** to **Applications**.
-2. **First open only.** Utter is signed but not notarised by Apple (that needs a paid Apple Developer account), so macOS blocks the first launch:
-   - Open Utter. When macOS says it "can't verify" Utter, click **Done**.
-   - Open **System Settings → Privacy & Security**, scroll down to "Utter was blocked…", click **Open Anyway**, and confirm.
+1. Download `Say Less-<version>.dmg` from [Releases](https://github.com/vedjrr/SayLess/releases), open it, and drag **Say Less** to **Applications**.
+2. **First open only.** Say Less is signed but not notarised by Apple (that needs a paid Apple Developer account), so macOS blocks the first launch:
+   - Open Say Less. When macOS says it "can't verify" Say Less, click **Done**.
+   - Open **System Settings → Privacy & Security**, scroll down to "Say Less was blocked…", click **Open Anyway**, and confirm.
 
-   Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/Utter.app`, then open it normally.
+   Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/SayLess.app`, then open it normally.
    Updates install from inside the app (Sparkle, signature-checked) and don't need this again.
 3. A waveform icon appears in the menu bar and the setup window asks for:
    - **Microphone**: to hear you while you hold the shortcut.
@@ -42,22 +42,22 @@ Requirements: macOS 14 or later on Apple Silicon.
 
 - Audio is processed on your Mac and is never stored, unless you turn on **Settings → Privacy → Keep the audio**.
 - Network is used only to download models, to check for updates (Sparkle, EdDSA-signed), and for the Anthropic processor if you choose it and turn off Local-only mode.
-- History (text only by default) lives in `~/Library/Application Support/Utter/History/`. Turn it off or clear it in Settings → Privacy.
+- History (text only by default) lives in `~/Library/Application Support/SayLess/History/`. Turn it off or clear it in Settings → Privacy.
 
 ## Uninstall
 
-1. Quit Utter (menu → Quit Utter).
+1. Quit Say Less (menu → Quit Say Less).
 2. Remove the app and everything it stored:
 
    ```sh
    ./scripts/uninstall.sh          # from a clone of this repository, or run these by hand:
-   rm -rf /Applications/Utter.app
-   rm -rf ~/Library/Application\ Support/Utter        # models (up to several GB), history
-   rm -rf ~/Library/Logs/Utter ~/Library/Caches/dev.utter.mac "$(getconf DARWIN_USER_CACHE_DIR)dev.utter.mac"
-   defaults delete dev.utter.mac                       # settings
-   security delete-generic-password -s dev.utter.mac.processing -a anthropic-api-key 2>/dev/null   # cloud key, if saved
+   rm -rf /Applications/SayLess.app
+   rm -rf ~/Library/Application\ Support/Say Less        # models (up to several GB), history
+   rm -rf ~/Library/Logs/SayLess ~/Library/Caches/dev.sayless.mac "$(getconf DARWIN_USER_CACHE_DIR)dev.sayless.mac"
+   defaults delete dev.sayless.mac                       # settings
+   security delete-generic-password -s dev.sayless.mac.processing -a anthropic-api-key 2>/dev/null   # cloud key, if saved
    ```
-3. Optionally remove Utter from System Settings → Privacy & Security → Microphone and Accessibility, or run `tccutil reset All dev.utter.mac`.
+3. Optionally remove Say Less from System Settings → Privacy & Security → Microphone and Accessibility, or run `tccutil reset All dev.sayless.mac`.
 
 ## Build from source
 
@@ -66,7 +66,7 @@ Needs the Xcode Command Line Tools, Rust (`rustup`), and CMake (`brew install cm
 ```sh
 make models   # downloads the test models (pinned revisions, SHA-256 checked)
 make test     # Rust + Swift tests, including real-model tests
-make build    # build/Utter.app (signed with your Apple Development identity if you have one)
+make build    # build/SayLess.app (signed with your Apple Development identity if you have one)
 make bench    # bench/results/<date>.json + docs/BENCHMARKS.md
 ```
 

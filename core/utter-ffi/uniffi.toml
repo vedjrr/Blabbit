@@ -1,5 +1,0 @@
-[bindings.swift]
-module_name = "UtterCore"
-ffi_module_name = "UtterFFI"
-ffi_module_filename = "UtterFFI"
-generate_module_map = true
